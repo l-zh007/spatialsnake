@@ -1,0 +1,450 @@
+configfile: "config.yaml"
+import pandas as pd
+import os
+import sys
+import json
+import glob
+include: "get_sample.smk"
+
+
+results_folder=config.get("results_folder","results")
+option=config.get("option","integrate")
+channel=config.get("channel","single_analysis")
+data_fold=config.get("data_fold","data")
+run_type= config.get("run_type","visium")
+#################  xenium ###########
+cells_boundaries=config.get("cells_boundaries",False)
+nucleus_boundaries=config.get("nucleus_boundaries",False)
+nucleus_labels=config.get("nucleus_labels",False)
+morphology_mip=config.get("morphology_mip",False)
+
+seg_filter=config.get("seg_filter",False)
+filter_list = config.get("filter_list",'filter_list.txt')
+sample_file = config.get("sample_list","sample_list")
+markers_algorithm = config.get("markers_algorithm",'wilcoxon')
+image_slice = config.get("image_slice",False)
+tsene = config.get("tsene",False)
+MIN_DIST = config.get("MIN_DIST",0.3)
+SPREAD = config.get("SPREAD",1)
+variable = config.get("variable",False)
+NEIGHBORS =config.get("NEIGHBORS",10)
+RES = config.get("RES",0.5)
+harmony=config.get("harmony",True)
+spacies = "human"
+GO_ont = "All"
+cluster_algorithm=config.get("cluster_algorithm",'leiden')
+geojson='cell_segmentations.geojson'
+image='tissue_hires_image.png'
+scale_factors='scalefactors_json.json'
+coor_file="BeadLocationsForR.csv"
+coord = [1600,8500,1800,9600]
+anno_data_path = "annotion.txt"
+anno_algorithm = config.get("anno_algorithm","mannul")
+compare_algorithm =config.get("compare_algorithm","DEseq2")
+cell_focus = config.get("cell_focus",'Colorectal')
+device = config.get("device","cpu")
+runpipe = config.get("runpipe",None)
+
+
+
+counts_data=config.get('counts_data','hgnc_symbol')
+iterations=config.get('iterations',500)
+threshold=config.get('threshold',0.1)
+threads=config.get('threads',32)
+pvalue=config.get('pvalue',0.05)
+
+
+sample_id=config.get("sample_type","Normal")
+
+
+
+
+output_name= config.get("output_name","Normal")
+
+
+
+if type!="xenium":
+  image_type = config.get("image_type","hires")
+  shape_type = config.get("shape_type","cell_boundaries")
+else:
+  image_type = config.get("image_type","morphology_focus")
+  shape_type = config.get("shape_type","cell_circle")
+
+print(image_slice)
+
+
+if run_type not in ["visium","visium_HD","visium_segment","xenium","slide_seq","Merfish"]:
+  print("please set your spatial dataset type or the type is Illigal")
+  sys.exit()
+
+sample_file = config["sample_list"]
+if os.path.exists(sample_file) == False:
+	print('You must supply a list of files')
+	print('Create sample_list file first,then run this script again')
+	sys.exit()
+if os.path.exists(sample_file) == True:
+	main_file=[]
+	samples=[]
+	bin_size=[]
+	group=[]
+	if channel == 'single_analysis':
+	  if run_type=="visium" or run_type=="xenium" or run_type=="visium_segment" or run_type=="slide_seq":
+	    samples,main_file = get_sample_paths(config["sample_list"])
+	  elif run_type=="visium_HD":
+	    samples,main_file,bin_size = get_sample_paths(config["sample_list"])
+	else:
+	  if run_type=="visium" or run_type=="xenium" or run_type=="visium_segment" or run_type=="slide_seq":
+	    samples,main_file,group = get_sample_paths(config["sample_list"])
+	  elif run_type=="visium_HD":
+	    samples,main_file,bin_size,group = get_sample_paths(config["sample_list"])
+
+main_file=main_file[0]
+print(samples,main_file,group)
+
+
+
+
+def parameter_output(samples,option):
+    outs=[]
+    print(flag)
+    if option == 'integrate':
+      if channel == 'single_analysis':
+        if run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+          outs += expand(os.path.join(results_folder, "{sample}", "{sample}.zarr"),sample=samples)
+        if run_type=="visium_HD":
+          outs += expand(os.path.join(results_folder, "{sample}_{bin}um", "{sample}.zarr"),zip,sample=samples,bin=bin_size)
+        if run_type=="slide_seq":
+          outs += expand(os.path.join(results_folder, "{sample}", "{sample}.h5ad"),sample=samples)
+      if channel=="compare_analysis" and flag=='merge':
+        if run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+          print(len(group),len(samples))
+          outs += expand(os.path.join(results_folder, "{group}", "{sample}.zarr"), zip,sample=samples, group=group)
+        if run_type=="visium_HD":
+          outs += expand(os.path.join(results_folder, "{group}_{bin}um", "{sample}.zarr"),zip,sample=samples,bin=bin_size,group=group)
+        if run_type=="slide_seq":
+          outs += expand(os.path.join(results_folder, "{group}", "{sample}.h5ad"),zip,sample=samples,group=group)
+      if channel=="compare_analysis" and flag=='ALL':  
+        outs.append(os.path.join(results_folder, "merge_data", "concatenated_sdata"))
+        print(outs)
+      return outs
+    if option=="preprocess":
+      if channel == 'single_analysis':
+        if run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+          outs += expand(os.path.join(results_folder, "{sample}", 'preprocess', "filter_{sample}.zarr"),sample=samples)
+        if run_type=="visium_HD":
+          outs += expand(os.path.join(results_folder, "{sample}_{bin}um", 'preprocess', "filter_{sample}.zarr"),zip,sample=samples,bin=bin_size)
+        if run_type=="slide_seq":
+          outs += expand(os.path.join(results_folder, "{sample}", 'preprocess', "filter_{sample}.h5ad"),sample=samples)
+      if channel=="compare_analysis" and seg_filter==True and flag=='merge':
+        if run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+          print("output")
+          outs += expand(os.path.join(results_folder, "{group}", "filter_{sample}.zarr"), zip,sample=samples, group=group)
+        if run_type=="visium_HD":
+          outs += expand(os.path.join(results_folder, "{group}_{bin}um", "filter_{sample}.zarr"),zip,sample=samples,bin=bin_size,group=group)
+        if run_type=="slide_seq":
+          outs += expand(os.path.join(results_folder, "{group}", "filter_{sample}.h5ad"),zip,sample=samples,group=group)
+      if channel=="compare_analysis" and flag=='ALL':  
+        outs.append(os.path.join(results_folder, "merge_data", 'preprocess',"filter_concatenated_sdata"))
+      print(outs)
+      return outs
+    if option == "annotion_help":
+      if channel == 'single_analysis':
+        return(expand(os.path.join(results_folder,"{sample}",'clustering','kegg_data.csv'),sample=samples))
+      if channel == 'compare_analysis':
+        return(os.path.join(results_folder, "merge_data",'clustering','kegg_data.csv'))
+    if option == "annotion" or option == "clustering":
+      if channel == 'single_analysis':
+        if run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+          outs += expand(os.path.join(results_folder, "{sample}", option, "{sample}.zarr"),sample=samples)
+        if run_type=="visium_HD":
+          outs += expand(os.path.join(results_folder, "{sample}_{bin}um", option, "{sample}.zarr"),zip,sample=samples,bin=bin_size)
+        if run_type=="slide_seq":
+          outs += expand(os.path.join(results_folder, "{sample}",option,"{sample}.h5ad"),sample=samples)
+      if channel=="compare_analysis":
+        outs.append(os.path.join(results_folder, "merge_data", option,"concatenated_sdata"))
+      return outs
+    if option=="compare_analyze":
+      return(os.path.join(results_folder,"merge_data",'compare_analysis','positive','kegg_data.csv'))
+    if option=="advance_analysis":
+      if runpipe=="cellPhoneDB":
+        if channel == 'single_analysis':
+          outs += expand(os.path.join(results_folder, "{sample}",runpipe,"{sample}_heatmap.png"),sample=samples)
+        if channel=="compare_analysis":
+          outs.append(os.path.join(results_folder,"merge_data",runpipe,"concentrate_heatmap.png"))
+      if runpipe=="pysenic":
+        outs.append(os.path.join(results_folder,"pysenic_results",f"{sample_id}.aucell.loom"))
+      return outs
+    
+    
+    
+    
+    
+
+def input_file(run_type):
+  if run_type=="visium" or run_type=="xenium" or run_type=="slide_seq":
+    return(os.path.join(data_fold,'{sample}',main_file))
+  elif run_type=="visium_HD":
+    return(os.path.join(data_fold,'{sample}',"binned_outputs","square_{bin}um",main_file))
+  elif run_type=="visium_segment":
+    return os.path.join(data_fold, "{sample}", "segmented_outputs", main_file)
+def get_output(run_type):
+  if channel == 'single_analysis':
+    if run_type=="visium_HD":
+      return(directory(os.path.join(results_folder, "{sample}_{bin}um", "{sample}.zarr")))
+    elif run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+      return(directory(os.path.join(results_folder, "{sample}", "{sample}.zarr")))
+    elif run_type=="slide_seq":
+      return(os.path.join(results_folder, "{sample}", "{sample}.h5ad"))
+  elif channel=="compare_analysis":
+    if run_type=="visium_HD":
+      return(directory(os.path.join(results_folder, "{group}_{bin}um", "{sample}.zarr")))
+    elif run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+      return(directory(os.path.join(results_folder, "{group}", "{sample}.zarr")))
+    elif run_type=="slide_seq":
+      return(os.path.join(results_folder, "{group}", "{sample}.h5ad"))  
+
+def nomal_file(run_type,segs):
+  if channel == 'single_analysis':
+    if run_type=="visium_HD":
+      return((os.path.join(results_folder, "{sample}_{bin}um", segs,"{sample}.zarr")))
+    elif run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+      print("correct")
+      return(os.path.join(results_folder, "{sample}",segs,"{sample}.zarr"))
+    elif run_type=="slide_seq":
+      return(os.path.join(results_folder, "{sample}", segs,"{sample}.h5ad"))
+  if channel=="compare_analysis":
+    return((parameter_output(samples,segs)))
+  
+
+def check_cell2Location_file(samples,run_type,input_singlecell,input_spatial,channel):
+  print(input_spatial)
+  if input_spatial=="" and not os.path.isdir(nomal_file(run_type,"")):
+    sys.exit("please provide your st_file path or you can load in the zarr data with [spatialsnake integrate] which save in [results/]")
+    print("please promiss your st_file haven't been normalization Log transformation Variance stabilizing transformation  PCA、t-SNE or UMAP....")
+  if input_singlecell=="":
+    print("please promiss your sc data has been anno")
+    sys.exit("please provide your st_file path or you can download h5ad in your own path")
+  if len(samples)>1:
+    sys.exit("Deconvolution annotation is very memory-intensive, so please process the samples one by one.")
+  if os.path.splitext(input_spatial)[1][1:]=="zarr" and channel=="single_analysis":
+    if os.path.isdir(f"data/{samples[0]}"):
+      return(input_file(run_type))
+    else:
+      return("")
+  else:
+    print("please load in the zarr data which will save in [results/name.zarr] with [spatialsnake integrate] command")
+    sys.exit()
+  
+
+
+
+
+
+
+
+            
+if seg_filter==True:
+  filter_list = config.get("filter_list","filter_list.txt")
+  if os.path.exists(filter_list) == False:
+	  print('You must supply a list of files')
+	  print('Create filter_list.txt file with your per_sample filter params first,then run this script again')
+	  sys.exit()
+  else:
+    filter_dict=seg_filter_sample(filter_list)
+else:
+  min_genes = config.get('min_counts',10)
+  min_cells = config.get('min_cells',3)
+
+
+
+
+flag='ALL'
+print(parameter_output(samples,option),"#########")
+rule all:
+  input:
+    parameter_output(samples,option)
+if option == "integrate":
+  include: "rules/integrate.smk"
+  if channel == "compare_analysis":
+    flag='merge'
+    include: "rules/merge.smk"
+    
+
+if option == "preprocess":
+  include: "rules/preprocess.smk"
+  if seg_filter==True:
+    flag='merge'
+    include: "rules/merge.smk"
+    
+
+if option == "clustering":
+  include: "rules/cluster.smk"
+
+
+if option == "annotion_help":
+  include: "rules/annotion_help.smk"
+  
+  
+
+if option == "annotion":
+  if anno_algorithm=="cell2Location":
+    input_spatial=config.get("input_spatial","") if config.get("input_spatial","")!="" else nomal_file(run_type,"")
+    input_singlecell = config.get("input_singlecell","")
+    input_st=check_cell2Location_file(samples,run_type,input_singlecell,input_spatial,channel)
+    print(image_slice)
+    include: "rules/cell2Location_run.smk"
+  elif anno_algorithm=="mannul":
+    anno_data = get_annotion(anno_data_path,samples)
+    include: "rules/mannul.smk"
+  elif anno_algorithm=="RCTD":
+    include: "rules/RCTD.smk"
+    
+    
+
+if option == "compare_analyze":
+  include: "rules/compare_analyze.smk"
+  
+
+if option == "advance_analysis":
+  if runpipe=="cellPhoneDB":
+    include: "rules/cellPhoneDB.smk"
+  # include: "rule/advance_analysis.smk"
+  if runpipe=="pysenic":
+    include: "rules/py_senic.smk"
+  
+    
+
+#"results/colon_cancer_P2/colon_cancer_P2.zarr"
+
+
+
+
+
+
+# include: "rules/common.smk"
+# include: "rules/process_reads.smk"
+
+#Non_Lesional_1 data/Non_Lesional_1 Normal
+# Non_Lesional_2 data/Non_Lesional_2 Normal
+# Lesional_1 data/Lesional_1 Cancer
+# Lesional_2 data/Lesional_2 Cancer
+# colon_cancer_P2 data/colon_cancer_P2
+# colon_cancer_P1 data/colon_cancer_P1
+
+
+# onstart:
+#     print("\n--- Analysis started ---\n")
+# 
+# 
+# onsuccess:
+#     print("\n--- Workflow finished! ---\n")
+# 
+# 
+# onerror:
+#     print("\n--- An error occurred! ---\n")
+# import glob
+# import os
+# 
+# # 第一步：checkpoint聚类分析
+# checkpoint clustering:
+#     input:
+#         "data/data.zarr"
+#     output:
+#         directory("results/clusters")
+#     params:
+#         output_dir = "results/clusters"
+#     shell:
+#         """
+#         python scripts/run_clustering.py \
+#             --input {input} \
+#             --output-dir {params.output_dir}
+#         """
+# 
+# # 第二步：动态获取cluster列表的函数
+# def get_cluster_list(wildcards):
+#     # 等待clustering checkpoint完成
+#     checkpoint_output = checkpoints.clustering.get(**wildcards).output[0]
+#     
+#     # 扫描输出目录，找到所有marker文件"cluster_{group_value}.csv
+#     cluster_files = glob.glob(os.path.join(checkpoint_output, "*_marker.csv"))
+#     clusters = []
+#     
+#     for file_path in cluster_files:
+#         # 从文件名提取cluster名称
+#         filename = os.path.basename(file_path)
+#         cluster_name = filename.replace("_marker.csv", "")
+#         clusters.append(cluster_name)
+#     
+#     print(f"Found {len(clusters)} clusters: {clusters}")
+#     return clusters
+# 
+# # 第三步：富集分析规则
+# rule enrichment_analysis:
+#     input:
+#         marker_file = "results/clusters/{cluster}_marker.csv"
+#     output:
+#         plot = "results/enrichment/{cluster}_enrichment_plot.png",
+#         table = "results/enrichment/{cluster}_enrichment_table.csv"
+#     params:
+#         cluster_name = "{cluster}"
+#     log:
+#         "logs/enrichment_{cluster}.log"
+#     shell:
+#         """
+#         python scripts/run_enrichment.py \
+#             --marker-file {input.marker_file} \
+#             --output-plot {output.plot} \
+#             --output-table {output.table} \
+#             --cluster {params.cluster_name} \
+#             2> {log}
+#         """
+# 
+# # 第四步：动态的rule all
+# rule all:
+#     input:
+#         # 动态生成所有enrichment分析的目标文件
+#         lambda wildcards: expand(
+#             "results/enrichment/{cluster}_enrichment_plot.png",
+#             cluster=get_cluster_list(wildcards)
+#         ),
+#         lambda wildcards: expand(
+#             "results/enrichment/{cluster}_enrichment_table.csv", 
+#             cluster=get_cluster_list(wildcards)
+
+
+# if option=="cluster":
+    #   if channel == 'single_analysis':
+    #     if run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+    #       outs += expand(os.path.join(results_folder, "{sample}", 'clustering', "{sample}.zarr"),sample=samples)
+    #     if run_type=="visium_HD":
+    #       outs += expand(os.path.join(results_folder, "{sample}_{bin}um", 'clustering', "{sample}.zarr"),zip,sample=samples,bin=bin_size)
+    #     if run_type=="slide_seq":
+    #       outs += expand(os.path.join(results_folder, "{sample}", 'clustering', "{sample}.h5ad"),sample=samples)
+    #   if channel=="compare_analysis":
+    #     outs.append(os.path.join(results_folder, "merge_data", 'clustering',"concatenated_sdata"))
+    #   return outs
+    # if option == "annotion":
+    #   if channel == 'single_analysis':
+    #     if run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+    #       outs += expand(os.path.join(results_folder, "{sample}", 'annotion', "{sample}.zarr"),sample=samples)
+    #     if run_type=="visium_HD":
+    #       outs += expand(os.path.join(results_folder, "{sample}_{bin}um", 'annotion', "{sample}.zarr"),zip,sample=samples,bin=bin_size)
+    #     if run_type=="slide_seq":
+    #       outs += expand(os.path.join(results_folder, "{sample}", 'annotion', "{sample}.h5ad"),sample=samples)
+    #   if channel=="compare_analysis":
+    #     outs.append(os.path.join(results_folder, "merge_data", 'annotion',"concatenated_sdata"))
+    #   return outs
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+###pyscenic aucell results/pysenic_results/Non_Lession.loom results/pysenic_results/endo.reg.csv --output results/pysenic_results/Non_Lession_endo.loom --num_workers 64 --gene_attribute var_names --cell_id_attribute spot_id
+#arboreto_with_multiprocessing.py --num_workers 128 --output results/pysenic_results/scenic.pso.tsv --method grnboost2 --gene_attribute var_names --cell_id_attribute spot_id results/pysenic_results/Non_Lession.loom data/hs_hgnc_tfs.txt
+
+#pyscenic ctx results/pysenic_results/scenic.pso.tsv data/hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather --annotations_fname data/motifs-v9-nr.hgnc-m0.001-o0.0.tbl --expression_mtx_fname results/pysenic_results/Non_Lession.loom --output results/pysenic_results/endo.reg.csv --num_workers 36 --mask_dropouts --gene_attribute var_names --cell_id_attribute spot_id

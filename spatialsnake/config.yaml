@@ -1,0 +1,46 @@
+# samplesheet: ".test/config/samples.tsv"
+option: "advance_analysis"
+results_folder: "results"
+data_fold: "data"
+sample_list: "sample_list"
+run_type: "visium"
+channel: "compare_analysis"
+seg_filter: False
+filter_list: 'filter_list.txt'
+image_slice: False
+markers_algorithm: 'wilcoxon'
+min_genes: 10
+min_cells: 3
+
+cells_boundaries: False
+nucleus_boundaries: False
+nucleus_labels: False
+morphology_mip: False
+
+filter_list: 'filter_list.txt'
+anno_algorithm: "mannul"
+
+tsene: False
+MIN_DIST: 0.3
+SPREAD: 1
+variable: False
+NEIGHBORS: 10
+
+device: "cuda"
+input_spatial: ""
+input_singlecell: "data/Human_Lymph_Node.h5ad"
+max_epochs_reference: 100
+remove_mt: True
+N_cells_per_location: 30
+max_epochs_st: 100
+# labels_key: 'cell_type'
+
+runpipe: "pysenic"
+
+###senic params###    ￥SciPy 1.13.1
+senic_input: "results/Non_Lesional_2/Non_Lesional_2.zarr"
+sample_type: "Non_Lesional_2"
+tfs_input: "data/hs_hgnc_tfs.txt"
+feather_input: "data/hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather"
+motifs_input: "data/motifs-v9-nr.hgnc-m0.001-o0.0.tbl"
+cell_attr: "spot_id"
