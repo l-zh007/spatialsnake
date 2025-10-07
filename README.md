@@ -1,4 +1,4 @@
-# Snakemake workflow: `<name>`
+# Snakemake: `<name>`
 
 [![spatialsnake](https://img.shields.io/badge/snakemake-≥8.0.0-brightgreen.svg)](https://snakemake.github.io)
 [![GitHub actions status](https://github.com/<owner>/<repo>/workflows/Tests/badge.svg?branch=main)](https://github.com/<owner>/<repo>/actions?query=branch%3Amain+workflow%3ATests)
@@ -7,16 +7,16 @@
 
 A Snakemake workflow for `<description>`
 
-- [Snakemake workflow: `<name>`](#snakemake-workflow-name)
+- [Snakemake workflow: `spatialsnake`](#snakemake-workflow-name)
   - [Usage](#usage)
   - [Deployment options](#deployment-options)
-  - [Authors](#authors)
+  - [lzh](#authors)
   - [References](#references)
   - [TODO](#todo)
 
-## Usage
 
-Usage:
+
+## Usage:
     spatialsnake single_analysis <INPUT> <TYPE> [--step=STEP] [options]
     spatialsnake compare_analysis <INPUT> <TYPE> [--step=STEP] [options]
     spatialsnake integrate <INPUT> <TYPE> [options]
@@ -25,24 +25,24 @@ Usage:
     spatialsnake (-h | --help)
     spatialsnake --version
 
-Main Commands:
-    single_analysis      Process single spatial transcriptomics dataset (runs all basic steps except advance_analysis by default)
-    compare_analysis     Compare multiple spatial transcriptomics datasets
-    integrate            Merge multiple ZARR datasets into one integrated dataset
-    segout               Split integrated ZARR data back into individual samples
+    Main Commands:
+      single_analysis      Process single spatial transcriptomics dataset (runs all basic steps except advance_analysis by default)
+      compare_analysis     Compare multiple spatial transcriptomics datasets
+      integrate            Merge multiple ZARR datasets into one integrated dataset
+      segout               Split integrated ZARR data back into individual samples
 
-Step Control:
+    Step Control:
     --step STEP          Run specific analysis step (for single_analysis and compare_analysis)
                          Options: integrate, preprocess, clustering, annotion_help, annotion, advance_analysis
                          Default: run all basic steps (integrate→preprocess→clustering→annotion_help→annotion)
 
-Input Arguments:
+    Input Arguments:
     SAMPLE_LIST          Text file containing sample paths (one per line)
     INTEGRATED_ZARR      Integrated ZARR file to split (for segout command)
     annotion_list
     filter_list
 
-Type Arguments:
+    Type Arguments:
     visium
     visium_segment
     visium_HD
@@ -51,10 +51,10 @@ Type Arguments:
     slide_seq
     Spatial_ATAC
 
-Basic Configuration:
+    Basic Configuration:
     --configfile FILE    Configuration file in YAML format [default: config.yaml].
 
-Integration Step Options (--step integrate):
+    Integration Step Options (--step integrate):
     --SAMPLE_LIST FILE        sample list
     --integration-method TEXT   Integration method [default: harmony].
     --cells_boundaries BOOL    xenium key in load in data [default: False].
@@ -62,7 +62,7 @@ Integration Step Options (--step integrate):
     --nucleus_labels BOOL      xenium key in load in data [default: False].
     --morphology_mip BOOL      xenium key in load in data [default: False].
 
-Preprocessing Step Options (--step preprocess):
+    Preprocessing Step Options (--step preprocess):
     --annotion_list FILE    for the filter params in different sample
     --min_cells INT         Minimum spots per gene [default: 3].
     --min_genes INT         Minimum genes per spot [default: 200].
@@ -70,14 +70,14 @@ Preprocessing Step Options (--step preprocess):
     --harmony BOOL          harmony method [default: True].
     --seg_filter BOOL       to seg filter the differnet sample dataset when command compare_anaysis.
     --NEIGHBORS FLOAT       neighbors for pca umap.
-Clustering Step Options (--step clustering):
+    Clustering Step Options (--step clustering):
     --resolution FLOAT   Cluster resolution [default: 0.5].
     --cluster_algorithm TEXT Clustering algorithm [default: leiden].
     --tsene BOOL        umap [default:False]
     --MIN_DIST FLOAT    umap_key [default:0.3]
     --SPREAD FLOAT      umap_key [default:1]
 
-Annotation Help Step Options (--step annotion_help):
+    Annotation Help Step Options (--step annotion_help):
     --image_slice BOOL        containing marker genes for cell types[default: False].
     --markers_algorithm TEXT       Automatically detect marker genes [default: wilcoxon].
     --shape_type TEXT         Automatically detect marker genes [default: cell_boundaries].
@@ -88,10 +88,10 @@ Annotation Help Step Options (--step annotion_help):
     --x2 INT
     --y1 INT
     --y2 INT
-Compare_analyze Step Options (--step compare_analysis)    
+    Compare_analyze Step Options (--step compare_analysis)    
     --cell_focus TEXT         celltype you focus to compare in different sample.
     --compare_algorithm TEXT  compare analysys
-Annotation Step Options (--step annotion):
+    Annotation Step Options (--step annotion):
     --annotation-file FILE    Annotation file for cell typing (required for annotion step)
     --anno_algorithm TEXT     Annotation method [default: mannul].
     --shape_type TEXT         Automatically detect marker genes [default: cell_boundaries].
@@ -107,7 +107,7 @@ Annotation Step Options (--step annotion):
     --max_epochs_st INT           params for cell2Location model train and test [default: 30000].
     --device TEXT                 cpu or GPU accelerate [default: cuda].
     
-Advanced Analysis Step Options (--step advance_analysis):
+    Advanced Analysis Step Options (--step advance_analysis):
     --categrory TEXT        Run  which analysis analysis.
     --pyscenic-input FILE   Input file for PySCENIC analysis.
     --pyscenic-db FILE      PySCENIC database directory.
@@ -119,15 +119,15 @@ Advanced Analysis Step Options (--step advance_analysis):
     --threads INT           workers for cellphoneDB [default: 8].
     --output_name           output name for cellPhoneDB [default: Normal].
     
-Cell Segmentation Options (applicable to multiple steps):
+    Cell Segmentation Options (applicable to multiple steps):
     --zarr_file FILE        seg with the sample name or region
     
 
-General Options:
+    General Options:
     -j INT, --jobs INT   Number of CPU cores [default: 4].
     --output-dir DIR     Output directory [default: results].
 
-Utility Options:
+    Utility Options:
     --install-packages   Install required packages.
     -u, --unlock         Unlock stalled workflow.
     -r, --remove         Remove all output files.
@@ -158,7 +158,9 @@ Utility Options:
 
 
 ```bash
-cd path/to/snakemake-workflow-name
+conda install spatialsnake
+mkdir project
+cd project
 ```
 
 Adjust options in the default config file `config/config.yaml`.
