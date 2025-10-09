@@ -1,0 +1,2 @@
+[console_scripts]
+spatialsnake = spatialsnake.command_line:main

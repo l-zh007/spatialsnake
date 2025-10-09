@@ -319,20 +319,9 @@ if option == "advance_analysis":
   # include: "rule/advance_analysis.smk"
   if runpipe=="pysenic":
     include: "rules/py_senic.smk"
-if option=="all":
-  include: "rules/integrate.smk"
-  if channel == "compare_analysis":
-    flag='merge'
-    include: "rules/merge.smk"
-  include: "rules/preprocess.smk"
-  if seg_filter==True:
-    flag='merge'
-    include: "rules/merge.smk"
-  include: "rules/cluster.smk"
-  include: "rules/annotion_help.smk"
   
-  
-  
+    
+
 #"results/colon_cancer_P2/colon_cancer_P2.zarr"
 
 

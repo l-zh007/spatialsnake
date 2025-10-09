@@ -1,0 +1,512 @@
+Metadata-Version: 2.4
+Name: spatialsnake
+Version: 0.1.0
+Summary: spatialsnake
+Home-page: https://github.com/l-zh007/spatialsnake
+Author: lzh
+Author-email: 1714074171@qq.com
+Keywords: spatial transcription RNA analysis
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+License-File: LICENSE
+Requires-Dist: absl-py==2.3.1
+Requires-Dist: aiobotocore==2.24.1
+Requires-Dist: aiohappyeyeballs==2.6.1
+Requires-Dist: aiohttp==3.12.15
+Requires-Dist: aioitertools==0.12.0
+Requires-Dist: aiosignal==1.4.0
+Requires-Dist: alabaster==1.0.0
+Requires-Dist: anndata==0.12.0
+Requires-Dist: app-model==0.4.0
+Requires-Dist: arboreto==0.1.6
+Requires-Dist: array-api-compat==1.12.0
+Requires-Dist: asciitree==0.3.3
+Requires-Dist: asttokens==3.0.0
+Requires-Dist: attrs==25.3.0
+Requires-Dist: babel==2.17.0
+Requires-Dist: biopython==1.85
+Requires-Dist: bokeh==3.8.0
+Requires-Dist: boltons==25.0.0
+Requires-Dist: botocore==1.39.11
+Requires-Dist: build==1.3.0
+Requires-Dist: cachey==0.2.1
+Requires-Dist: cell2location==0.1.5
+Requires-Dist: cellphonedb==5.0.1
+Requires-Dist: certifi==2025.10.5
+Requires-Dist: charset-normalizer==3.4.3
+Requires-Dist: click==8.3.0
+Requires-Dist: cloudpickle==3.1.1
+Requires-Dist: colorcet==3.1.0
+Requires-Dist: comm==0.2.3
+Requires-Dist: contourpy==1.3.3
+Requires-Dist: crc32c==2.7.1
+Requires-Dist: ctxcore==0.2.0
+Requires-Dist: cycler==0.12.1
+Requires-Dist: cytoolz==1.0.1
+Requires-Dist: dask==2024.11.2
+Requires-Dist: dask-expr==1.1.19
+Requires-Dist: dask-image==2024.5.3
+Requires-Dist: datashader==0.18.2
+Requires-Dist: debugpy==1.8.16
+Requires-Dist: decorator==5.2.1
+Requires-Dist: Deprecated==1.2.18
+Requires-Dist: dill==0.4.0
+Requires-Dist: diptest==0.10.0
+Requires-Dist: distributed==2024.11.2
+Requires-Dist: docrep==0.3.2
+Requires-Dist: docstring_parser==0.17.0
+Requires-Dist: donfig==0.8.1.post1
+Requires-Dist: et_xmlfile==2.0.0
+Requires-Dist: executing==2.2.0
+Requires-Dist: fasteners==0.20
+Requires-Dist: fbpca==1.0
+Requires-Dist: filelock==3.19.1
+Requires-Dist: flexcache==0.3
+Requires-Dist: flexparser==0.4
+Requires-Dist: FlowIO==1.4.0
+Requires-Dist: fonttools==4.59.2
+Requires-Dist: formulaic==1.2.0
+Requires-Dist: formulaic-contrasts==1.0.0
+Requires-Dist: freetype-py==2.5.1
+Requires-Dist: frozendict==2.4.6
+Requires-Dist: frozenlist==1.7.0
+Requires-Dist: fsspec==2025.9.0
+Requires-Dist: geopandas==1.1.1
+Requires-Dist: geosketch==1.3
+Requires-Dist: grpcio==1.75.1
+Requires-Dist: h5py==3.14.0
+Requires-Dist: harmonypy==0.0.10
+Requires-Dist: HeapDict==1.0.1
+Requires-Dist: hsluv==5.0.4
+Requires-Dist: idna==3.10
+Requires-Dist: igraph==0.11.9
+Requires-Dist: imagecodecs==2025.8.2
+Requires-Dist: imageio==2.37.0
+Requires-Dist: imagesize==1.4.1
+Requires-Dist: importlib_metadata==8.7.0
+Requires-Dist: in-n-out==0.2.1
+Requires-Dist: inflect==7.5.0
+Requires-Dist: intel-cmplr-lib-ur==2025.2.1
+Requires-Dist: intel-openmp==2025.2.1
+Requires-Dist: interface-meta==1.3.0
+Requires-Dist: interlap==0.2.7
+Requires-Dist: ipykernel==6.30.1
+Requires-Dist: ipython==9.5.0
+Requires-Dist: ipython_pygments_lexers==1.1.1
+Requires-Dist: jedi==0.19.2
+Requires-Dist: Jinja2==3.1.6
+Requires-Dist: jmespath==1.0.1
+Requires-Dist: joblib==1.5.2
+Requires-Dist: jupyter_client==8.6.3
+Requires-Dist: kiwisolver==1.4.9
+Requires-Dist: ktplotspy==0.3.2
+Requires-Dist: lazy_loader==0.4
+Requires-Dist: legacy-api-wrap==1.4.1
+Requires-Dist: leidenalg==0.10.2
+Requires-Dist: lightning==2.5.5
+Requires-Dist: lightning-utilities==0.15.2
+Requires-Dist: llvmlite==0.45.1
+Requires-Dist: locket==1.0.0
+Requires-Dist: loguru==0.7.3
+Requires-Dist: loompy==3.0.8
+Requires-Dist: louvain==0.8.2
+Requires-Dist: lz4==4.4.4
+Requires-Dist: magicgui==0.10.1
+Requires-Dist: Markdown==3.9
+Requires-Dist: MarkupSafe==3.0.3
+Requires-Dist: matplotlib==3.9.4
+Requires-Dist: matplotlib-inline==0.1.7
+Requires-Dist: matplotlib-scalebar==0.9.0
+Requires-Dist: mizani==0.14.2
+Requires-Dist: mkl==2025.2.0
+Requires-Dist: mkl-service==2.5.2
+Requires-Dist: ml_collections==1.1.0
+Requires-Dist: more-itertools==10.7.0
+Requires-Dist: mpmath==1.3.0
+Requires-Dist: msgpack==1.1.1
+Requires-Dist: mudata==0.3.2
+Requires-Dist: multidict==6.6.4
+Requires-Dist: multipledispatch==1.0.0
+Requires-Dist: multiprocessing_on_dill==3.5.0a4
+Requires-Dist: multiscale_spatial_image==2.0.3
+Requires-Dist: napari==0.6.4
+Requires-Dist: napari-console==0.1.3
+Requires-Dist: napari-matplotlib==3.0.0
+Requires-Dist: napari-plugin-engine==0.2.0
+Requires-Dist: napari-spatialdata==0.5.7
+Requires-Dist: napari-svg==0.2.1
+Requires-Dist: narwhals==2.6.0
+Requires-Dist: natsort==8.4.0
+Requires-Dist: nest-asyncio==1.6.0
+Requires-Dist: networkx==3.5
+Requires-Dist: npe2==0.7.9
+Requires-Dist: numba==0.62.1
+Requires-Dist: numcodecs==0.15.1
+Requires-Dist: numexpr==2.13.1
+Requires-Dist: numpy==2.2.6
+Requires-Dist: numpy-groupies==0.11.3
+Requires-Dist: numpydoc==1.9.0
+Requires-Dist: nvidia-cublas-cu12==12.8.4.1
+Requires-Dist: nvidia-cuda-cupti-cu12==12.8.90
+Requires-Dist: nvidia-cuda-nvrtc-cu12==12.8.93
+Requires-Dist: nvidia-cuda-runtime-cu12==12.8.90
+Requires-Dist: nvidia-cudnn-cu12==9.10.2.21
+Requires-Dist: nvidia-cufft-cu12==11.3.3.83
+Requires-Dist: nvidia-cufile-cu12==1.13.1.3
+Requires-Dist: nvidia-curand-cu12==10.3.9.90
+Requires-Dist: nvidia-cusolver-cu12==11.7.3.90
+Requires-Dist: nvidia-cusparse-cu12==12.5.8.93
+Requires-Dist: nvidia-cusparselt-cu12==0.7.1
+Requires-Dist: nvidia-nccl-cu12==2.27.3
+Requires-Dist: nvidia-nvjitlink-cu12==12.8.93
+Requires-Dist: nvidia-nvtx-cu12==12.8.90
+Requires-Dist: ome-types==0.6.1
+Requires-Dist: ome-zarr==0.11.1
+Requires-Dist: omnipath==1.0.12
+Requires-Dist: opencv-python==4.12.0.88
+Requires-Dist: openpyxl==3.1.5
+Requires-Dist: opt_einsum==3.4.0
+Requires-Dist: packaging==25.0
+Requires-Dist: pandas==2.2.3
+Requires-Dist: param==2.2.1
+Requires-Dist: parso==0.8.5
+Requires-Dist: partd==1.4.2
+Requires-Dist: patsy==1.0.1
+Requires-Dist: pexpect==4.9.0
+Requires-Dist: pillow==11.3.0
+Requires-Dist: PIMS==0.7
+Requires-Dist: Pint==0.25
+Requires-Dist: plotnine==0.15.0
+Requires-Dist: pooch==1.8.2
+Requires-Dist: prompt_toolkit==3.0.52
+Requires-Dist: propcache==0.4.0
+Requires-Dist: protobuf==6.32.1
+Requires-Dist: psutil==7.1.0
+Requires-Dist: psygnal==0.14.1
+Requires-Dist: ptyprocess==0.7.0
+Requires-Dist: pure_eval==0.2.3
+Requires-Dist: pyamg==5.3.0
+Requires-Dist: pyarrow==21.0.0
+Requires-Dist: pyCirclize==1.10.0
+Requires-Dist: pyconify==0.2.1
+Requires-Dist: pyct==0.5.0
+Requires-Dist: pydantic-compat==0.1.2
+Requires-Dist: pydantic-extra-types==2.10.5
+Requires-Dist: pydeseq2==0.5.2
+Requires-Dist: pynndescent==0.5.13
+Requires-Dist: pyogrio==0.11.1
+Requires-Dist: PyOpenGL==3.1.10
+Requires-Dist: pyproj==3.7.2
+Requires-Dist: pyproject_hooks==1.2.0
+Requires-Dist: PyQt5==5.15.11
+Requires-Dist: PyQt5-Qt5==5.15.17
+Requires-Dist: PyQt5_sip==12.17.0
+Requires-Dist: pyqtgraph==0.13.7
+Requires-Dist: pyro-api==0.1.2
+Requires-Dist: pyro-ppl==1.9.1
+Requires-Dist: pytacs==2025.9.4
+Requires-Dist: python-dateutil==2.9.0.post0
+Requires-Dist: python-igraph==0.11.9
+Requires-Dist: pytorch-lightning==2.5.5
+Requires-Dist: pytz==2025.2
+Requires-Dist: PyYAML==6.0.3
+Requires-Dist: pyzmq==27.0.2
+Requires-Dist: qtconsole==5.6.1
+Requires-Dist: QtPy==2.4.3
+Requires-Dist: readfcs==2.0.1
+Requires-Dist: requests==2.32.5
+Requires-Dist: roman-numerals-py==3.1.0
+Requires-Dist: s3fs==2025.9.0
+Requires-Dist: scanpy==1.10.4
+Requires-Dist: scikit-image==0.25.2
+Requires-Dist: scikit-learn==1.7.2
+Requires-Dist: scikit-misc==0.5.1
+Requires-Dist: scipy==1.13.1
+Requires-Dist: scvi-tools==1.4.0
+Requires-Dist: seaborn==0.13.2
+Requires-Dist: session-info2==0.2.1
+Requires-Dist: session_info==1.0.1
+Requires-Dist: setuptools==80.9.0
+Requires-Dist: shapely==2.1.1
+Requires-Dist: six==1.17.0
+Requires-Dist: slicerator==1.1.0
+Requires-Dist: snowballstemmer==3.0.1
+Requires-Dist: sortedcontainers==2.4.0
+Requires-Dist: sparse==0.17.0
+Requires-Dist: sparse_dot_mkl==0.9.9
+Requires-Dist: spatial_image==1.2.3
+Requires-Dist: spatialdata==0.5.0
+Requires-Dist: spatialdata-io==0.3.0
+Requires-Dist: spatialdata-plot==0.2.11
+Requires-Dist: Sphinx==8.2.3
+Requires-Dist: sphinxcontrib-applehelp==2.0.0
+Requires-Dist: sphinxcontrib-devhelp==2.0.0
+Requires-Dist: sphinxcontrib-htmlhelp==2.1.0
+Requires-Dist: sphinxcontrib-jsmath==1.0.1
+Requires-Dist: sphinxcontrib-qthelp==2.0.0
+Requires-Dist: sphinxcontrib-serializinghtml==2.0.0
+Requires-Dist: squidpy==1.6.5
+Requires-Dist: stack-data==0.6.3
+Requires-Dist: statsmodels==0.14.5
+Requires-Dist: stdlib-list==0.11.1
+Requires-Dist: superqt==0.7.6
+Requires-Dist: sympy==1.14.0
+Requires-Dist: tacco==0.4.0.post1
+Requires-Dist: tbb==2022.2.0
+Requires-Dist: tblib==3.1.0
+Requires-Dist: tcmlib==1.4.0
+Requires-Dist: tensorboard==2.20.0
+Requires-Dist: tensorboard-data-server==0.7.2
+Requires-Dist: texttable==1.7.0
+Requires-Dist: threadpoolctl==3.6.0
+Requires-Dist: tifffile==2025.8.28
+Requires-Dist: tinycss2==1.4.0
+Requires-Dist: tomli_w==1.2.0
+Requires-Dist: toolz==1.0.0
+Requires-Dist: torch==2.8.0
+Requires-Dist: torchmetrics==1.8.2
+Requires-Dist: tornado==6.5.2
+Requires-Dist: tqdm==4.67.1
+Requires-Dist: triton==3.4.0
+Requires-Dist: typeguard==4.4.4
+Requires-Dist: typer==0.16.0
+Requires-Dist: typer-slim==0.16.0
+Requires-Dist: typing_extensions==4.15.0
+Requires-Dist: tzdata==2025.2
+Requires-Dist: umap-learn==0.5.9.post2
+Requires-Dist: umf==0.11.0
+Requires-Dist: urllib3==2.5.0
+Requires-Dist: validators==0.35.0
+Requires-Dist: veracitools==0.1.3
+Requires-Dist: vispy==0.15.2
+Requires-Dist: wcwidth==0.2.13
+Requires-Dist: webencodings==0.5.1
+Requires-Dist: Werkzeug==3.1.3
+Requires-Dist: wheel==0.45.1
+Requires-Dist: xarray==2025.8.0
+Requires-Dist: xarray-dataclass==3.0.0
+Requires-Dist: xarray-datatree==0.0.14
+Requires-Dist: xarray-schema==0.0.3
+Requires-Dist: xarray-spatial==0.4.0
+Requires-Dist: xsdata==24.3.1
+Requires-Dist: xyzservices==2025.4.0
+Requires-Dist: yarl==1.20.1
+Requires-Dist: zarr==2.18.7
+Requires-Dist: zict==3.0.0
+Requires-Dist: zipp==3.23.0
+Requires-Dist: zstandard==0.23.0
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: summary
+
+#   Spatialsnake  :
+
+[![spatialsnake](https://img.shields.io/badge/snakemake-≥8.0.0-brightgreen.svg)](https://snakemake.github.io)
+[![GitHub actions status](https://github.com/<owner>/<repo>/workflows/Tests/badge.svg?branch=main)](https://github.com/<owner>/<repo>/actions?query=branch%3Amain+workflow%3ATests)
+[![run with conda](http://img.shields.io/badge/run%20with-conda-3EB049?labelColor=000000&logo=anaconda)](https://docs.conda.io/en/latest/)
+[![workflow catalog](https://img.shields.io/badge/Snakemake%20workflow%20catalog-darkgreen)](https://snakemake.github.io/snakemake-workflow-catalog/docs/workflows/<owner>/<repo>)
+
+A Snakemake workflow for `<description>`
+
+- [Snakemake workflow: `spatialsnake`](#snakemake-workflow-name)
+  - [Usage](#usage)
+  - [Deployment options](#deployment-options)
+  - [lzh](#authors)
+  - [References](#references)
+  - [TODO](#todo)
+
+
+
+## Usage:
+    spatialsnake single_analysis <INPUT> <TYPE> [--step=STEP] [options]
+    spatialsnake compare_analysis <INPUT> <TYPE> [--step=STEP] [options]
+    spatialsnake integrate <INPUT> <TYPE> [options]
+    spatialsnake segout <INTEGRATED_ZARR> [options]
+    spatialsnake --install-packages
+    spatialsnake (-h | --help)
+    spatialsnake --version
+
+    Main Commands:
+      single_analysis      Process single spatial transcriptomics dataset (runs all basic steps except advance_analysis by default)
+      compare_analysis     Compare multiple spatial transcriptomics datasets
+      integrate            Merge multiple ZARR datasets into one integrated dataset
+      segout               Split integrated ZARR data back into individual samples
+
+    Step Control:
+    --step STEP          Run specific analysis step (for single_analysis and compare_analysis)
+                         Options: integrate, preprocess, clustering, annotion_help, annotion, advance_analysis
+                         Default: run all basic steps (integrate→preprocess→clustering→annotion_help→annotion)
+
+    Input Arguments:
+    SAMPLE_LIST          Text file containing sample paths (one per line)
+    INTEGRATED_ZARR      Integrated ZARR file to split (for segout command)
+    annotion_list
+    filter_list
+
+    Type Arguments:
+    visium
+    visium_segment
+    visium_HD
+    xenium
+    Merfish
+    slide_seq
+    Spatial_ATAC
+
+    Basic Configuration:
+    --configfile FILE    Configuration file in YAML format [default: config.yaml].
+
+    Integration Step Options (--step integrate):
+    --SAMPLE_LIST FILE        sample list
+    --integration-method TEXT   Integration method [default: harmony].
+    --cells_boundaries BOOL    xenium key in load in data [default: False].
+    --nucleus_boundaries BOOL  xenium key in load in data [default: False].
+    --nucleus_labels BOOL      xenium key in load in data [default: False].
+    --morphology_mip BOOL      xenium key in load in data [default: False].
+
+    Preprocessing Step Options (--step preprocess):
+    --annotion_list FILE    for the filter params in different sample
+    --min_cells INT         Minimum spots per gene [default: 3].
+    --min_genes INT         Minimum genes per spot [default: 200].
+    --variable BOOL         Filter the variable spot to analysis [default: False].
+    --harmony BOOL          harmony method [default: True].
+    --seg_filter BOOL       to seg filter the differnet sample dataset when command compare_anaysis.
+    --NEIGHBORS FLOAT       neighbors for pca umap.
+    Clustering Step Options (--step clustering):
+    --resolution FLOAT   Cluster resolution [default: 0.5].
+    --cluster_algorithm TEXT Clustering algorithm [default: leiden].
+    --tsene BOOL        umap [default:False]
+    --MIN_DIST FLOAT    umap_key [default:0.3]
+    --SPREAD FLOAT      umap_key [default:1]
+
+    Annotation Help Step Options (--step annotion_help):
+    --image_slice BOOL        containing marker genes for cell types[default: False].
+    --markers_algorithm TEXT       Automatically detect marker genes [default: wilcoxon].
+    --shape_type TEXT         Automatically detect marker genes [default: cell_boundaries].
+    --image_type TEXT         Automatically detect marker genes [default: hires].
+    --spacies TEXT            Automatically detect marker genes [default: human].
+    --slice BOOL              params for the image slice to depandent size [default: False].
+    --x1 INT
+    --x2 INT
+    --y1 INT
+    --y2 INT
+    Compare_analyze Step Options (--step compare_analysis)    
+    --cell_focus TEXT         celltype you focus to compare in different sample.
+    --compare_algorithm TEXT  compare analysys
+    Annotation Step Options (--step annotion):
+    --annotation-file FILE    Annotation file for cell typing (required for annotion step)
+    --anno_algorithm TEXT     Annotation method [default: mannul].
+    --shape_type TEXT         Automatically detect marker genes [default: cell_boundaries].
+    --image_type TEXT         Automatically detect marker genes [default: hires].
+    --slice BOOL              params for the image slice to depandent size [default: False].
+    --x1 INT
+    --x2 INT
+    --y1 INT
+    --y2 INT
+    --max_epochs_reference INT    params for cell2Location model train and test [default: 250].
+    --remove_mt BOOL              params for cell2Location model train and test [default: True].
+    --N_cells_per_location INT    params for cell2Location model train and test [default: 30].
+    --max_epochs_st INT           params for cell2Location model train and test [default: 30000].
+    --device TEXT                 cpu or GPU accelerate [default: cuda].
+    
+    Advanced Analysis Step Options (--step advance_analysis):
+    --categrory TEXT        Run  which analysis analysis.
+    --pyscenic-input FILE   Input file for PySCENIC analysis.
+    --pyscenic-db FILE      PySCENIC database directory.
+    --pyscenic-feature FILE path for necessary file of pyscenic.
+    --pyscenic-tfs FILE     path for necessary file of pyscenic.
+    --cell_attr TEXT        cell_id for pyscenic [default: cell_id]
+    --workers INT           workers for pyscenic [default: 8].
+    --count-data TEXT       gene type for cellPhoneDB [default: hgnc_symbol].
+    --threads INT           workers for cellphoneDB [default: 8].
+    --output_name           output name for cellPhoneDB [default: Normal].
+    
+    Cell Segmentation Options (applicable to multiple steps):
+    --zarr_file FILE        seg with the sample name or region
+    
+
+    General Options:
+    -j INT, --jobs INT   Number of CPU cores [default: 4].
+    --output-dir DIR     Output directory [default: results].
+
+    Utility Options:
+    --install-packages   Install required packages.
+    -u, --unlock         Unlock stalled workflow.
+    -r, --remove         Remove all output files.
+    -d, --dry            Dry run (simulate execution).
+    -h, --help           Show this help message.
+    --version            Show version.
+
+
+
+## Examples:
+    Run all basic steps on single sample (default behavior)
+    spatialsnake single_analysis samples.txt
+    
+    Run only preprocessing step
+    spatialsnake single_analysis samples.txt --step preprocess
+    
+    Run annotation with custom annotation file
+    spatialsnake single_analysis samples.txt --step annotion --annotation-file celltypes.txt
+    
+    Run PySCENIC analysis
+    spatialsnake single_analysis samples.txt --step advance_analysis --run-pyscenic --pyscenic-db ./databases
+    
+    Integrate multiple samples
+    spatialsnake integrate samples.txt
+    
+    Split integrated data
+    spatialsnake segout integrated_data.zarr
+
+
+```bash
+conda install spatialsnake
+mkdir project
+cd project
+```
+
+Adjust options in the default config file `config/config.yaml`.
+Before running the complete workflow, you can perform a dry run using:
+
+```bash
+snakemake --dry-run
+```
+
+To run the workflow with test files using **conda**:
+
+```bash
+snakemake --cores 2 --sdm conda --directory .test
+```
+
+To run the workflow with **apptainer** / **singularity**, add a link to a container registry in the `Snakefile`, for example `container: "oras://ghcr.io/<user>/<repository>:<version>"` for Github's container registry.
+Run the workflow with:
+
+```bash
+snakemake --cores 2 --sdm conda apptainer --directory .test
+```
+
+## Authors
+
+- Firstname Lastname
+  - Affiliation
+  - ORCID profile
+  - home page
+
+## References
+
+> Köster, J., Mölder, F., Jablonski, K. P., Letcher, B., Hall, M. B., Tomkins-Tinch, C. H., Sochat, V., Forster, J., Lee, S., Twardziok, S. O., Kanitz, A., Wilm, A., Holtgrewe, M., Rahmann, S., & Nahnsen, S. _Sustainable data analysis with Snakemake_. F1000Research, 10:33, 10, 33, **2021**. https://doi.org/10.12688/f1000research.29032.2.
+
+## TODO
+
+- Replace `<owner>` and `<repo>` everywhere in the template with the correct user name/organization, and the repository name. The workflow will be automatically added to the [snakemake workflow catalog](https://snakemake.github.io/snakemake-workflow-catalog/index.html) once it is publicly available on Github.
+- Replace `<name>` with the workflow name (can be the same as `<repo>`).
+- Replace `<description>` with a description of what the workflow does.
+- Update the [deployment](#deployment-options), [authors](#authors) and [references](#references) sections.
+- Update the `README.md` badges. Add or remove badges for `conda`/`singularity`/`apptainer` usage depending on the workflow's [deployment](#deployment-options) options.
+- Do not forget to also adjust the configuration-specific `config/README.md` file.

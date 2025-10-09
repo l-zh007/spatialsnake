@@ -1,0 +1,8 @@
+include *.txt
+include Snakefile
+recursive-include spatialsnake *.R
+recursive-include spatialsnake *.py
+recursive-include spatialsnake *.sh
+recursive-include spatialsnake *.smk
+recursive-include spatialsnake Snakefile
+recursive-include spatialsnake config.yaml
