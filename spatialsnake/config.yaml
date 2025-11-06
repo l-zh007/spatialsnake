@@ -9,6 +9,7 @@ run_type: "visium"
 channel: "compare_analysis"
 seg_filter: False
 filter_list: 'filter_list.txt'
+
 image_slice: False
 markers_algorithm: 'wilcoxon'
 min_genes: 10
@@ -19,7 +20,7 @@ nucleus_boundaries: False
 nucleus_labels: False
 morphology_mip: False
 
-filter_list: 'filter_list.txt'
+
 anno_algorithm: "mannul"
 
 tsene: False
@@ -46,3 +47,27 @@ tfs_input: "data/hs_hgnc_tfs.txt"
 feather_input: "data/hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather"
 motifs_input: "data/motifs-v9-nr.hgnc-m0.001-o0.0.tbl"
 cell_attr: "spot_id"
+workers: 8
+
+
+compare_algorithm: 'DEseq2'
+n_clusters: 10
+
+
+
+
+counts_data:
+threshold:
+threads:
+pvalue:
+output_name:
+
+
+
+
+
+
+
+
+
+

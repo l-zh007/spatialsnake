@@ -1,15 +1,10 @@
 import os
 import spatialdata as spd
-import spatialdata_plot as splt
 import spatialdata_io as so
-import geosketch as sketch
 import numpy as np
 import pandas as pd
 import scanpy as sc
-import scanpy.external as sce
 import loompy
-import loompy as lp
-import numpy as np
 import argparse
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
 parser.add_argument('--input_dir', type=str, required=True, 
@@ -18,15 +13,14 @@ parser.add_argument('--loom', type=str, required=True,
                    help='Path for the output zarr file')
 parser.add_argument('--sample_id', type=str, required=True,
                    help='Path for the output zarr file')
+                   
+parser.add_argument('--types', type=str, required=True,
+                   help='Path for the output zarr file')
 args = parser.parse_args()
-
-
 output_dir = os.path.dirname(args.loom)
 print(output_dir)
 os.makedirs(output_dir,exist_ok=True)
-
-
-if type=="slide_seq":
+if types=="slide_seq" or os.path.splitext(args.input_dir)[1].lower()==".h5ad":
   adata = sc.read_h5ad(args.input_dir)
 else:
   concatenated_sdata = spd.read_zarr(args.input_dir)
@@ -34,18 +28,7 @@ else:
   for table in concatenated_sdata.tables.keys():
     table=table
     adata = concatenated_sdata[table]
-
-print(adata.obs)
-print(adata.var)
-print("###############")
-adata_T = adata.T
-print(adata_T.obs)
-print(adata_T.var)
 adata.write_loom(args.loom)
-
-
-
-print(adata_T.obs)
 
 
 # with loompy.connect("./Non_Lession.loom") as ds:

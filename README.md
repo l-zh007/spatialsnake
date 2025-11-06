@@ -1,11 +1,13 @@
 #   Spatialsnake  :
 
 [![spatialsnake](https://img.shields.io/badge/snakemake-≥8.0.0-brightgreen.svg)](https://snakemake.github.io)
-[![GitHub actions status](https://github.com/<owner>/<repo>/workflows/Tests/badge.svg?branch=main)](https://github.com/<owner>/<repo>/actions?query=branch%3Amain+workflow%3ATests)
 [![run with conda](http://img.shields.io/badge/run%20with-conda-3EB049?labelColor=000000&logo=anaconda)](https://docs.conda.io/en/latest/)
 [![workflow catalog](https://img.shields.io/badge/Snakemake%20workflow%20catalog-darkgreen)](https://snakemake.github.io/snakemake-workflow-catalog/docs/workflows/<owner>/<repo>)
 
-A Snakemake workflow for `<description>`
+A Snakemake workflow for spatial transcriptomics  powered by spatialdata framework
+
+for more detail of the usage of the pipeline please read the document
+[![document](https://spatialsnake-tutorial.readthedocs.io/en/latest/)
 
 - [Snakemake workflow: `spatialsnake`](#snakemake-workflow-name)
   - [Usage](#usage)
@@ -17,150 +19,134 @@ A Snakemake workflow for `<description>`
 
 
 ## Usage:
-    spatialsnake single_analysis <INPUT> <TYPE> [--step=STEP] [options]
-    spatialsnake compare_analysis <INPUT> <TYPE> [--step=STEP] [options]
-    spatialsnake integrate <INPUT> <TYPE> [options]
-    spatialsnake segout <INTEGRATED_ZARR> [options]
-    spatialsnake --install-packages
+    spatialsnake <command> <INPUT> <TYPE> [--option=<analysis_option>] [options]
+    spatialsnake segout <INTEGRATED_ZARR> [--option=<analysis_option>] [options]
+    spatialsnake produce-yaml [--option=<analysis_option>]
+    spatialsnake install-packages
     spatialsnake (-h | --help)
     spatialsnake --version
 
-    Main Commands:
+    commands:
       single_analysis      Process single spatial transcriptomics dataset (runs all basic steps except advance_analysis by default)
       compare_analysis     Compare multiple spatial transcriptomics datasets
-      integrate            Merge multiple ZARR datasets into one integrated dataset
-      segout               Split integrated ZARR data back into individual samples
 
-    Step Control:
-    --step STEP          Run specific analysis step (for single_analysis and compare_analysis)
-                         Options: integrate, preprocess, clustering, annotion_help, annotion, advance_analysis
-                         Default: run all basic steps (integrate→preprocess→clustering→annotion_help→annotion)
-
-    Input Arguments:
-    SAMPLE_LIST          Text file containing sample paths (one per line)
-    INTEGRATED_ZARR      Integrated ZARR file to split (for segout command)
-    annotion_list
-    filter_list
+    analysis option:
+        integrate
+        preprocess
+        clustering
+        annotion_help
+        annotion
+        compare_analyze
+        advance_analysis
 
     Type Arguments:
-    visium
-    visium_segment
-    visium_HD
-    xenium
-    Merfish
-    slide_seq
-    Spatial_ATAC
+        visium
+        visium_segment
+        visium_HD
+        xenium
+        Merfish
+        slide_seq
 
+    INPUT Arguments:
+        sample.txt
+        annotion.txt
+        filter_list
+    
     Basic Configuration:
-    --configfile FILE    Configuration file in YAML format [default: config.yaml].
+        --configfile <FILE>    Configuration file in YAML format [default: config.yaml].
 
-    Integration Step Options (--step integrate):
-    --SAMPLE_LIST FILE        sample list
-    --integration-method TEXT   Integration method [default: harmony].
-    --cells_boundaries BOOL    xenium key in load in data [default: False].
-    --nucleus_boundaries BOOL  xenium key in load in data [default: False].
-    --nucleus_labels BOOL      xenium key in load in data [default: False].
-    --morphology_mip BOOL      xenium key in load in data [default: False].
+    Integration Step Options (--option integrate):
+        --cells_boundaries <BOOL>    xenium key in load in data [default: False].
+        --nucleus_boundaries <BOOL>  xenium key in load in data [default: False].
+        --nucleus_labels <BOOL>      xenium key in load in data [default: False].
+        --morphology_mip <BOOL>      xenium key in load in data [default: False].
 
-    Preprocessing Step Options (--step preprocess):
-    --annotion_list FILE    for the filter params in different sample
-    --min_cells INT         Minimum spots per gene [default: 3].
-    --min_genes INT         Minimum genes per spot [default: 200].
-    --variable BOOL         Filter the variable spot to analysis [default: False].
-    --harmony BOOL          harmony method [default: True].
-    --seg_filter BOOL       to seg filter the differnet sample dataset when command compare_anaysis.
-    --NEIGHBORS FLOAT       neighbors for pca umap.
-    Clustering Step Options (--step clustering):
-    --resolution FLOAT   Cluster resolution [default: 0.5].
-    --cluster_algorithm TEXT Clustering algorithm [default: leiden].
-    --tsene BOOL        umap [default:False]
-    --MIN_DIST FLOAT    umap_key [default:0.3]
-    --SPREAD FLOAT      umap_key [default:1]
-
-    Annotation Help Step Options (--step annotion_help):
-    --image_slice BOOL        containing marker genes for cell types[default: False].
-    --markers_algorithm TEXT       Automatically detect marker genes [default: wilcoxon].
-    --shape_type TEXT         Automatically detect marker genes [default: cell_boundaries].
-    --image_type TEXT         Automatically detect marker genes [default: hires].
-    --spacies TEXT            Automatically detect marker genes [default: human].
-    --slice BOOL              params for the image slice to depandent size [default: False].
-    --x1 INT
-    --x2 INT
-    --y1 INT
-    --y2 INT
-    Compare_analyze Step Options (--step compare_analysis)    
-    --cell_focus TEXT         celltype you focus to compare in different sample.
-    --compare_algorithm TEXT  compare analysys
-    Annotation Step Options (--step annotion):
-    --annotation-file FILE    Annotation file for cell typing (required for annotion step)
-    --anno_algorithm TEXT     Annotation method [default: mannul].
-    --shape_type TEXT         Automatically detect marker genes [default: cell_boundaries].
-    --image_type TEXT         Automatically detect marker genes [default: hires].
-    --slice BOOL              params for the image slice to depandent size [default: False].
-    --x1 INT
-    --x2 INT
-    --y1 INT
-    --y2 INT
-    --max_epochs_reference INT    params for cell2Location model train and test [default: 250].
-    --remove_mt BOOL              params for cell2Location model train and test [default: True].
-    --N_cells_per_location INT    params for cell2Location model train and test [default: 30].
-    --max_epochs_st INT           params for cell2Location model train and test [default: 30000].
-    --device TEXT                 cpu or GPU accelerate [default: cuda].
+    Preprocessing Step Options (--option preprocess):
+        --min_cells <INT>         Minimum spots per gene [default: 3].
+        --min_genes <INT>         Minimum genes per spot [default: 200].
+        --seg_filter <BOOL>       to seg filter the differnet sample dataset when command compare_anaysis [default: False].
+        --filter_list <FILE>      filename of filter [default: False]
+        --batch_method <TEXT>     batch method for multiple sample analysis [default: harmony]
+        --sketch <BOOL>           whether use sketch method to analysis [default: False]
     
-    Advanced Analysis Step Options (--step advance_analysis):
-    --categrory TEXT        Run  which analysis analysis.
-    --pyscenic-input FILE   Input file for PySCENIC analysis.
-    --pyscenic-db FILE      PySCENIC database directory.
-    --pyscenic-feature FILE path for necessary file of pyscenic.
-    --pyscenic-tfs FILE     path for necessary file of pyscenic.
-    --cell_attr TEXT        cell_id for pyscenic [default: cell_id]
-    --workers INT           workers for pyscenic [default: 8].
-    --count-data TEXT       gene type for cellPhoneDB [default: hgnc_symbol].
-    --threads INT           workers for cellphoneDB [default: 8].
-    --output_name           output name for cellPhoneDB [default: Normal].
+    Clustering Step Options (--option clustering):
+        --resolution <FLOAT>        Cluster resolution [default: 0.5].
+        --cluster_algorithm <TEXT>  Clustering algorithm [default: leiden].
+        --tsene <BOOL>              umap [default:False].
+        --n_clusters <INT>          kmeans params of cluster [default: 15].
     
-    Cell Segmentation Options (applicable to multiple steps):
-    --zarr_file FILE        seg with the sample name or region
+    Annotation Help Step Options (--option annotion_help):
+        --markers_algorithm <TEXT>       Automatically detect marker genes [default: wilcoxon].
+        --spacies <TEXT>            Automatically detect marker genes [default: human].
     
+    Compare_analyze option Options (--option compare_analysis)
+        --cell_focus <TEXT>         celltype you focus to compare in different sample[default: None].
+        --compare_algorithm <TEXT>  compare analysys [default: DEseq2].
+    Annotation option Options (--option annotion):
+        --annotation-file <FILE>    Annotation file for cell typing (required for annotion step)
+        --anno_algorithm <TEXT>     Annotation method [default: mannul].
+        --shape_type <TEXT>         Automatically detect marker genes [default: cell_boundaries].
+        --image_type <TEXT>         Automatically detect marker genes [default: hires].
+        --device <TEXT>                 cpu or GPU accelerate [default: cuda].
 
+    Advanced Analysis option Options (--option advance_analysis):
+        --runpipe <TEXT>        Run  which analysis analysis.[default: advance_analysis]
+        --senic_input <DIR>   Input file for PySCENIC analysis.[default: sample.zarr]
+        --motifs_input <FILE>      PySCENIC database directory.[default: motifs-v9-nr.hgnc-m0.001-o0.0.tbl]
+        --feather_input <FILE> path for necessary file of pyscenic.[default: hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather]
+        --tfs_input <FILE>     path for necessary file of pyscenic.[default: hs_hgnc_tfs.txt]
+        --count-data <TEXT>       gene type for cellPhoneDB [default: hgnc_symbol].
+        --threads <INT>           workers for cellphoneDB [default: 8].
+        --output_name <TEXT>      output name for cellPhoneDB [default: Normal].
+    
     General Options:
-    -j INT, --jobs INT   Number of CPU cores [default: 4].
-    --output-dir DIR     Output directory [default: results].
+        -j <INT>, --jobs <INT>   Number of CPU cores [default: 32].
+        --results_folder <DIR>     Output directory [default: results].
 
     Utility Options:
-    --install-packages   Install required packages.
-    -u, --unlock         Unlock stalled workflow.
-    -r, --remove         Remove all output files.
-    -d, --dry            Dry run (simulate execution).
-    -h, --help           Show this help message.
-    --version            Show version.
+        --install-packages   Install required packages.
+        -u, --unlock         Unlock stalled workflow.
+        -r, --remove         Remove all output files.
+        -d, --dry            Dry run (simulate execution).
+        -h, --help           Show this help message.
+        --version            Show version.
 
 
 
 ## Examples:
     Run all basic steps on single sample (default behavior)
-    spatialsnake single_analysis samples.txt
+    spatialsnake <sample_channal> sample.txt <data_type> --option=all
     
-    Run only preprocessing step
-    spatialsnake single_analysis samples.txt --step preprocess
+    Run only one step of ["integrate","preprocess","clustering","annotion_help","annotion","compare_analyze","advance_analysis"]
+      spatialsnake <sample_channal> sample.txt <data_type> --option=<option_name>
     
-    Run annotation with custom annotation file
-    spatialsnake single_analysis samples.txt --step annotion --annotation-file celltypes.txt
+    Run compare_analysis
+      spatialsnake compare_analysis sample.txt <data_type> --option=<option_name>
     
-    Run PySCENIC analysis
-    spatialsnake single_analysis samples.txt --step advance_analysis --run-pyscenic --pyscenic-db ./databases
+    use costom params with *.yaml file
+      spatialsnake <sample_channal> sample.txt <data_type> --option=<option_name> --config-file <*.yaml>
     
-    Integrate multiple samples
-    spatialsnake integrate samples.txt
+    Split integrated data with barcode
+      spatialsnake segout integrated_data.zarr --data_barcode B_cell
+      
+    Split integrated data with image coordinate
+      spatialsnake segout integrated_data.zarr --max_x --min_x --max_y --min_y2
     
-    Split integrated data
-    spatialsnake segout integrated_data.zarr
-
+    Get detail params of some step
+      spatialsnake produce-file [--option=<analysis_option>]
+      
+    Install coordinate R packages  
+      spatialsnake install-packages
 
 ```bash
-conda install spatialsnake
+git clone https://github.com/l-zh007/spatialsnake.git
+cd spatialsnake
+python setup.py install
+spatialsnake -h
 mkdir project
 cd project
+
+start your analysis with sample.txt
 ```
 
 Adjust options in the default config file `config/config.yaml`.

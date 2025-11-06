@@ -22,7 +22,7 @@ def check_file_exit(type,dir_path):
         'xenium': [
             'cells.parquet',
             'transcripts.parquet',
-            'morphology_focus.ome.tif',
+            'morphology.ome.tif',
             'experiment.xenium'],
         'slide_seq': [
             'BeadLocationsForR.csv',
@@ -78,13 +78,11 @@ def get_sample_paths(sample_list_file):
             sample = line[0].strip()
             dir_path = line[1].strip()
             if channel=="compare_analysis":
-              group.append(line[2].strip())
+                group.append(line[2].strip()) if type!="visium_HD" else group.append(line[3].strip())
             if type=="visium_HD":
-              
-              if channel=="compare_analysis":
-                group.append(line[3].strip())
-              bin_size.append(line[2].strip())
-              dir_path=os.path.join(f"{line[1].strip()}","binned_outputs",f"square_{line[2].strip()}um")
+              bins="{:03d}".format(int(line[2].strip()))
+              bin_size.append(bins)
+              dir_path=os.path.join(f"{line[1].strip()}","binned_outputs",f"square_{bins}um")
             if type=="visium_segment":
               dir_path=os.path.join(f"{line[1].strip()}","segmented_outputs")
             if check_file_exit(type,dir_path):
@@ -127,12 +125,14 @@ def seg_filter_sample(filter_list):
                     sample_id = line_parts[0]
                     val1 = line_parts[1]
                     val2 = line_parts[2]
+                    val3 = line_parts[3]
                     try:
-                        val1_int = int(val1)
-                        val2_int = int(val2)
+                        val1_int = float(val1)
+                        val2_int = float(val2)
+                        val3_int = float(val3)
                     except ValueError as e:
                         raise ValueError(f"'{val1}','{val2}' not int") from e
-                    sample_dict[sample_id] = [val1_int, val2_int]
+                    sample_dict[sample_id] = [val1_int, val2_int,val3_int]
                 except (IndexError, ValueError) as e:
                     raise RuntimeError(f"{line_number} : {str(e)}") from e
     except FileNotFoundError:
@@ -141,6 +141,8 @@ def seg_filter_sample(filter_list):
     
 
 def get_annotion(file_path, samples):
+    if not os.path.isfile(file_path):
+      sys.exit(f"the {file_path} file not found")
     sample_annotations = {}
     annotation_counts = {}
     sample=["concatenated_sdata"] if channel=="compare_analysis" else samples
@@ -166,7 +168,7 @@ def get_annotion(file_path, samples):
                 continue
             parts = line.split(',')
             if len(parts) < 2:
-                print(f"警告：第{line_num}行格式不正确，跳过该行")
+                print(f"please check the line:{line_num} confirm it ligally")
                 continue
             sample_name = parts[0].strip()
             annotations = [part.strip() for part in parts[1:]]

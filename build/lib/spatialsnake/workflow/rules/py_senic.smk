@@ -4,7 +4,8 @@ rule convert_to_loom:
     output:
         loom = os.path.join(results_folder,"pysenic_results",f"{sample_id}.loom")
     params:
-        sample_id = sample_id
+        sample_id = sample_id,
+        types = run_type
     shell:
       """
       python {spatialsnake_path}workflow/scripts/pysenic.py \
@@ -16,7 +17,7 @@ rule convert_to_loom:
 rule pyscenic_grn:
     input:
         loom = os.path.join(results_folder,"pysenic_results",f"{sample_id}.loom"),
-        tfs = config["tfs_input"]   #os.path.join("data",'hs_hgnc_tfs.txt')
+        tfs = os.path.join("data",tfs_input)    ##
     output:
         grn = os.path.join(results_folder,"pysenic_results",f"{sample_id}.grn.tsv")
     params:
@@ -40,8 +41,8 @@ rule pyscenic_grn:
 rule pyscenic_ctx:
     input:
         grn = os.path.join(results_folder,"pysenic_results",f"{sample_id}.grn.tsv"),
-        rankings = config["feather_input"],  #os.path.join("data",'hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather'),
-        motifs = config["motifs_input"],  #os.path.join("data",'motifs-v9-nr.hgnc-m0.001-o0.0.tbl'),
+        rankings = os.path.join("data",rankings_input),
+        motifs = os.path.join("data",motifs_input),
         loom = os.path.join(results_folder,"pysenic_results",f"{sample_id}.loom")
     output:
         regulons = os.path.join(results_folder,"pysenic_results",f"{sample_id}.regulons.csv")
@@ -63,19 +64,19 @@ rule pyscenic_ctx:
 #            --mode "{params.mode}" \
 rule pyscenic_aucell:
     input:
-        loom =  os.path.join(results_folder,"pysenic_results",f"{sample_id}.loom"),
         regulons = os.path.join(results_folder,"pysenic_results",f"{sample_id}.regulons.csv")
     output:
         aucell = os.path.join(results_folder,"pysenic_results",f"{sample_id}.aucell.loom")
     params:
-        workers = config.get("num_workers", 10),
-        gene_attr = config.get("gene_attribute", "var_names"),
-        cell_attr = config.get("cell_attr", "cell_id")
+        inputs = config["senic_input"],
+        num_workers = num_workers,
+        types = run_type
     shell:
         """
-        pyscenic aucell {input.loom} {input.regulons} \
-            --output {output.aucell} \
-            --num_workers {params.workers} \
-            --gene_attribute {params.gene_attr} \
-            --cell_id_attribute {params.cell_attr}
+        python {spatialsnake_path}workflow/scripts/pysenic_visualize.py \
+            --regulons {input.regulons} \
+            --inputs {params.inputs} \
+            --sample_id {params.sample_id} \
+            --num_workers {params.num_workers} \
+            --types {params.types}
         """

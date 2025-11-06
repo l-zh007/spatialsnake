@@ -5,4 +5,4 @@ recursive-include spatialsnake *.py
 recursive-include spatialsnake *.sh
 recursive-include spatialsnake *.smk
 recursive-include spatialsnake Snakefile
-recursive-include spatialsnake config.yaml
+recursive-include spatialsnake *.yaml

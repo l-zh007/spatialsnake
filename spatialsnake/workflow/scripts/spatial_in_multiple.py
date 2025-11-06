@@ -286,7 +286,6 @@ elif type=="visium":
       for table in sdata.tables.values():
           table.obs["sample"] = sample[i]
           table.obs["group"]=group[i]
-          table.obs['cell_id'] = table.obs['spot_id']
           table.obs['cell_id'] = table.obs.index
           sdata.shapes[sample[i]].index=table.obs['cell_id']
           print(sdata.shapes)

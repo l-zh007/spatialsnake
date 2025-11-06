@@ -18,6 +18,7 @@ from pydeseq2.ds import DeseqStats
 from PIL import Image
 from spatialdata.transformations import Identity, Scale
 from shapely.geometry import Polygon
+from spatialsnake.workflow.function.plot import cluster_proportion
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
 parser.add_argument('--input_dir', type=str, required=True, 
                    help='Path to the raw data directory')
@@ -60,7 +61,38 @@ if args.anno_data:
 #     '8': 'Goblet',
 #     '9': 'Enterocyte'
 # }
+def render_spatial_plots(shapes,images,systems):
+    for i in range(len(images)):
+        sys=systems[0] if len(valid_coord_systems)<2 else systems[i]
+        title=images[i].replace("_hires_image","")
+        axes = plt.subplots(2, 1, figsize=(20, 13))[1].flatten()
+        if args.image_slice == True:
+            concatenated_sdata=crop0(concatenated_sdata,sys,x1,x2,y1,y2)
+        concatenated_sdata.pl.render_images(images[i]).pl.show(ax=axes[0], title="image",coordinate_systems=sys)
+        concatenated_sdata.pl.render_images(images[i]).pl.render_shapes(shapes[i],color="celltype").pl.show(ax=axes[1],coordinate_systems=sys, title=title)
+        plt.savefig(
+        os.path.join(dir_path, f"{images[i]}_Clusters.png"),
+        dpi=300,
+        bbox_inches='tight')
+        plt.close()
 
+def crop0(x,crs,x1,x2,y1,y2):
+    return bounding_box_query(
+        x,
+        min_coordinate=[x1, y1],
+        max_coordinate=[x2, y2],
+        axes=("x", "y"),
+        target_coordinate_system=crs)
+
+def slide_seq_plot(adata):
+  for sample in adata.obs['region'].unique():
+    adata_sample = adata[adata.obs['region'] == sample]
+    sq.pl.spatial_scatter(adata_sample, color="celltype", shape=None, title=sample)
+    plt.savefig(
+        os.path.join(dir_path, f"{args.sample_id}_celltype.png"),
+        dpi=300,
+        bbox_inches='tight')
+    plt.close()
 
 def annotion(adata):
   original_clusters = adata.obs['clusters']
@@ -73,114 +105,59 @@ def annotion(adata):
 if type=="slide_seq":
   adata = sc.read_h5ad(args.input_dir)
   adata = annotion(adata)
-  sq.pl.spatial_scatter(adata, shape=None, color="celltype")
-  plt.savefig(
-        os.path.join(output_dir, "{args.sample_id}celltype.png"),
-        dpi=300,
-        bbox_inches='tight')
-  plt.show()
-  plt.close()
-  exit()
+  slide_seq_plot(adata)
 else:
   concatenated_sdata = spd.read_zarr(args.input_dir)
+  print(concatenated_sdata)
   for table in concatenated_sdata.tables.keys():
     table=table
-    concatenated_sdata[table]=annotion(concatenated_sdata[table])
-    print(concatenated_sdata,concatenated_sdata[table])
+    adata = concatenated_sdata[table]
+  sample_cnt=args.sample_cnt
+  image_elements = list(concatenated_sdata.images.keys())
+  shape_elements = list(concatenated_sdata.shapes.keys())
+  valid_coord_systems = sorted(concatenated_sdata.coordinate_systems)
+  image_counts=len(image_elements)//sample_cnt
+  shape_count=len(shape_elements)//sample_cnt
+  shapes=[]
+  images=[]
+  systems=[]
+  if len(valid_coord_systems)>1:
+      for i in range(len(image_elements)):
+        if args.image_type in image_elements[i]:
+          images.append(image_elements[i])
+  else:
+      images=image_elements
+
+  if len(valid_coord_systems)>1:
+      for i in range(len(valid_coord_systems)):
+          if args.image_type in valid_coord_systems[i]:
+            systems.append(valid_coord_systems[i])
+  else:
+      systems=valid_coord_systems
+  print(shape_count,shape_elements)
+  if shape_count>1 and type!="visium":
+      for i in range(len(shape_elements)):
+        if args.shape_type in shape_elements[i]:
+          shapes.append(shape_elements[i])
+  else:
+      shapes=shape_elements
+  print(shapes)
+  print(images)
+  print(systems)
+  render_spatial_plots(shapes,images,systems) 
 
 
-
-
-
-def crop0(x,crs,x1,x2,y1,y2):
-    return bounding_box_query(
-        x,
-        min_coordinate=[x1, y1],
-        max_coordinate=[x2, y2],
-        axes=("x", "y"),
-        target_coordinate_system=crs)
-    
-
-sample_cnt=args.sample_cnt
-
-
-image_elements = list(concatenated_sdata.images.keys())
-shape_elements = list(concatenated_sdata.shapes.keys())
-valid_coord_systems = sorted(concatenated_sdata.coordinate_systems)
-
-
-# x1,x2,y1,y2=args.coord
-
-image_counts=len(image_elements)//sample_cnt
-shape_count=len(shape_elements)//sample_cnt
-shapes=[]
-images=[]
-systems=[]
-
-
-# images = [img for img in image_elements if args.image_type in img] if image_counts=len(image_elements)//sample_cnt > 1 else image_elements
-# systems = [sys for sys in valid_coord_systems if args.image_type in sys] if len(valid_coord_systems) > 1 else valid_coord_systems
-# shapes = [shape for shape in shape_elements if args.shape_type in shape] if len(shape_elements)//sample_cnt > 1 else shape_elements
-
-if image_counts>1:
-  for i in range(len(image_elements)):
-    if args.image_type in image_elements[i]:
-      images.append(image_elements[i])
-else:
-  images=image_elements
-
-if len(valid_coord_systems)>1:
-  for i in range(len(valid_coord_systems)):
-      if args.image_type in valid_coord_systems[i]:
-        systems.append(valid_coord_systems[i])
-else:
-  systems=valid_coord_systems
-print(args.type)
-print(shape_count)
-if shape_count>1 and args.type !="visium":
-  for i in range(len(shape_elements)):
-    if args.shape_type in shape_elements[i]:
-      shapes.append(shape_elements[i])
-else:
-  shapes=shape_elements
-
-print(shapes)
-print(images)
-print(systems)
-extents=[]
-for i in range(len(images)):
-    sys=systems[0] if len(valid_coord_systems)<2 else systems[i]
-    title=images[i].replace("_hires_image","")
-    print("##########################################")
-    extent = spd.get_extent(concatenated_sdata,elements=[shapes[i]],coordinate_system=sys)
-    extents.append(extent)
-
-if len(images) != len(shapes):
-    print(extent)
-    print("Check the spatial data to make sure that for every image there is a shape")
-    print(images,shapes)
-    exit()
-
-else:
-  for i in range(len(images)):
-        sys=systems[0] if len(valid_coord_systems)<2 else systems[i]
-        print("Plotting: "+ images[i])
-        print(sys)
-        print(images[i],shapes[i])
-        axes = plt.subplots(2, 1, figsize=(20, 13))[1].flatten()
-        if args.image_slice == True:
-            print(args.image_slice)
-            print("sdasdasdasda")
-            concatenated_sdata=crop0(concatenated_sdata,sys,x1,x2,y1,y2)
-        concatenated_sdata.pl.render_images(images[i]).pl.show(ax=axes[0], title="image",coordinate_systems=sys)
-        concatenated_sdata.pl.render_images(images[i]).pl.render_shapes(shapes[i],color="celltype").pl.show(ax=axes[1],coordinate_systems=sys, title=title)
-        plt.savefig(
-        os.path.join(dir_path, f"{images[i]}.png"),
-        dpi=300,
-        bbox_inches='tight')
-        plt.close()
+cluster_proportion(adata, sample_col='region', 
+                      cluster_col='celltype',
+                      figsize=(12, 8),
+                      palette='tab20',
+                      sort_samples=None,
+                      sort_clusters=None,
+                      title="celltype_proportion",
+                      save_path=os.path.join(dir_path, f"celltype_proportion.png"),
+                      dpi=300)
         
-sc.pl.umap(concatenated_sdata[table],color="celltype",wspace=0.4)
+sc.pl.umap(adata,color="celltype",wspace=0.4)
 plt.savefig(
     os.path.join(dir_path, f"{args.sample_id}UMAP.png"),
       dpi=300,
@@ -188,9 +165,9 @@ plt.savefig(
 plt.show()
 plt.close()
 
-sc.pl.violin(concatenated_sdata[table], ["n_genes_by_counts"], groupby="celltype", rotation=90)
+sc.pl.violin(adata, ["n_genes_by_counts"], groupby="celltype", rotation=90)
 plt.savefig(
-    os.path.join(dir_path, f"{args.sample_id}gene_enrich.png"),
+    os.path.join(dir_path, f"{args.sample_id}_gene_enrich.png"),
       dpi=300,
       bbox_inches='tight')
 plt.show()

@@ -25,7 +25,7 @@ rule enrich_rule:
     sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" and seg_filter==False else wildcards.sample,
   shell:
       """
-      R {spatialsnake_path}workflow/scripts/enrichment.R.py \
+      Rscript {spatialsnake_path}workflow/scripts/enrichment.R.py \
         --input_dir {input.inputs} \
         --sample_id {params.sample_id} \
         --output_path {output.merge} \

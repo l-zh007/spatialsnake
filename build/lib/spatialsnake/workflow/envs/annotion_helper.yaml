@@ -1,0 +1,18 @@
+# total params
+option: "advance_analysis"          # the analysis step for pipeline
+results_folder: "results"           # the results data folder name
+data_fold: "data"                   # the raw mat data folder name
+sample_list: "sample.txt"           # the sample detail information file
+run_type: "visium"                  # the spatial transcription data type
+channel: "compare_analysis"         # the channel of analysis style [single_analysis] or [compare_analysis]
+
+
+markers_algorithm:                  # find markers algorithm of each clusters [default: wilcoxon].
+shape_type:                         # shape data name of spatialdata shapes visualize [cell_boundaries ].
+image_type:                         # image data name of spatialdata images to visualize [hires] [low]
+spacies:                            # GO and kegg analysis params [human] or [mouse]
+image_slice:                        # whether slice image to depandent size
+x1:                                 # system of the sliced image size
+x2:
+y1:
+y2:

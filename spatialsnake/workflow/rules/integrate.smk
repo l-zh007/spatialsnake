@@ -5,15 +5,14 @@ def input_file(run_type):
     return(os.path.join(data_fold,'{sample}',"binned_outputs","square_{bin}um",main_file))
   elif run_type=="visium_segment":
     return os.path.join(data_fold, "{sample}", "segmented_outputs", main_file)
-print(input_file(run_type))
 def get_output(run_type):
   if channel == 'single_analysis':
     if run_type=="visium_HD":
-      return(directory(os.path.join(results_folder, "{sample}_{bin}um", "{sample}.zarr")))
+      return(directory(os.path.join(results_folder, "{sample}_{bin}um",'integrate', "{sample}.zarr")))
     elif run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
-      return(directory(os.path.join(results_folder, "{sample}", "{sample}.zarr")))
+      return(directory(os.path.join(results_folder, "{sample}",'integrate', "{sample}.zarr")))
     elif run_type=="slide_seq":
-      return(os.path.join(results_folder, "{sample}", "{sample}.h5ad"))
+      return(os.path.join(results_folder, "{sample}",'integrate',"{sample}.h5ad"))
   elif channel=="compare_analysis":
     if run_type=="visium_HD":
       return(directory(os.path.join(results_folder, "{group}_{bin}um", "{sample}.zarr")))

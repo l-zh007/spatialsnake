@@ -1,20 +1,22 @@
-# def annotion_help_output(run_type):
-#   if channel == 'single_analysis':
-#     if run_type=="visium_HD":
-#       return(os.path.join(results_folder, "{sample}_{bin}um", 'clustering',"{sample}.zarr"))
-#     elif run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
-#       print("correct")
-#       return(os.path.join(results_folder, "{sample}",'clustering', "{sample}.zarr"))
-#     elif run_type=="slide_seq":
-#       return(os.path.join(results_folder, "{sample}", 'clustering',"{sample}.h5ad"))
-#   if channel=="compare_analysis":
-#     return(parameter_output(samples,"clustering"))
+def annotion_help_output(run_type,file_name):
+  if channel == 'single_analysis':
+    if run_type=="visium_HD":
+      return(os.path.join(results_folder, "{sample}_{bin}um", 'clustering',file_name))
+    elif run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+      print("correct")
+      return(os.path.join(results_folder, "{sample}",'clustering', file_name))
+    elif run_type=="slide_seq":
+      return(os.path.join(results_folder, "{sample}", 'clustering',file_name))
+  if channel=="compare_analysis":
+    return(os.path.join(results_folder,"merge_data",'clustering',file_name))
+
 
 rule annotion_help:
   input:
     inputs=nomal_file(run_type,"clustering")
   output:
-    merge=os.path.join(results_folder,"{sample}",'clustering','marker_genes_pval.csv') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'clustering','marker_genes_pval.csv') 
+    merge=annotion_help_output(run_type,'marker_genes_pval.csv')
+    # os.path.join(results_folder,"{sample}",'clustering','marker_genes_pval.csv') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'clustering','marker_genes_pval.csv') 
   params:
     sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" and seg_filter==False else wildcards.sample,
     run_type = run_type,
@@ -41,9 +43,10 @@ rule annotion_help:
 
 rule enrich_rule:
   input:
-    inputs = os.path.join(results_folder,"{sample}",'clustering','marker_genes_pval.csv') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'clustering','marker_genes_pval.csv') 
+    inputs = annotion_help_output(run_type,'marker_genes_pval.csv')
   output:
-    merge = os.path.join(results_folder,"{sample}",'clustering/kegg_data.csv') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'clustering','kegg_data.csv')
+    merge = annotion_help_output(run_type,'kegg_data.csv')
+    #os.path.join(results_folder,"{sample}",'clustering','kegg_data.csv') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'clustering','kegg_data.csv')
   params:
     spacies = spacies,
     run_type = run_type,

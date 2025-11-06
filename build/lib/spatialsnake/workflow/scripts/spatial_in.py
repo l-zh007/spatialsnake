@@ -58,15 +58,9 @@ parser.add_argument("--coor_file", type=str, required=False, help="bin")
 args = parser.parse_args()
 
 
-
 count_file= args.count_file
-
-normalized_path = os.path.normpath(args.input_dir)
-real_dir=normalized_path.split(os.path.sep)
-real_dir="/".join(real_dir[:2])
-print(real_dir)
+real_dir = "/".join(os.path.normpath(args.input_dir).split(os.path.sep)[:2])
 type=args.type
-print(type)
 
 
 
@@ -74,15 +68,13 @@ def QC_plot(type,sdata,zarr_name):
   dir_path=os.path.dirname(zarr_name)
   if type!="slide_seq":
     for table in sdata.tables.keys():
-      print(table)
       adata = sdata[table]
-  print(adata)
+  else:
+    adata=sdata
   adata.var["mt"] = adata.var_names.str.startswith(("MT-", "mt-"))
-  adata.var["ribo"] = adata.var_names.str.startswith(("RPS", "RPL"))
-  adata.var["hb"] = adata.var_names.str.contains("^HB[^(P)]")
   sc.pp.calculate_qc_metrics(
     adata, 
-    qc_vars=["mt", "ribo", "hb"], 
+    qc_vars="mt",
     percent_top=(10, 20, 50),
     inplace=True, 
     log1p=True)
@@ -98,14 +90,12 @@ def QC_plot(type,sdata,zarr_name):
     image_num=4
   else:
     image_num=2
-  
   fig, axs = plt.subplots(1, image_num, figsize=(15, 4))
   axs[0].set_title("Total transcripts per cell")
   sns.histplot(
     adata.obs["total_counts"],
     kde=False,
     ax=axs[0])
-
   axs[1].set_title("Unique transcripts per cell")
   sns.histplot(
     adata.obs["n_genes_by_counts"],
@@ -115,13 +105,13 @@ def QC_plot(type,sdata,zarr_name):
   if type=='xenium':
     axs[2].set_title("Area of segmented cells")
     sns.histplot(
-      concatenated_sdata["segmentation_counts"].obs["cell_area"],
+      adata.obs["cell_area"],
       kde=False,
       ax=axs[2])
 
     axs[3].set_title("Nucleus ratio")
     sns.histplot(
-      concatenated_sdata["segmentation_counts"].obs["nucleus_area"] / concatenated_sdata["segmentation_counts"].obs["cell_area"],
+      adata.obs["nucleus_area"] / adata.obs["cell_area"],
       kde=False,
       ax=axs[3])
 
@@ -191,14 +181,11 @@ def QC_plot(type,sdata,zarr_name):
     bbox_inches='tight')
   plt.show()
   plt.close()
-  
-  
-  # if type!='slide_seq':
-  #   adata.obs['cell_id'] = adata.obs['cell_id'].astype(str)
-  #   adata.obs['region'] = adata.obs['region'].astype('category')
-  for table in sdata.tables.keys():
+  if type!="slide_seq":
     sdata[table]=adata
-  return sdata
+    return sdata
+  else:
+    return adata
 
 
 
@@ -214,24 +201,27 @@ def QC_plot(type,sdata,zarr_name):
 def create_zarr_bin(path_to_inputs,sample_id,zarr_name,filtered_counts_file,bin_size):
     print(zarr_name)
     sdata = spatialdata_io.visium_hd(path_to_inputs, dataset_id=sample_id, filtered_counts_file=filtered_counts_file, bin_size=bin_size)
-    # if args.channel=="single_analysis":
+    for table in sdata.tables.values():
+        table.obs['cell_id'] = table.obs.index
+        table.obs["group"] = sample_id
     sdata=QC_plot(type,sdata,zarr_name)
     sdata.write(zarr_name, overwrite=True)
 
 def creat_zarr_visium(path_to_inputs,sample_id,zarr_name,h5_name):
     sdata=spatialdata_io.visium(path_to_inputs,dataset_id=sample_id,counts_file=h5_name)
-    # if args.channel=="single_analysis":
     sdata=QC_plot(type,sdata,zarr_name)
-    TABLE_KEY="table"
+    SHAPES_KEY = sample_id
+    TABLE_KEY = 'table'
     for table in sdata.tables.values():
+          table.obs["sample"] = sample_id
+          table.obs["group"] = sample_id
           table.obs['cell_id'] = table.obs.index
           sdata.shapes[sample_id].index=table.obs['cell_id']
-          print(sdata.shapes)
-          del table.uns['spatialdata_attrs']
-          sdata.tables={
+    del table.uns['spatialdata_attrs']
+    sdata.tables={
               TABLE_KEY: TableModel.parse(
                   table,
-                  region=sample_id, # Link table to shapes element
+                  region=SHAPES_KEY, # Link table to shapes element
                   region_key='region', # Column in adata.obs indicating region name
                   instance_key='cell_id' # Column in adata.obs with instance IDs (cell_id)
               )
@@ -240,10 +230,6 @@ def creat_zarr_visium(path_to_inputs,sample_id,zarr_name,h5_name):
     sdata.write(zarr_name, overwrite=True)
 
 def create_zarr(count_matrix_path,image_path,scale_factors_path,geojson_path,sample_name,zarr_name):
-    print(sample_name)
-
-    # Load and Prepare Raw Data
-    # Define file paths
     COUNT_MATRIX_PATH = count_matrix_path
     IMAGE_PATH = image_path
     SCALE_FACTORS_PATH = scale_factors_path
@@ -323,6 +309,7 @@ def create_zarr(count_matrix_path,image_path,scale_factors_path,geojson_path,sam
     adata.obs['cell_id'] = adata.obs.index
     adata.obs['region'] = sample_name + '_cell_boundaries'
     adata.obs['region'] = adata.obs['region'].astype('category')
+    adata.obs['group'] = sample_name
     adata = adata[shapes_gdf.index].copy() # Filter adata to match shapes_gdf
 
     # Define names for SpatialData elements
@@ -352,16 +339,14 @@ def create_zarr(count_matrix_path,image_path,scale_factors_path,geojson_path,sam
     sdata.write(zarr_name, overwrite=True)
 
 def create_zarr_xenium(path_to_inputs,zarr_name,cells_boundaries,nucleus_boundaries,nucleus_labels,morphology_mip):
-    print(cells_boundaries,nucleus_boundaries,nucleus_labels,morphology_mip)
     sdata = spatialdata_io.xenium(path_to_inputs,cells_boundaries=cells_boundaries, nucleus_boundaries=nucleus_boundaries,nucleus_labels=nucleus_labels,morphology_mip=morphology_mip,n_jobs=4,cells_as_circles=True)
-    if args.channel=="single_analysis":
-      sdata=QC_plot(type,sdata,zarr_name)
+    for table in sdata.tables.values():
+        table.obs['cell_id'] = table.obs.index
+        table.obs["group"] = args.sample_id
+    sdata=QC_plot(type,sdata,zarr_name)
     sdata.write(zarr_name,overwrite=True)
     
 def creat_zarr_slide_seq(zarr_name,count_file,coor_file):
-  # counts_file = os.path.join(input_dir,"slide_seq_1", 'Puck_190921_21.digital_expression.txt')
-  # coor_file = os.path.join(input_dir,"slide_seq_1",'Puck_190921_21_bead_locations.csv')
-  print(count_file,coor_file)
   counts = pd.read_csv(count_file, sep='\t', index_col=0,comment='#')
   coor_df = pd.read_csv(coor_file, index_col=0)
   adata = sc.AnnData(counts.T)
@@ -369,39 +354,10 @@ def creat_zarr_slide_seq(zarr_name,count_file,coor_file):
   coor_df = coor_df.loc[adata.obs_names, ['xcoord', 'ycoord']]
   adata.obsm["spatial"] = coor_df.to_numpy()
   adata.obs['region']=args.sample_id
-  if args.channel=="single_analysis":
-      adata=QC_plot(type,sdata,zarr_name)
+  adata.obs['cell_id'] = adata.obs.index
+  adata.obs["group"] = args.sample_id
+  adata=QC_plot(type,adata,zarr_name)
   adata.write(zarr_name)
-
-# samples = {"Non_Lesional_1":["./data/ST_21_NL","Non_Lesional_1.zarr"],
-#           "Non_Lesional_2":["./data/ST_22_NL","Non_Lesional_2.zarr"]}
-
-
-# samples = {"Colon_Cancer_P1":["data/Cancer_P1_filtered_feature_cell_matrix.h5",
-#                       "data/Cancer_P1_tissue_hires_image.png",
-#                       "data/Cancer_P1_scalefactors_json.json",
-#                       "data/Cancer_P1_cell_segmentations.geojson",
-#                       "Colon_Cancer_P1"],
-#             "Colon_Cancer_P2":["data/Cancer_P2_filtered_feature_cell_matrix.h5",                       "data/Cancer_P2_tissue_hires_image.png",
-#                       "data/Cancer_P2_scalefactors_json.json",
-#                       "data/Cancer_P2_cell_segmentations.geojson",
-#                      "Colon_Cancer_P2"]}
-
-# samples = {"Colon_Cancer_P1":["data/Visium_HD_Human_Colon_Cancer_P1","Colon_Cancer_P1.zarr",8],
-#             "Colon_Cancer_P2":["data/Visium_HD_Human_Colon_Cancer_P2","Colon_Cancer_P2.zarr",8]}
-
-# samples = {
-#     "Kidney_Cancer":["./data/Kidney_Cancer_data","Kidney_Cancer.zarr"],
-#     "Kidney_Normal":["./data/Kidney_Normal_data","Kidney_Normal.zarr"]}
-
-# samples = {
-#     "normal_1": ["data/normal1.h5ad","normal1.h5ad"],
-#     "normal_2": ["data/normal2.h5ad","normal2.h5ad"]
-# }
-
-
-print("Saving zarr files")
-
 
 if type=='visium_segment':
         count_file=os.path.join(f'data/{args.sample_id}/segmented_outputs',count_file)

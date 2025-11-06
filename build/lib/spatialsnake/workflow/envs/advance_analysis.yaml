@@ -1,0 +1,43 @@
+# total params
+option: "advance_analysis"          # the analysis step for pipeline
+results_folder: "results"           # the results data folder name
+data_fold: "data"                   # the raw mat data folder name
+sample_list: "sample.txt"           # the sample detail information file
+run_type: "visium"                  # the spatial transcription data type
+channel: "compare_analysis"         # the channel of analysis style [single_analysis] or [compare_analysis]
+
+
+runpipe: "pysenic"
+senic_input: "results/Non_Lesional_2/Non_Lesional_2.zarr"
+sample_type: "Non_Lesional_2"
+tfs_input: "data/hs_hgnc_tfs.txt"
+feather_input: "data/hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather"
+motifs_input: "data/motifs-v9-nr.hgnc-m0.001-o0.0.tbl"
+workers: 8
+gene_attr: "var_names"
+cell_attr: "cell_id"
+
+#cellphoneDB
+counts_data:
+threshold:
+threads:
+pvalue:
+output_name:
+microfile:
+DEG_file:
+
+
+#liana 
+resouce: 'cellPhoneDB'
+
+
+
+
+
+
+# cellcharter
+
+
+
+
+

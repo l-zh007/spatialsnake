@@ -1,0 +1,25 @@
+# total params
+option: "clustering"          # the analysis step for pipeline
+results_folder: "results"           # the results data folder name
+data_fold: "data"                   # the raw mat data folder name
+sample_list: "sample.txt"           # the sample detail information file
+run_type: "visium"                  # the spatial transcription data type
+channel: "compare_analysis"         # the channel of analysis style [single_analysis] or [compare_analysis]
+
+
+tsene: False                        # Whether to use tsene for dimensionality reduction analysis
+MIN_DIST: 0.3                       # umap params
+SPREAD: 2                           # umap params
+cluster_algorithm: "leiden"         # cluster algorithm [leiden] [Kmeans] or [louvain]
+resolution: 0.5                     # resolution of cluster leiden and louvain analysis
+n_clusters: 15                      # resolution of cluster kmeans analysis
+
+n_comps: 20
+k_geom: 15
+max_m: 1
+nbr_weight_decay: "scaled_gaussian"
+lambda_list: 0.2
+sketch: False                       # whether use sketch method to analysis the spatialdata
+
+
+
