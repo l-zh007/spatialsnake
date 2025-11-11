@@ -21,9 +21,9 @@ for more detail of the usage of the pipeline
 
 ### prepare the environment first.
 ```bash
-Create conda environment with the environment.yml file in github
+## Create conda environment with the environment.yml file in github code page
 
-conda env create -f environment.yml -n spatialsnake_env     [or setting your own conda env name]
+conda env create -f environment.yml -n spatialsnake_env     ## [or setting your own conda env name]
 
 conda activate spatialsnake_env
 ```
@@ -35,17 +35,17 @@ conda activate spatialsnake_env
 git clone https://github.com/l-zh007/spatialsnake.git
 
 cd spatialsnake
-pip install .         or [pip install -e .]  devolopment mode
+pip install -e .                       # or [pip install .]  优选-e开发者模式
 
 spatialsnake -h
-spatialsnake install-packages (Install coordinate R packages)
+spatialsnake install-packages          # (Install coordinate R packages)
 
 mkdir project
 cd project
 
-start your analysis with file[sample.txt] and spatialdata in [data/*]
+start your analysis with file[sample.txt] and spatialdata in [data/*] and output dir [results]
 
-please check your spatialdata folder name in accordance with sample_name in  [sample.txt]
+please make sure your spatialdata folder name in [data/] in accordance with sample_name in  [sample.txt]
 ```
 
 
