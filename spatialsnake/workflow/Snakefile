@@ -262,7 +262,7 @@ else:
     print("!!!!! you are filter the sample by different params in filter_list.txt")
     filter_dict = seg_filter_sample(filter_list)
 flag = 'ALL'
-print(parameter_output(samples, option))
+print(samples)
 rule all:
     input:
         parameter_output(samples, option)
