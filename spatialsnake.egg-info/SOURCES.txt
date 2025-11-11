@@ -45,7 +45,12 @@ spatialsnake/workflow/envs/clustering.yaml
 spatialsnake/workflow/envs/compare_analyze.yaml
 spatialsnake/workflow/envs/integrate.yaml
 spatialsnake/workflow/envs/preprocess.yaml
+spatialsnake/workflow/envs/splitting.yaml
+spatialsnake/workflow/envs/transform.yaml
+spatialsnake/workflow/function/integrating.py
 spatialsnake/workflow/function/plot.py
+spatialsnake/workflow/function/splitting.py
+spatialsnake/workflow/function/transform.py
 spatialsnake/workflow/function/useful_fun.py
 spatialsnake/workflow/rules/RCTD_run.smk
 spatialsnake/workflow/rules/advance_analysis.smk
@@ -63,6 +68,7 @@ spatialsnake/workflow/rules/preprocess.smk
 spatialsnake/workflow/rules/py_senic.smk
 spatialsnake/workflow/rules/run_cellcharter.smk
 spatialsnake/workflow/rules/run_liana.smk
+spatialsnake/workflow/rules/run_slice.smk
 spatialsnake/workflow/scripts/DEG_visualize.R
 spatialsnake/workflow/scripts/DEseq2.py
 spatialsnake/workflow/scripts/QC.py
@@ -84,6 +90,7 @@ spatialsnake/workflow/scripts/mannul_annotion.py
 spatialsnake/workflow/scripts/preprocessing.py
 spatialsnake/workflow/scripts/pysenic.py
 spatialsnake/workflow/scripts/pysenic_visualize.py
+spatialsnake/workflow/scripts/slice_out.py
 spatialsnake/workflow/scripts/spatial_in.py
 spatialsnake/workflow/scripts/spatial_in_multiple.py
 spatialsnake/workflow/scripts/subset.py

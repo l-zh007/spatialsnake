@@ -4,7 +4,6 @@ def get_output(type):
   else:
     return(os.path.join(results_folder, "merge_data", 'preprocess',"filter_concatenated_sdata"))
 
-print(parameter_output(samples,option),seg_filter,"dasdadad555555555555555555")
 rule merge_in:
   input:
     outputs=parameter_output(samples,'integrate')

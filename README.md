@@ -6,8 +6,8 @@
 
 A Snakemake workflow for spatial transcriptomics  powered by spatialdata framework
 
-for more detail of the usage of the pipeline please read the document
-[![document](https://spatialsnake-tutorial.readthedocs.io/en/latest/)
+for more detail of the usage of the pipeline 
+**please read the [documentation](https://spatialsnake-tutorial.readthedocs.io/en/latest/)**
 
 - [Snakemake workflow: `spatialsnake`](#snakemake-workflow-name)
   - [Usage](#usage)

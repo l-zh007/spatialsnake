@@ -26,7 +26,7 @@ import spatialsnake
 
 
 spatialsnake_path=os.path.dirname(spatialsnake.__file__)
-option = ["integrate","preprocess","clustering","annotion_help","annotion","compare_analyze","advance_analysis","slice","merge","spatialdata_h5ad","spatialdata_seurat"]
+option = ["integrate","preprocess","clustering","annotion_help","annotion","compare_analyze","advance_analysis","splitting","merge","transform"]
 
 __author__ = 'lzh'
 __version__= '0.1.0'
@@ -55,7 +55,7 @@ __doc__=f"""Main spatialsnake executable, version: {__version__}
 
 Usage:
     spatialsnake <command> <INPUT> <TYPE> [--option=<analysis_option>] [options]
-    spatialsnake useful_tool [--option=<ways>] <INTEGRATED_ZARR> [options]
+    spatialsnake useful_tool [--option=<ways>] <INPUT> [options]
     spatialsnake produce-file [--option=<analysis_option>]
     spatialsnake install-packages
     spatialsnake (-h | --help)
@@ -135,7 +135,8 @@ Advanced Analysis option Options (--option advance_analysis):
     --output_name <TEXT>      output name for cellPhoneDB [default: Normal].
 
 useful_tool params Option:
-    --barcode <TEXT>          slice out with the barcode in table[anndata] .obs [default: clusters]
+    --output_zarr_path <FILE> output dir for splitted file [default: results]
+    --split_by <TEXT>          slice out with the barcode in table[anndata] .obs [default: clusters]
     --max_x   <FLOAT>         coordinate of image boundaries [default: 0]
     --min_x   <FLOAT>         coordinate of image boundaries [default: 2000]
     --max_y   <FLOAT>         coordinate of image boundaries [default: 2000]
@@ -217,14 +218,13 @@ Utility Options:
 #     --zarr_file FILE        seg with the sample name or region
 
 def check_command_line_arguments(arguments):
+    if arguments["useful_tool"]:
+        return True
     if not os.path.exists(arguments["<INPUT>"]):
         print("sample list file not found ",arguments["<INPUT>"])
         return False
     if arguments["--option"] in ["integrate","clustering","annotion_help","compare_analyze","advance_analysis"] and arguments["<INPUT>"]!="sample.txt":
         print('.please confirm the file name are sample_list.txt or annotion_list or filter_list')
-        return False
-    if arguments["useful_tool"] and not os.path.isdir(arguments['<INTEGRATED_ZARR>']):
-        print("please select a zarr file to seg out")
         return False
     if arguments["<TYPE>"] not in ['visium','visium_segment','visium_HD','xenium','Merfish','slide_seq']:
         print("please select the correct spatialdata type like:'visium','visium_segment','visium_HD','xenium','Merfish','slide_seq'")
@@ -235,6 +235,7 @@ def check_command_line_arguments(arguments):
         return False
     if "--configfile" in arguments and arguments["--configfile"]!='config.yaml':
         if not  os.path.isfile(arguments["--configfile"]):
+          print("please select a .yaml file for --configfile")
           return False
     return True
 
@@ -280,13 +281,11 @@ class CommandLine:
         self.snakemake = self.snakemake + " -j {} ".format(jobs)
         self.snakemake = self.snakemake +  " -s {} ".format(f"{spatialsnake_path}/workflow/Snakefile")
         self.load_configfile_if_available(arguments)
-        if self.is_this_an_useful_tool_run:
-          self.config.append("INPUT_FIlE={}".format(arguments['<INTEGRATED_ZARR>']))
-        if arguments['--option'] in ["integrate","preprocess","clustering","annotion_help","compare_analyze","all"]
+        if arguments['--option'] in ["integrate","preprocess","clustering","annotion_help","compare_analyze","all"]:
           self.config.append("sample_list={}".format(arguments['<INPUT>']))
         self.config.append(f"spatialsnake_path={spatialsnake_path}/")
         for i,b in arguments.items():
-            if i not in ["--jobs","--configfile","--option","--unlock","--remove","--dry","--help","--version","<INPUT>","<command>","--install-packages","<TYPE>","useful_tool","<INTEGRATED_ZARR>"]:
+            if i not in ["--jobs","--configfile","--option","--unlock","--remove","--dry","--help","--version","<INPUT>","<command>","--install-packages","<TYPE>","useful_tool","<INTEGRATED_FILE>"]:
                 k=i.lstrip("--")
                 if k in ["min_cells", "min_genes", "x1", "x2", "y1", "y2", "workers", "threads"]:
                   try:
@@ -312,8 +311,6 @@ class CommandLine:
         if self.is_this_an_useful_tool_run is False:
             self.config.append("channel={}".format(arguments['<command>']))
             self.config.append("run_type={}".format(arguments["<TYPE>"]))
-        elif self.is_this_an_useful_tool_run:
-            self.config.append("channel=useful_tool")
         if "--dry" in arguments and arguments["--dry"]:
             self.snakemake = self.snakemake + " -n "
             self.log=False
@@ -354,14 +351,100 @@ class CommandLine:
                 f.write("  ⚠  Use 【spatialsnake [command] [..] --config-file config.yaml】 to run spatialsnake if you want to customize the parameter settings in config.yaml file. \n")
                 f.write("=" * 60 + "\n")
                 
-                
-                
-                
+class CommandLine_useful_tools:
+    def __init__(self):
+        self.snakemake="python "
+        self.runid="".join(random.choices("abcdefghisz",k=3) + random.choices("123456789",k=5))
+        self.config=[]
+        self.configfile_loaded=False
+        self.is_this_an_useful_tool_run=True
+        self.parameters=dict()
+        self.log=True
+        
+    def __str__(self):
+        return self.snakemake
+    def __repr__(self):
+        return self.snakemake
+      
+    def add_config_argument(self):
+        self.snakemake = self.snakemake + " ".join(self.config)
+
+    def load_configfile_if_available(self,arguments):
+        if arguments["--option"]:
+            tool = arguments["--option"]
+            # self.config.append("option={}".format(arguments["--option"]))
+            self.config.append(spatialsnake_path + f"/workflow/function/{tool}.py")
+        print(spatialsnake_path + f"/workflow/envs/{tool}.yaml")
+        if self.configfile_loaded is False:
+            print(spatialsnake_path)
+            if "--configfile" in arguments and os.path.isfile(arguments["--configfile"]):
+                configfile=arguments["--configfile"]
+                self.configfile_loaded=True
+                print(configfile)
+            else:
+               configfile=spatialsnake_path + f"/workflow/envs/{tool}.yaml"
+               arguments["--configfile"]=spatialsnake_path + f"/workflow/envs/{tool}.yaml"
+               print(configfile)
+            with open(configfile) as f:
+               self.parameters=yaml.load(f,Loader=SafeLoader)
+    def prepare_arguments(self,arguments):
+        # jobs = arguments.get('--jobs', 4)
+        self.load_configfile_if_available(arguments)
+        self.config.append("--INPUT {}".format(arguments['<INPUT>']))
+        for i,b in arguments.items():
+            if i not in ["--jobs","--configfile","--option","useful_tool","<INPUT>"]:
+                k=i.lstrip("--")
+                if self.parameters.get(k)==None:
+                  continue
+                if self.configfile_loaded is False: 
+                    self.config.append(i + " " + str(b))
+                    self.parameters[k]=str(b)
+                else:
+                    if self.parameters.get(k) and i not in sys.argv:
+                        self.config.append(i +" "+ str(self.parameters.get(k)))
+                    else:
+                        self.config.append(i + " "+str(b))
+                        self.parameters[k]=str(b)
+        self.add_config_argument()
+        
+    
+    def write_to_log(self,start,arguments):
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        logname = f"spatialsnake_{self.runid}_{timestamp}_runlog.log"
+        stop = timeit.default_timer()
+        if self.log:
+            with open(logname,"w") as f:
+                f.write(__logo__ + "\n")
+                f.write("Run ID : " + self.runid + "\n")
+                f.write("spatialsnake version : " + __version__ + "\n")
+                f.write("spatialsnake arguments : " + " ".join(sys.argv) + "\n")
+                f.write("the running step : "+arguments["--option"]+"\n")
+                f.write("------------------------------" + "\n")
+                f.write("Snakemake arguments : " + str(self.snakemake) + "\n\n")
+                f.write("------------------------------" + "\n")
+                f.write("Run parameters in this option:\n")
+                for key, value in sorted(self.parameters.items()):
+                    if value is not None and value != "":
+                        f.write(f"  {key.ljust(25)} {value}\n")
+                f.write("\n")
+                f.write("Total run time: {t:.2f} mins \n".format(t=(stop-start)/60))
+                f.write("Useful Information:\n")
+                f.write("-" * 20 + "\n")
+                f.write("  ⚠  For help: [spatialsnake --help ]\n")
+                f.write("  ⚠  For setting more params please run: [spatialsnake produce-file --option=step]\n")
+                f.write("  ⚠  Output files are stored in the 'results' directory\n")
+                f.write("  ⚠  Use 【spatialsnake [command] [..] --config-file config.yaml】 to run spatialsnake if you want to customize the parameter settings in config.yaml file. \n")
+                f.write("=" * 60 + "\n")
+
+
+
+ 
 def run_useful_tool(arguments):
     start = timeit.default_timer()
-    snakemake_argument=CommandLine()
+    snakemake_argument=CommandLine_useful_tools()
     snakemake_argument.is_this_an_useful_tool_run = True
     snakemake_argument.prepare_arguments(arguments)
+    print(snakemake_argument)
     subprocess.check_call(str(snakemake_argument),shell=True)
     snakemake_argument.write_to_log(start,arguments)
 
@@ -389,7 +472,7 @@ def main():
             print("⚠     How to setting your own params:")
             print("Add params: --config-file <file-path> in the command line when you run the pipeline")
             return
-        if cli_arguments["install-packages"]:
+        elif cli_arguments["install-packages"]:
             r_script_path = spatialsnake_path + "/workflow/scripts/install_packages.R"
             subprocess.check_call(["Rscript", r_script_path])
             return
@@ -398,9 +481,9 @@ def main():
             return
         if cli_arguments['<command>'] == 'single_analysis':
             run_workflow(cli_arguments)
-        if cli_arguments['<command>'] == 'compare_analysis':
+        elif cli_arguments['<command>'] == 'compare_analysis':
             run_workflow(cli_arguments)
-        if cli_arguments['<command>'] == 'useful_tool':
+        elif cli_arguments['useful_tool']:
             run_useful_tool(cli_arguments)
-        if cli_arguments['<command>'] == 'transform':
+        elif cli_arguments['transform']:
            run_transform(cli_arguments)

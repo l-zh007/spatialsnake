@@ -96,6 +96,13 @@ lambda_list = config.get("lambda_list")
 sketch = config.get("sketch",False)
 sample_rate = config.get("sample_rate",1.0)
 
+INPUT_FIlE=config.get("INPUT_FIlE")
+barcode=config.get('clusters')
+max_x=config.get('max_x')
+min_x=config.get("min_x")
+max_y=config.get("max_y")
+min_y=config.get("min_y")
+
 if type != "xenium":
     image_type = config.get("image_type", "hires")
     shape_type = config.get("shape_type", "cell_boundaries")
@@ -103,11 +110,12 @@ else:
     image_type = config.get("image_type", "morphology_focus")
     shape_type = config.get("shape_type", "cell_circle")
 
+
+
 if run_type not in ["visium", "visium_HD", "visium_segment", "xenium", "slide_seq", "Merfish"]:
     print("please set your spatial dataset type or the type is Illigal")
     sys.exit()
-
-if os.path.exists(sample_list) == False:
+if not os.path.exists(sample_list) and option in ["integrate","clustering","annotion_help","compare_analyze","advance_analysis"]:
     print('You must supply a list of files')
     print('Create sample_list file first,then run this script again')
     sys.exit()
@@ -126,7 +134,7 @@ if os.path.exists(sample_list) == True:
             samples, main_file, group = get_sample_paths(sample_list)
         elif run_type == "visium_HD":
             samples, main_file, bin_size, group = get_sample_paths(sample_list)
-main_file = main_file[0]
+    main_file = main_file[0]
 def parameter_output(samples, option):
     outs = []
     print(option, samples, channel, run_type, "############")
@@ -189,6 +197,9 @@ def parameter_output(samples, option):
         if runpipe == "pysenic":
             outs.append(os.path.join(results_folder, "pysenic_results", f"{sample_id}.aucell.loom"))
         return outs
+    if channel == "useful_tool":
+        if option=="splitting":
+           outs.append()
 
 def input_file(run_type):
     if run_type == "visium" or run_type == "xenium" or run_type == "slide_seq":
@@ -243,7 +254,7 @@ def check_cell2Location_file(samples, run_type, input_singlecell, input_spatial,
         print("please load in the zarr data which will save in [results/name.zarr] with [spatialsnake integrate] command")
         sys.exit()
 
-print(filter_list)
+
 if not filter_list:
     min_genes = config.get('min_counts', 3)
     min_cells = config.get('min_cells', 3)
@@ -261,19 +272,13 @@ if option == "integrate":
     if channel == "compare_analysis":
         flag = 'merge'
         include: "rules/merge.smk"
-
-if option == "preprocess":
+elif option == "preprocess":
     include: "rules/preprocess.smk"
-    # if seg_filter==True:
-    #   include: "rules/merge.smk"
-
-if option == "clustering":
+elif option == "clustering":
     include: "rules/cluster.smk"
-
-if option == "annotion_help":
+elif option == "annotion_help":
     include: "rules/annotion_help.smk"
-
-if option == "annotion":
+elif option == "annotion":
     if anno_algorithm == "cell2Location":
         input_spatial = config.get("input_spatial", "") if config.get("input_spatial", "") != "" else nomal_file(run_type, "")
         input_singlecell = config.get("input_singlecell", "")
@@ -285,11 +290,9 @@ if option == "annotion":
         include: "rules/mannul.smk"
     elif anno_algorithm == "RCTD":
         include: "rules/RCTD.smk"
-
-if option == "compare_analyze":
+elif option == "compare_analyze":
     include: "rules/compare_analyze.smk"
-
-if option == "advance_analysis":
+elif option == "advance_analysis":
     if runpipe == "cellPhoneDB":
         include: "rules/cellPhoneDB.smk"
     elif runpipe == "pysenic":
@@ -298,15 +301,20 @@ if option == "advance_analysis":
         include: "rules/run_liana.smk"
     elif runpipe == "cellcharter":
         include: "rules/run_cellcharter.smk"
-
-if option == "all":
+elif option == "all":
     include: "rules/integrate.smk"
     if channel == "compare_analysis":
         flag = 'merge'
         include: "rules/merge.smk"
     include: "rules/preprocess.smk"
-    if seg_filter == True:
-        flag = 'merge'
-        include: "rules/merge.smk"
     include: "rules/cluster.smk"
     include: "rules/annotion_help.smk"
+elif channel=="useful_tool":
+    if option =="slice":
+      include: "rule/run_slice.smk"
+    
+    
+    
+    
+    
+    

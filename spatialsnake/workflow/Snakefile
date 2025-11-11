@@ -197,6 +197,9 @@ def parameter_output(samples, option):
         if runpipe == "pysenic":
             outs.append(os.path.join(results_folder, "pysenic_results", f"{sample_id}.aucell.loom"))
         return outs
+    if channel == "useful_tool":
+        if option=="splitting":
+           outs.append()
 
 def input_file(run_type):
     if run_type == "visium" or run_type == "xenium" or run_type == "slide_seq":

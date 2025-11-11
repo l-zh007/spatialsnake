@@ -30,7 +30,7 @@ jobs:
         uses: snakemake/snakemake-github-action@v2
         with:
           directory: .
-          snakefile: workflow/Snakefile
+          snakefile: spatialsnake/workflow/Snakefile
           args: "--lint"
 
   Testing:
@@ -45,12 +45,12 @@ jobs:
         uses: snakemake/snakemake-github-action@v2
         with:
           directory: .test
-          snakefile: workflow/Snakefile
+          snakefile: spatialsnake/workflow/Snakefile
           args: "--sdm conda --show-failed-logs --cores 2 --conda-cleanup-pkgs cache --all-temp"
 
       - name: Test report
         uses: snakemake/snakemake-github-action@v2
         with:
           directory: .test
-          snakefile: workflow/Snakefile
+          snakefile: spatialsnake/workflow/Snakefile
           args: "--report report.zip"
