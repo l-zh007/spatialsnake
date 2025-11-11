@@ -23,7 +23,7 @@ sample_list = config.get("sample_list", "sample.txt")
 spatialsnake_path = config.get("spatialsnake_path", "")
 results_folder = config.get("results_folder", "results")
 
-option = config.get("option")
+option = config.get("option","integrate")
 
 channel = config.get("channel", "single_analysis")
 
@@ -262,7 +262,7 @@ else:
     print("!!!!! you are filter the sample by different params in filter_list.txt")
     filter_dict = seg_filter_sample(filter_list)
 flag = 'ALL'
-print(parameter_output(samples, option))
+print(option,samples)
 rule all:
     input:
         parameter_output(samples, option)

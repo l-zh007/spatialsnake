@@ -16,12 +16,73 @@ for more detail of the usage of the pipeline
   - [References](#references)
   - [TODO](#todo)
 
+## ** How to install spatialsnake **
+
+
+### prepare the environment first.
+```bash
+Create conda environment with the environment.yml file in github
+
+conda env create -f environment.yml -n spatialsnake_env     [or setting your own conda env name]
+
+conda activate spatialsnake_env
+```
+
+
+### install the spatialsnake.
+
+```bash
+git clone https://github.com/l-zh007/spatialsnake.git
+
+cd spatialsnake
+pip install .         or [pip install -e .]  devolopment mode
+
+spatialsnake -h
+spatialsnake install-packages (Install coordinate R packages)
+
+mkdir project
+cd project
+
+start your analysis with file[sample.txt] and spatialdata in [data/*]
+
+please check your spatialdata folder name in accordance with sample_name in  [sample.txt]
+```
+
+
+## Examples:
+    Run only one step of ["integrate","preprocess","clustering","annotion_help","annotion","compare_analyze","advance_analysis"]
+      spatialsnake <sample_channal> sample.txt <data_type> --option=<option_name> [other_params]
+
+    IF you want to run with integrate multiple sample:
+
+    Run compare_analysis
+      spatialsnake compare_analysis sample.txt <data_type> --option=<option_name>
+      
+    Run all basic steps on single sample (default behavior)
+      spatialsnake <sample_channal> sample.txt <data_type> --option=all
+    
+    
+    IF you want to run with setting your own params:
+
+      spatialsnake produce-file [--option=<analysis_option>]
+      spatialsnake <sample_channal> sample.txt <data_type> --option=<option_name> --config-file <*.yaml>
+    
+    We produce some useful_tool to help you analysis.
+    
+    Split integrated data with barcode
+      spatialsnake useful_tool integrated_data.zarr --data_barcode B_cell
+      
+    Split integrated data with image coordinate
+      spatialsnake useful_tool integrated_data.zarr --max_x --min_x --max_y --min_y2
+
+    Install coordinate R packages  
+      spatialsnake install-packages
 
 
 ## Usage:
     spatialsnake <command> <INPUT> <TYPE> [--option=<analysis_option>] [options]
-    spatialsnake segout <INTEGRATED_ZARR> [--option=<analysis_option>] [options]
-    spatialsnake produce-yaml [--option=<analysis_option>]
+    spatialsnake useful_tool [--option=<ways>] <INPUT> [options]
+    spatialsnake produce-file [--option=<analysis_option>]
     spatialsnake install-packages
     spatialsnake (-h | --help)
     spatialsnake --version
@@ -98,6 +159,13 @@ for more detail of the usage of the pipeline
         --count-data <TEXT>       gene type for cellPhoneDB [default: hgnc_symbol].
         --threads <INT>           workers for cellphoneDB [default: 8].
         --output_name <TEXT>      output name for cellPhoneDB [default: Normal].
+    useful_tool params Option:
+        --output_zarr_path <FILE> output dir for splitted file [default: results]
+        --split_by <TEXT>          slice out with the barcode in table[anndata] .obs [default: clusters]
+        --max_x   <FLOAT>         coordinate of image boundaries [default: 0]
+        --min_x   <FLOAT>         coordinate of image boundaries [default: 2000]
+        --max_y   <FLOAT>         coordinate of image boundaries [default: 2000]
+        --min_y   <FLOAT>         coordinate of image boundaries [default: 0]
     
     General Options:
         -j <INT>, --jobs <INT>   Number of CPU cores [default: 32].
@@ -111,63 +179,6 @@ for more detail of the usage of the pipeline
         -h, --help           Show this help message.
         --version            Show version.
 
-
-
-## Examples:
-    Run all basic steps on single sample (default behavior)
-    spatialsnake <sample_channal> sample.txt <data_type> --option=all
-    
-    Run only one step of ["integrate","preprocess","clustering","annotion_help","annotion","compare_analyze","advance_analysis"]
-      spatialsnake <sample_channal> sample.txt <data_type> --option=<option_name>
-    
-    Run compare_analysis
-      spatialsnake compare_analysis sample.txt <data_type> --option=<option_name>
-    
-    use costom params with *.yaml file
-      spatialsnake <sample_channal> sample.txt <data_type> --option=<option_name> --config-file <*.yaml>
-    
-    Split integrated data with barcode
-      spatialsnake segout integrated_data.zarr --data_barcode B_cell
-      
-    Split integrated data with image coordinate
-      spatialsnake segout integrated_data.zarr --max_x --min_x --max_y --min_y2
-    
-    Get detail params of some step
-      spatialsnake produce-file [--option=<analysis_option>]
-      
-    Install coordinate R packages  
-      spatialsnake install-packages
-
-```bash
-git clone https://github.com/l-zh007/spatialsnake.git
-cd spatialsnake
-python setup.py install
-spatialsnake -h
-mkdir project
-cd project
-
-start your analysis with sample.txt
-```
-
-Adjust options in the default config file `config/config.yaml`.
-Before running the complete workflow, you can perform a dry run using:
-
-```bash
-snakemake --dry-run
-```
-
-To run the workflow with test files using **conda**:
-
-```bash
-snakemake --cores 2 --sdm conda --directory .test
-```
-
-To run the workflow with **apptainer** / **singularity**, add a link to a container registry in the `Snakefile`, for example `container: "oras://ghcr.io/<user>/<repository>:<version>"` for Github's container registry.
-Run the workflow with:
-
-```bash
-snakemake --cores 2 --sdm conda apptainer --directory .test
-```
 
 ## Authors
 

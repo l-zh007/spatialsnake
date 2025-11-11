@@ -9,6 +9,8 @@ Keywords: spatial transcription RNA analysis
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Programming Language :: Python :: 3
 Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+Requires-Python: >=3.12.11
+Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: spatialdata==0.5.0
 Requires-Dist: spatialdata-io==0.3.0
@@ -27,7 +29,6 @@ Requires-Dist: seaborn==0.13.2
 Requires-Dist: plotnine==0.15.0
 Requires-Dist: cell2location==0.1.5
 Requires-Dist: cellphonedb==5.0.1
-Requires-Dist: tacco==0.4.0.post1
 Requires-Dist: torch==2.8.0
 Requires-Dist: pytorch-lightning==2.5.5
 Requires-Dist: scvi-tools==1.4.0
@@ -35,17 +36,25 @@ Requires-Dist: zarr==2.18.7
 Requires-Dist: h5py==3.14.0
 Requires-Dist: tifffile==2025.8.28
 Requires-Dist: imageio==2.37.0
+Requires-Dist: ome-zarr==0.11.1
 Requires-Dist: statsmodels==0.14.5
 Requires-Dist: Pint==0.25
 Requires-Dist: pyarrow==21.0.0
+Requires-Dist: click==8.3.0
+Requires-Dist: typer==0.16.0
+Requires-Dist: docopt==0.6.2
+Requires-Dist: geopandas==1.1.1
+Requires-Dist: pydeseq2==0.5.2
 Dynamic: author
 Dynamic: author-email
 Dynamic: classifier
 Dynamic: description
+Dynamic: description-content-type
 Dynamic: home-page
 Dynamic: keywords
 Dynamic: license-file
 Dynamic: requires-dist
+Dynamic: requires-python
 Dynamic: summary
 
 #   Spatialsnake  :
@@ -56,8 +65,8 @@ Dynamic: summary
 
 A Snakemake workflow for spatial transcriptomics  powered by spatialdata framework
 
-for more detail of the usage of the pipeline please read the document
-[![document](https://spatialsnake-tutorial.readthedocs.io/en/latest/)
+for more detail of the usage of the pipeline 
+**please read the [documentation](https://spatialsnake-tutorial.readthedocs.io/en/latest/)**
 
 - [Snakemake workflow: `spatialsnake`](#snakemake-workflow-name)
   - [Usage](#usage)

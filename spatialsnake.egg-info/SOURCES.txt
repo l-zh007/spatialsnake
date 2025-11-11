@@ -1,8 +1,11 @@
 LICENSE
 MANIFEST.in
 README.md
+annotion.txt
+filter_list.txt
 packages.txt
 requirements.txt
+sample.txt
 setup.py
 spatialsnake/__init__.py
 spatialsnake/command_line.py
