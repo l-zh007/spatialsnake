@@ -22,7 +22,14 @@ from subprocess import call
 import pathlib
 from collections import defaultdict
 import spatialsnake
-
+import logging
+L = logging.getLogger()
+L.setLevel(logging.INFO)
+log_handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter('%(asctime)s: %(levelname)s - %(message)s')
+log_handler.setFormatter(formatter)
+L.addHandler(log_handler)
+L.debug("testing logger works")
 
 
 spatialsnake_path=os.path.dirname(spatialsnake.__file__)
@@ -54,8 +61,8 @@ __doc__=f"""Main spatialsnake executable, version: {__version__}
 {__logo__} 
 
 Usage:
+    spatialsnake useful_tool [--option=<ways>] <INPUT>... [options]
     spatialsnake <command> <INPUT> <TYPE> [--option=<analysis_option>] [options]
-    spatialsnake useful_tool [--option=<ways>] <INPUT> [options]
     spatialsnake produce-file [--option=<analysis_option>]
     spatialsnake install-packages
     spatialsnake (-h | --help)
@@ -101,7 +108,7 @@ Preprocessing Step Options (--option preprocess):
     --min_genes <INT>         Minimum genes per spot [default: 200].
     --seg_filter <BOOL>       to seg filter the differnet sample dataset when command compare_anaysis [default: False].
     --filter_list <FILE>      filename of filter [default: False]
-    --batch_method <TEXT>     batch method for multiple sample analysis [default: harmony]
+    --batch_method <TEXT>     batch method for multiple sample analysis [default: None]
     --sketch <BOOL>           whether use sketch method to analysis [default: False]
     
 Clustering Step Options (--option clustering):
@@ -134,14 +141,27 @@ Advanced Analysis option Options (--option advance_analysis):
     --threads <INT>           workers for cellphoneDB [default: 8].
     --output_name <TEXT>      output name for cellPhoneDB [default: Normal].
 
-useful_tool params Option:
-    --output_zarr_path <FILE> output dir for splitted file [default: results]
-    --split_by <TEXT>          slice out with the barcode in table[anndata] .obs [default: clusters]
-    --max_x   <FLOAT>         coordinate of image boundaries [default: 0]
-    --min_x   <FLOAT>         coordinate of image boundaries [default: 2000]
-    --max_y   <FLOAT>         coordinate of image boundaries [default: 2000]
-    --min_y   <FLOAT>         coordinate of image boundaries [default: 0]
-    
+useful_tool splitting Option:
+    --output_dir=<TEXT>       output dir for splitted file [default: results/useful_results]
+    --split_by=<TEXT>         slice out with the barcode in table[anndata] .obs [default: clusters]
+    --shape_elements=<TEXT>   slice out with the shape [default: None]
+    --max_x=<FLOAT>         coordinate of image boundaries [default: 0]
+    --min_x=<FLOAT>         coordinate of image boundaries [default: 2000]
+    --max_y=<FLOAT>         coordinate of image boundaries [default: 2000]
+    --min_y=<FLOAT>         coordinate of image boundaries [default: 0]
+    --configfile=<FILE>       coordinate of image boundaries [default: None]
+
+useful_tool merge Option:
+    --merge_by=<TEXT>               merge by cluster celltype or sample [default: sample]
+    --reordering=<BOOL>             whether reordering the cluster when concat the [default: False]
+    --re_sample=<BOOL>              whether add the sample lable[default: False]
+    --cluster_key=<TEXT>            the concat lable in the zarr/table/obs [default: clusters]
+
+useful_tool transform Option:
+    --save_image=<BOOL>            save images in h5ad [default: True]
+    --transform_from=<TEXT>        transform from [default: zarr]
+    --transform_to=<TEXT>          transform to [default: h5ad]
+
 General Options:
     -j <INT>, --jobs <INT>   Number of CPU cores [default: 32].
     --results_folder <DIR>     Output directory [default: results].
@@ -156,88 +176,45 @@ Utility Options:
 
 """
 
-# Preprocessing Step Options (--option preprocess):
-#     --integration-method TEXT   Integration method [default: harmony].
-#     --annotion_list FILE    for the filter params in different sample
-#     --min_cells INT         Minimum spots per gene [default: 3].
-#     --min_genes INT         Minimum genes per spot [default: 200].
-#     --variable BOOL         Filter the variable spot to analysis [default: False].
-#     --harmony BOOL          harmony method [default: True].
-#     --seg_filter BOOL       to seg filter the differnet sample dataset when command compare_anaysis.
-#     --NEIGHBORS FLOAT       neighbors for pca umap.
-# Clustering Step Options (--option clustering):
-#     --resolution FLOAT   Cluster resolution [default: 0.5].
-#     --cluster_algorithm TEXT Clustering algorithm [default: leiden].
-#     --tsene BOOL        umap [default:False]
-#     --MIN_DIST FLOAT    umap_key [default:0.3]
-#     --SPREAD FLOAT      umap_key [default:1]
-# 
-# Annotation Help Step Options (--option annotion_help):
-#     --image_slice BOOL        containing marker genes for cell types[default: False].
-#     --markers_algorithm TEXT       Automatically detect marker genes [default: wilcoxon].
-#     --shape_type TEXT         Automatically detect marker genes [default: cell_boundaries].
-#     --image_type TEXT         Automatically detect marker genes [default: hires].
-#     --spacies TEXT            Automatically detect marker genes [default: human].
-#     --image_slice BOOL              params for the image slice to depandent size [default: False].
-#     --x1 INT
-#     --x2 INT
-#     --y1 INT
-#     --y2 INT
-# Compare_analyze option Options (--option compare_analysis)    
-#     --cell_focus TEXT         celltype you focus to compare in different sample.
-#     --compare_algorithm TEXT  compare analysys [default: DEseq2].
-# Annotation option Options (--option annotion):
-#     --annotation-file FILE    Annotation file for cell typing (required for annotion step)
-#     --anno_algorithm TEXT     Annotation method [default: mannul].
-#     --shape_type TEXT         Automatically detect marker genes [default: cell_boundaries].
-#     --image_type TEXT         Automatically detect marker genes [default: hires].
-#     --slice BOOL              params for the image slice to depandent size [default: False].
-#     --x1 INT
-#     --x2 INT
-#     --y1 INT
-#     --y2 INT
-#     --max_epochs_reference INT    params for cell2Location model train and test [default: 250].
-#     --remove_mt BOOL              params for cell2Location model train and test [default: True].
-#     --N_cells_per_location INT    params for cell2Location model train and test [default: 30].
-#     --max_epochs_st INT           params for cell2Location model train and test [default: 30000].
-#     --device TEXT                 cpu or GPU accelerate [default: cuda].
-#     
-# Advanced Analysis option Options (--option advance_analysis):
-#     --advance_channel TEXT        Run  which analysis analysis.
-#     --pyscenic-input FILE   Input file for PySCENIC analysis.
-#     --pyscenic-db FILE      PySCENIC database directory.
-#     --pyscenic-feature FILE path for necessary file of pyscenic.
-#     --pyscenic-tfs FILE     path for necessary file of pyscenic.
-#     --cell_attr TEXT        cell_id for pyscenic [default: cell_id]
-#     --workers INT           workers for pyscenic [default: 8].
-#     --count-data TEXT       gene type for cellPhoneDB [default: hgnc_symbol].
-#     --threads INT           workers for cellphoneDB [default: 8].
-#     --output_name           output name for cellPhoneDB [default: Normal].
-#     
-# Cell Segmentation Options (applicable to multiple option):
-#     --zarr_file FILE        seg with the sample name or region
 
 def check_command_line_arguments(arguments):
-    if arguments["useful_tool"]:
-        return True
     if not os.path.exists(arguments["<INPUT>"]):
-        print("sample list file not found ",arguments["<INPUT>"])
+        L.info("sample list file not found ",arguments["<INPUT>"])
         return False
     if arguments["--option"] in ["integrate","clustering","annotion_help","compare_analyze","advance_analysis"] and arguments["<INPUT>"]!="sample.txt":
-        print('.please confirm the file name are sample_list.txt or annotion_list or filter_list')
+        L.info('.please confirm the file name are sample_list.txt or annotion_list or filter_list')
         return False
     if arguments["<TYPE>"] not in ['visium','visium_segment','visium_HD','xenium','Merfish','slide_seq']:
-        print("please select the correct spatialdata type like:'visium','visium_segment','visium_HD','xenium','Merfish','slide_seq'")
+        L.info("please select the correct spatialdata type like:'visium','visium_segment','visium_HD','xenium','Merfish','slide_seq'")
         return False
     if arguments["--option"] not in option:
-        print("your option are not correct please select the correct step to analysis or not select the option to run the minimize step of analysis")
-        print("correct option include:"+option)
+        L.info("your option are not correct please select the correct step to analysis or not select the option to run the minimize step of analysis")
+        L.info("correct option include:integrate preprocess clustering annotion_help annotion compare_analyze advance_analysis splitting merge transform")
         return False
     if "--configfile" in arguments and arguments["--configfile"]!='config.yaml':
         if not  os.path.isfile(arguments["--configfile"]):
-          print("please select a .yaml file for --configfile")
+          L.info("please select a .yaml file for --configfile")
           return False
     return True
+
+def check_arguments_inputfile(arguments):
+    if not os.path.exists(arguments["<INPUT>"]):
+        L.info("your file not found ",arguments["<INPUT>"])
+        return False
+    if arguments["--option"] not in ["splitting","transform","merge"]:
+        L.info("your option are not correct please select the correct step to analysis")
+        L.info("correct option include:"+"splitting","transform","merge")
+        return False
+    if arguments["--option"]=="splitting" and arguments["split_by"] not in ["sample",'image',"cluster"]:
+        L.info("split_by not found")
+        return False
+    if "--configfile" in arguments and arguments["--configfile"]!='config.yaml':
+        if not  os.path.isfile(arguments["--configfile"]):
+          L.info("please select a .yaml file for --configfile")
+          return False
+    return True
+
+
 
 
 
@@ -291,7 +268,7 @@ class CommandLine:
                   try:
                     int(b)
                   except ValueError:
-                    print(f"Error: {k} must be an integer")
+                    L.info(f"Error: {k} must be an integer")
                     sys.exit(1)
                 if self.parameters.get(k)==None:
                   continue
@@ -365,32 +342,38 @@ class CommandLine_useful_tools:
         return self.snakemake
     def __repr__(self):
         return self.snakemake
-      
+    
     def add_config_argument(self):
         self.snakemake = self.snakemake + " ".join(self.config)
-
+    
+    def build_subprocess_cmd(self,arguments,cmd):
+        if arguments["--option"]=="merge":
+          cmd.extend(['--INPUT'])
+          cmd.extend(arguments['<INPUT>'])
+        else:
+          cmd.append("--INPUT {}".format(arguments['<INPUT>']))
+        return cmd
+    
     def load_configfile_if_available(self,arguments):
         if arguments["--option"]:
             tool = arguments["--option"]
-            # self.config.append("option={}".format(arguments["--option"]))
             self.config.append(spatialsnake_path + f"/workflow/function/{tool}.py")
-        print(spatialsnake_path + f"/workflow/envs/{tool}.yaml")
         if self.configfile_loaded is False:
-            print(spatialsnake_path)
+            L.info(spatialsnake_path)
             if "--configfile" in arguments and os.path.isfile(arguments["--configfile"]):
                 configfile=arguments["--configfile"]
                 self.configfile_loaded=True
-                print(configfile)
+                L.info(configfile)
             else:
                configfile=spatialsnake_path + f"/workflow/envs/{tool}.yaml"
                arguments["--configfile"]=spatialsnake_path + f"/workflow/envs/{tool}.yaml"
-               print(configfile)
+               L.info(configfile)
             with open(configfile) as f:
                self.parameters=yaml.load(f,Loader=SafeLoader)
     def prepare_arguments(self,arguments):
-        # jobs = arguments.get('--jobs', 4)
         self.load_configfile_if_available(arguments)
-        self.config.append("--INPUT {}".format(arguments['<INPUT>']))
+        self.config=self.build_subprocess_cmd(arguments,self.config)
+        # self.config.append("--INPUT {}".format(arguments['<INPUT>']))
         for i,b in arguments.items():
             if i not in ["--jobs","--configfile","--option","useful_tool","<INPUT>"]:
                 k=i.lstrip("--")
@@ -444,7 +427,7 @@ def run_useful_tool(arguments):
     snakemake_argument=CommandLine_useful_tools()
     snakemake_argument.is_this_an_useful_tool_run = True
     snakemake_argument.prepare_arguments(arguments)
-    print(snakemake_argument)
+    L.info(snakemake_argument)
     subprocess.check_call(str(snakemake_argument),shell=True)
     snakemake_argument.write_to_log(start,arguments)
 
@@ -460,30 +443,31 @@ def main():
         cli_arguments = docopt(__doc__, version=__version__)
         if cli_arguments["produce-file"]:
             step = cli_arguments["--option"] if not cli_arguments['<command>'] == 'useful_tool' or not cli_arguments['<command>'] == 'transform' else cli_arguments["<command>"]
-            if step not in ["integrate","preprocess","clustering","annotion_help","annotion","compare_analyze","advance_analysis","all"]:
-              print("please setting correct params : --option=<step_name>   or  --option=all to get all step params")
+            if step not in ["integrate","preprocess","clustering","annotion_help","annotion","compare_analyze","advance_analysis","all","splitting","transform","merge"]:
+              L.info("please setting correct params : --option=<step_name>   or  --option=all to get all step params")
               return
-            print(f"Generating config.yaml file: {step}.yaml..........")
-            print("You can use this as a config-file for a spatialsnake run. You may change the settings in it.")
+            L.info(f"Generating config.yaml file: {step}.yaml..........")
+            L.info("You can use this as a config-file for a spatialsnake run. You may change the settings in it.")
             if step=="all":
               shutil.copyfile(spatialsnake_path + "/config.yaml", 'config.yaml')
             else:
               shutil.copyfile(spatialsnake_path + f"/workflow/envs/{step}.yaml", f'{step}.yaml')
-            print("⚠     How to setting your own params:")
-            print("Add params: --config-file <file-path> in the command line when you run the pipeline")
+            L.info("⚠     How to setting your own params:")
+            L.info("Add params: --config-file <file-path> in the command line when you run the pipeline")
             return
         elif cli_arguments["install-packages"]:
             r_script_path = spatialsnake_path + "/workflow/scripts/install_packages.R"
             subprocess.check_call(["Rscript", r_script_path])
             return
+        elif cli_arguments['useful_tool']:
+            print(cli_arguments)
+            run_useful_tool(cli_arguments)
+            return
+        print(cli_arguments)
         if not check_command_line_arguments(cli_arguments):
-            print("""Please check your command line arguments. Use "spatialsnake --help" for more information""")
+            L.info("""Please check your command line arguments. Use "spatialsnake --help" for more information""")
             return
         if cli_arguments['<command>'] == 'single_analysis':
             run_workflow(cli_arguments)
         elif cli_arguments['<command>'] == 'compare_analysis':
             run_workflow(cli_arguments)
-        elif cli_arguments['useful_tool']:
-            run_useful_tool(cli_arguments)
-        elif cli_arguments['transform']:
-           run_transform(cli_arguments)

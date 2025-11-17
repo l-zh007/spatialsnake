@@ -11,7 +11,16 @@ import json
 import glob
 import warnings
 warnings.filterwarnings("ignore")
-include: "get_sample.smk"
+import logging
+L = logging.getLogger("spatialsnake_user")
+L.setLevel(logging.INFO)
+L.propagate = False
+log_handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter('%(asctime)s: %(levelname)s - %(message)s')
+log_handler.setFormatter(formatter)
+if not L.handlers:
+    L.addHandler(log_handler)
+include: "function/get_sample.smk"
 
 # if config.get("load_config")==False:
 #   configfile: "config.yaml"
@@ -58,10 +67,8 @@ n_top_genes = config.get("n_top_genes", 1000)
 batch_method = config.get("batch_method", None)
 n_comps = config.get("n_comps", 50)
 
-if channel == "compare_analysis" and batch_method:
-    batch_method = batch_method
-else:
-    print("your argument harmony just allowed setting in compare_analysis channal")
+if channel == "single_analysis" and batch_method!=None:
+    L.info("your argument harmony just allowed setting in compare_analysis channal")
     batch_method = None
 
 spacies = config.get("human", "human")
@@ -112,13 +119,6 @@ else:
 
 
 
-if run_type not in ["visium", "visium_HD", "visium_segment", "xenium", "slide_seq", "Merfish"]:
-    print("please set your spatial dataset type or the type is Illigal")
-    sys.exit()
-if not os.path.exists(sample_list) and option in ["integrate","clustering","annotion_help","compare_analyze","advance_analysis"]:
-    print('You must supply a list of files')
-    print('Create sample_list file first,then run this script again')
-    sys.exit()
 if os.path.exists(sample_list) == True:
     main_file = []
     samples = []
@@ -137,7 +137,6 @@ if os.path.exists(sample_list) == True:
     main_file = main_file[0]
 def parameter_output(samples, option):
     outs = []
-    print(option, samples, channel, run_type, "############")
     if option == 'integrate':
         if channel == 'single_analysis':
             if run_type == "visium" or run_type == "xenium" or run_type == "visium_segment":
@@ -239,9 +238,9 @@ def nomal_file(run_type, segs):
 def check_cell2Location_file(samples, run_type, input_singlecell, input_spatial, channel):
     if input_spatial == "" and not os.path.isdir(nomal_file(run_type, "")):
         sys.exit("please provide your st_file path or you can load in the zarr data with [spatialsnake integrate] which save in [results/]")
-        print("please promiss your st_file haven't been normalization Log transformation Variance stabilizing transformation  PCA、t-SNE or UMAP....")
+        L.info("please promiss your st_file haven't been normalization Log transformation Variance stabilizing transformation  PCA、t-SNE or UMAP....")
     if input_singlecell == "":
-        print("please promiss your sc data has been anno")
+        L.info("please promiss your sc data has been anno")
         sys.exit("please provide your st_file path or you can download h5ad in your own path")
     if len(samples) > 1:
         sys.exit("Deconvolution annotation is very memory-intensive, so please process the samples one by one.")
@@ -251,7 +250,7 @@ def check_cell2Location_file(samples, run_type, input_singlecell, input_spatial,
         else:
             return("")
     else:
-        print("please load in the zarr data which will save in [results/name.zarr] with [spatialsnake integrate] command")
+        L.info("please load in the zarr data which will save in [results/name.zarr] with [spatialsnake integrate] command")
         sys.exit()
 
 
@@ -259,10 +258,9 @@ if not filter_list:
     min_genes = config.get('min_counts', 3)
     min_cells = config.get('min_cells', 3)
 else:
-    print("!!!!! you are filter the sample by different params in filter_list.txt")
+    L.info("!!!!! you are filter the sample by different params in filter_list.txt")
     filter_dict = seg_filter_sample(filter_list)
 flag = 'ALL'
-print(option,samples)
 rule all:
     input:
         parameter_output(samples, option)
@@ -283,7 +281,6 @@ elif option == "annotion":
         input_spatial = config.get("input_spatial", "") if config.get("input_spatial", "") != "" else nomal_file(run_type, "")
         input_singlecell = config.get("input_singlecell", "")
         input_st = check_cell2Location_file(samples, run_type, input_singlecell, input_spatial, channel)
-        print(image_slice)
         include: "rules/cell2Location_run.smk"
     elif anno_algorithm == "mannul":
         anno_data = get_annotion(annotion_list, samples)

@@ -1,15 +1,8 @@
-channel: "useful_tool"          # the analysis step for pipeline
-results_folder: "results"           # the results data folder name
-option: "slice"
-
-INPUT_FIlE: "sdata.zarr"
-
-barcode: 'clusters'
-
-max_x: 0
-min_x: 2000
-max_y: 2000
-min_y: 0
+INPUT:
+output_dir: 'results/useful_results'
+save_image: True
+transform_from: 'zarr'
+transform_to: 'h5ad'
 
 
 

@@ -63,7 +63,6 @@ real_dir = "/".join(os.path.normpath(args.input_dir).split(os.path.sep)[:2])
 type=args.type
 
 
-
 def QC_plot(type,sdata,zarr_name):
   dir_path=os.path.dirname(zarr_name)
   if type!="slide_seq":

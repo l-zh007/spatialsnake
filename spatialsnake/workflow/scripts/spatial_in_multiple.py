@@ -166,10 +166,6 @@ def QC_plot(type,sdata,zarr_name):
     bbox_inches='tight')
   plt.show()
   plt.close()
-  
-  
-  
-  
   if type!='slide_seq':
     adata.obs['cell_id'] = adata.obs['cell_id'].astype(str)
     adata.obs['region'] = adata.obs['region'].astype('category')
