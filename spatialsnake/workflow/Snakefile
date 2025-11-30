@@ -62,6 +62,9 @@ MIN_DIST = config.get("MIN_DIST", 0.3)
 SPREAD = config.get("SPREAD", 1)
 variable = config.get("variable", False)
 NEIGHBORS = config.get("NEIGHBORS", 10)
+pcs = config.get("pcs",30)
+
+
 RES = config.get("resolution", 0.5)
 n_top_genes = config.get("n_top_genes", 1000)
 batch_method = config.get("batch_method", None)
@@ -153,7 +156,7 @@ def parameter_output(samples, option):
             if run_type == "slide_seq":
                 outs += expand(os.path.join(results_folder, "{group}", "{sample}.h5ad"), zip, sample=samples, group=group)
         if channel == "compare_analysis" and flag == 'ALL':  
-            outs.append(os.path.join(results_folder, "merge_data", "concatenated_sdata"))
+            outs.append(os.path.join(results_folder, "merge_data","integrate","concatenated_sdata"))
         return outs
     if option == "preprocess":
         if channel == 'single_analysis':

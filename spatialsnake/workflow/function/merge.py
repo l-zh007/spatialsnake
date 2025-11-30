@@ -33,7 +33,7 @@ def add_sample_barcode(adata,file_path):
   if 'sample' not in adata.obs.columns:
       file_name = os.path.basename(file_path)
       sample_barcode = os.path.splitext(file_name)[0]
-      adata.obs['sample'] = sample_barcode  # 添加样本列
+      adata.obs['sample'] = sample_barcode
   return adata
 
 

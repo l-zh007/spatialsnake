@@ -7,7 +7,7 @@ def preprocess_input(run_type):
     elif run_type=="slide_seq":
       return(os.path.join(results_folder, "{sample}", 'integrate',"{sample}.h5ad"))
   if channel=="compare_analysis":
-    return(os.path.join(results_folder, "merge_data", "concatenated_sdata"))
+    return(os.path.join(results_folder, "merge_data", "integrate","concatenated_sdata"))
 
 def preprocess_output(run_type):
   if channel == 'single_analysis':

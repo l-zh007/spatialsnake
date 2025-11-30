@@ -1,8 +1,9 @@
 import os
 os.environ["OPENBLAS_NUM_THREADS"] = "64"
 os.environ["OMP_NUM_THREADS"] = "16"
+import warnings
+warnings.filterwarnings("ignore")
 import spatialdata as spd
-# import spatialdata_plot as splt
 import spatialdata_io as so
 import geosketch as sketch
 import numpy as np
@@ -12,16 +13,12 @@ import scanpy.external as sce
 import json
 import gc
 import geopandas as gpd
-from spatialdata.models import Image2DModel, TableModel, ShapesModel
 import matplotlib.pyplot as plt
-import warnings
-warnings.filterwarnings("ignore")
-from pydeseq2.dds import DeseqDataSet
-from pydeseq2.ds import DeseqStats
 from PIL import Image
 from spatialdata.transformations import Identity, Scale
 from shapely.geometry import Polygon
 from sklearn.cluster import KMeans
+from spatialsnake.workflow.function.pca_choosing import select_pca_dimensions
 import argparse
 ############################clustering################################
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
@@ -46,8 +43,11 @@ parser.add_argument('--cluster_algorithm', type=str, required=False,
 parser.add_argument('--n_clusters', type=float, required=False,
                    help='Path for the output zarr file')
 parser.add_argument('--sketch', type=str, required=False,
-                   help='Path for the output zarr file')            
-      
+                   help='Path for the output zarr file')
+parser.add_argument('--pcs', type=int, required=False,
+                   help='Path for the output zarr file')
+parser.add_argument('--NEIGHBORS', type=int, required=False,
+                   help='Path for the output zarr file')
 args = parser.parse_args()
 type=args.type
 
@@ -62,12 +62,20 @@ else:
   for table in concatenated_sdata.tables.keys():
     table=table
     adata_for_sketch = concatenated_sdata[table]
-print("init adata")
-print(adata_for_sketch)  
+
+
+if True:
+  pca_selection=select_pca_dimensions(adata_for_sketch)
+  print(pca_selection)
+
+
+
+sc.pp.neighbors(adata_for_sketch, n_neighbors=args.NEIGHBORS, use_rep="X_pca",metric="correlation",n_pcs=pca_selection)
+
 
 if args.tsene=="True":
   print("running tsene !!!!!!!!!!!!!")
-  sc.tl.tsne(adata_for_sketch, n_pcs=50, perplexity=30)
+  sc.tl.tsne(adata_for_sketch, n_pcs=pca_selection, perplexity=30)
       
 if args.cluster_algorithm=="leiden":    
   sc.tl.leiden(adata_for_sketch, flavor="igraph",key_added="clusters", resolution=args.RES,random_state=0)

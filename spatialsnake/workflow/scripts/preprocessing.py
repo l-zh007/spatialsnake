@@ -183,8 +183,7 @@ if args.batch_method=="harmony":
 elif args.batch_method=="BBkNN":
     bbknn.bbknn(sdata,batch_key="region")
 
-# sc.pp.neighbors(sdata, n_neighbors=args.NEIGHBORS, n_pcs=20)
-sc.pp.neighbors(sdata, n_neighbors=args.NEIGHBORS, use_rep="X_pca",metric="correlation",n_pcs=30)
+
 
 sc.pl.pca_variance_ratio(sdata, log=True,n_pcs=20)
 plt.title("pca_variance_ratio")

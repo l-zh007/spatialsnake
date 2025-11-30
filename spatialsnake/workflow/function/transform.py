@@ -6,93 +6,92 @@ import scanpy as sc
 import geopandas as gpd
 from shapely.geometry import Point
 import numpy as np
+import matplotlib.pyplot as plt
+from spatialdata_io.experimental import from_legacy_anndata, to_legacy_anndata
+from spatialsnake.workflow.function.legacy_anndata import transform_to_zarr
+import spatialdata_plot as splt
 
-def zarr_to_h5ad(zarr_path, output_h5ad, save_image=False):
-    sdata = spd.read_zarr(zarr_path)
-    if not sdata.tables:
-        raise ValueError("No tables found in SpatialData object")
-    table_name = list(sdata.tables.keys())[0]
-    adata = sdata.tables[table_name].copy()
-    if hasattr(sdata, 'shapes') and len(sdata.shapes) > 0:
-        shape_key = list(sdata.shapes.keys())[0]
-        shapes = sdata.shapes[shape_key]
-        coords = np.array([[geom.centroid.x, geom.centroid.y] 
-                          for geom in shapes.geometry])
-        adata.obsm['spatial'] = coords
-        adata.uns['spatial'] = {'shapes_key': shape_key}
+
+
+
+
+
+
+def zarr_to_h5ad(INPUT_list, output_h5ad, save_image=False):
+    for file_path in INPUT_list:
+        sdata = spd.read_zarr(file_path)
+        print(sdata)
+    systems=[]
+    shape_elements = list(sdata.shapes.keys())
+    valid_coord_systems = sorted(sdata.coordinate_systems)
+    if len(valid_coord_systems)>1:
+      for i in range(len(valid_coord_systems)):
+          if valid_coord_systems[i] in shape_elements:
+            systems.append(valid_coord_systems[i])
+    else:
+        systems=valid_coord_systems
+    print(systems)
+    adata=to_legacy_anndata(sdata, include_images=save_image, coordinate_system=systems[0])
+    print(adata)
+    sc.pl.spatial(
+    adata, 
+    color='celltype',
+    library_id="Lesional_1_hires_image",
+    basis='spatial',
+    alpha_img=0.8,
+    spot_size=15,
+    title="Spatial Plot with Image")
+    plt.savefig(
+    os.path.join("genes_by_sample.png"),
+    dpi=300,
+    bbox_inches='tight')
+    plt.close()
     adata.write_h5ad(output_h5ad)
     return adata
 
 
-def h5ad_to_zarr(h5ad_path, output_zarr, save_image=False):
-    adata = sc.read_h5ad(h5ad_path)
-    sdata = spd.SpatialData()
-    sdata.tables['table'] = adata
-    if 'spatial' in adata.obsm:
-        coords = adata.obsm['spatial']
-        geometry = [Point(coord[0], coord[1]) for coord in coords]
-        gdf = gpd.GeoDataFrame(
-            {'cell_id': adata.obs_names},
-            geometry=geometry,
-            index=adata.obs_names)
-        sdata.shapes['cells'] = gdf
+def h5ad_to_zarr(INPUT_list, output_zarr, base_name):
+    for file_path in INPUT_list:
+      adata = sc.read_h5ad(file_path)
+    sdata = transform_to_zarr(adata,base_name)
+    print(sdata)
+    sdata.pl.render_images("Lesional_1_hires_image").pl.render_shapes(color="celltype").pl.show()
+    plt.savefig(
+      os.path.join("genes_by_sample.png"),
+      dpi=300,
+      bbox_inches='tight')
+    plt.close()
     sdata.write(output_zarr)
     return sdata
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='SpatialData 单文件格式转换')
-    parser.add_argument('--INPUT',nargs='+',type=str, required=True, help='输入文件路径')
-    parser.add_argument('--output_dir', type=str, required=True, help='输出目录')
-    parser.add_argument('--save_image', type=str ,help='保留图像数据')
+    parser = argparse.ArgumentParser(description='SpatialData transform')
+    parser.add_argument('--INPUT', nargs='+', required=True, 
+                       help='INPUT zarr')
+    parser.add_argument('--output_dir', type=str, required=True, help='output')
+    parser.add_argument('--save_image', type=str ,help='')
     parser.add_argument('--transform_to', type=str, 
-                       required=True, help='目标格式')
+                       required=True, help='')
     parser.add_argument('--transform_from', type=str, 
-                       required=True, help='源格式')
+                       required=True, help='')
     
     args = parser.parse_args()
-    print(args.INPUT[0])
+    print(args.INPUT)
     save_image = args.save_image=="True"
     if args.transform_from == args.transform_to:
-        print("错误: 源格式和目标格式不能相同")
         sys.exit(1)
     os.makedirs(args.output_dir, exist_ok=True)
     base_name = os.path.splitext(os.path.basename(args.INPUT[0]))[0]
     print(base_name)
     if args.transform_to == 'h5ad':
         output_path = os.path.join(args.output_dir, f"{base_name}.h5ad")
-        zarr_to_h5ad(args.INPUT[0], output_path, save_image)
-    else:
+        print(output_path)
+        zarr_to_h5ad(args.INPUT, output_path, save_image)
+    elif args.transform_to == 'zarr':
         output_path = os.path.join(args.output_dir, f"{base_name}.zarr")
-        h5ad_to_zarr(args.INPUT[0], output_path, save_image)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        print("to zarr")
+        h5ad_to_zarr(args.INPUT, output_path, base_name)
 
 
 

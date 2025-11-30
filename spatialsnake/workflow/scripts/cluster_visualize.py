@@ -48,7 +48,7 @@ args = parser.parse_args()
 type=args.type
 dir_path=os.path.dirname(args.output_zarr_path)
 
-def render_spatial_plots(shapes,images,systems):
+def render_spatial_plots(concatenated_sdata,shapes,images,systems):
     for i in range(len(images)):
         sys=systems[0] if len(valid_coord_systems)<2 else systems[i]
         title=images[i].replace("_hires_image","")
@@ -119,10 +119,12 @@ else:
           shapes.append(shape_elements[i])
   else:
       shapes=shape_elements
+  print(f"region字段唯一值: {concatenated_sdata['segmentation_counts'].obs['region'].unique()}")
+  print(concatenated_sdata['segmentation_counts'].uns['spatialdata_attrs'])
   print(shapes)
   print(images)
   print(systems)
-  render_spatial_plots(shapes,images,systems)  
+  render_spatial_plots(concatenated_sdata,shapes,images,systems)  
     
     
     

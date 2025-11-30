@@ -34,26 +34,20 @@ parser.add_argument('--group', nargs='+', required=False,
                    help='Path for the output zarr file')
 parser.add_argument('--sample_id', nargs='+', required=False,
                    help='Path for the output zarr file')
-parser.add_argument('--seg_filter', type=bool, required=True,
-                   help='Path for the output zarr file')
 args = parser.parse_args()
 
 type=args.type
 group=args.group
 sample=args.sample_id
-print(sample,group)
 def QC_plot(type,sdata,zarr_name):
   dir_path=os.path.dirname(zarr_name)
   if type!="slide_seq":
     for table in sdata.tables.keys():
-      print(table)
       adata = sdata[table]
-  print(adata)
-  if args.seg_filter==False:
-    adata.var["mt"] = adata.var_names.str.startswith(("MT-", "mt-"))
-    adata.var["ribo"] = adata.var_names.str.startswith(("RPS", "RPL"))
-    adata.var["hb"] = adata.var_names.str.contains("^HB[^(P)]")
-    sc.pp.calculate_qc_metrics(
+  adata.var["mt"] = adata.var_names.str.startswith(("MT-", "mt-"))
+  adata.var["ribo"] = adata.var_names.str.startswith(("RPS", "RPL"))
+  adata.var["hb"] = adata.var_names.str.contains("^HB[^(P)]")
+  sc.pp.calculate_qc_metrics(
       adata, 
       qc_vars=["mt", "ribo", "hb"], 
       percent_top=(10, 20, 50, 150),
@@ -64,8 +58,8 @@ def QC_plot(type,sdata,zarr_name):
     cprobes = (
       adata.obs["control_probe_counts"].sum() / adata.obs["total_counts"].sum() * 100)
     cwords = (adata.obs["control_codeword_counts"].sum() / adata.obs["total_counts"].sum() * 100)
-    print(f"Negative DNA probe count % : {cprobes}")
-    print(f"Negative decoding count % : {cwords}")
+    # print(f"Negative DNA probe count % : {cprobes}")
+    # print(f"Negative decoding count % : {cwords}")
 
   if type=='xenium':
     image_num=4
@@ -84,7 +78,6 @@ def QC_plot(type,sdata,zarr_name):
     adata.obs["n_genes_by_counts"],
     kde=False,
     ax=axs[1])
-
   if type=='xenium':
     axs[2].set_title("Area of segmented cells")
     sns.histplot(
@@ -103,12 +96,6 @@ def QC_plot(type,sdata,zarr_name):
       dpi=300,
       bbox_inches='tight')
   plt.close()
-
-
-
-
-
-
   sc.pl.violin(
     adata=adata, 
     keys=["log1p_total_counts"], 
@@ -123,7 +110,6 @@ def QC_plot(type,sdata,zarr_name):
     os.path.join(dir_path, "total_umi_by_sample.png"),
     dpi=300, 
     bbox_inches='tight')
-  plt.show()
   plt.close()
 
 
@@ -140,7 +126,6 @@ def QC_plot(type,sdata,zarr_name):
     os.path.join(dir_path, "total_genes_by_sample.png"),
     dpi=300,
     bbox_inches='tight')
-  plt.show()
   plt.close()
 
   sc.pl.violin(
@@ -155,7 +140,6 @@ def QC_plot(type,sdata,zarr_name):
     os.path.join(dir_path, "genes_by_sample.png"),
     dpi=300,
     bbox_inches='tight')
-  plt.show()
   plt.close()
   
   
@@ -164,7 +148,6 @@ def QC_plot(type,sdata,zarr_name):
     os.path.join(dir_path, "scatter.png"),
     dpi=300,
     bbox_inches='tight')
-  plt.show()
   plt.close()
   if type!='slide_seq':
     adata.obs['cell_id'] = adata.obs['cell_id'].astype(str)
@@ -172,62 +155,6 @@ def QC_plot(type,sdata,zarr_name):
     for table in sdata.tables.keys():
       sdata[table]=adata
   return sdata
-# for path in range(ags.input_path):
-#   pat = os.path.normpath(path).split(os.sep)
-#   group.append(pat[1])
-
-# samples = {
-#     "Non_Lesional_1":["data/ST_21_NL","Non_Lesional_1.zarr"],
-#     "Non_Lesional_2":["data/ST_22_NL","Non_Lesional_2.zarr"],
-#     "Lesional_1":["data/ST_21_L","Lesional_1.zarr"],
-#     "Lesional_2":["data/ST_22_L","Lesional_2.zarr"],
-# }
-# samples = {
-#     "Colon_Cancer_P1":["data/Cancer_P1_filtered_feature_cell_matrix.h5",
-#                       "data/Cancer_P1_tissue_hires_image.png",
-#                       "data/Cancer_P1_scalefactors_json.json",
-#                       "data/Cancer_P1_cell_segmentations.geojson",
-#                       "Colon_Cancer_P1"],
-#     "Colon_Cancer_P2":["data/Cancer_P2_filtered_feature_cell_matrix.h5",
-#                       "data/Cancer_P2_tissue_hires_image.png",
-#                       "data/Cancer_P2_scalefactors_json.json",
-#                       "data/Cancer_P2_cell_segmentations.geojson",
-#                       "Colon_Cancer_P2"],
-#     "Colon_Normal_P3":["data/Norm_P3_filtered_feature_cell_matrix.h5",
-#                       "data/Norm_P3_tissue_hires_image.png",
-#                       "data/Norm_P3_scalefactors_json.json",
-#                       "data/Norm_P3_cell_segmentations.geojson",
-#                       "Colon_Normal_P3"],
-#     "Colon_Normal_P5":["data/Norm_P5_filtered_feature_cell_matrix.h5",
-#                       "data/Norm_P5_tissue_hires_image.png",
-#                       "data/Norm_P5_scalefactors_json.json",
-#                       "data/Norm_P5_cell_segmentations.geojson",
-#                       "Colon_Normal_P5"],
-# }
-
-# samples = {
-#     "Colon_Cancer_P1":["data/Visium_HD_Human_Colon_Cancer_P1",8,"Colon_Cancer_P1.zarr"],
-#     "Colon_Cancer_P2":["data/Visium_HD_Human_Colon_Cancer_P2",8,"Colon_Cancer_P2.zarr"],
-#     "Colon_Normal_P3":["data/Visium_HD_Human_Colon_Normal_P3",8,"Colon_Normal_P3.zarr"],
-#     "Colon_Normal_P5":["data/Visium_HD_Human_Colon_Normal_P5",8,"Colon_Normal_P5.zarr"]}
-
-# samples = {
-#     "Kidney_Cancer":["./data/Kidney_Cancer_data","Kidney_Cancer.zarr"],
-#     "Kidney_Normal":["./data/Kidney_Normal_data","Kidney_Normal.zarr"]}
-
-# samples = {
-#     "normal_1": ["data/normal1.h5ad","normal_1.h5ad"],
-#     "normal_2": ["data/normal2.h5ad","normal_2.h5ad"]
-# }
-
-
-
-
-print("Saving zarr files")
-
-
-
-
 
 
 
@@ -237,17 +164,14 @@ if type=='visium_segment':
     sdata=spd.read_zarr(args.input_path[i])
     for table in sdata.tables.values():
       table.var_names_make_unique()
+      table.obs['cell_id'] = table.obs.index
       table.obs["sample"]=sample[i]
       table.obs["group"]=group[i]
     sdatas.append(sdata)
-    print(sdata)
     del sdata,table
 elif type=='visium_HD':
   for i in range(len(sample)):
     sdata=spd.read_zarr(args.input_path[i])
-    print(sdata)
-    print(f"region字段唯一值: {sdata['square_008um'].obs['region'].unique()}")
-    print(sdata['square_008um'].obs)
     TABLE_KEY = 'segmentation_counts'
     for shapes in sdata.shapes.keys():
       shape_key=shapes
@@ -258,8 +182,6 @@ elif type=='visium_HD':
         table.obs["sample"]=sample[i]
         table.obs["group"]=group[i]
         table.obs['region']=shape_key
-        print(table.obs['region'])
-        print(table.uns['spatialdata_attrs'])
         sdata.shapes[shape_key].index=table.obs.index
     del table.uns['spatialdata_attrs']
     sdata.tables={
@@ -271,12 +193,9 @@ elif type=='visium_HD':
             )
         }
     sdatas.append(sdata)
-    print(sdata)
 elif type=="visium":
-  print(sample,group,args.input_path)
   for i in range(len(sample)):
       sdata=spd.read_zarr(args.input_path[i])
-      print(sdata)
       SHAPES_KEY = sample[i]
       TABLE_KEY = 'segmentation_counts'
       for table in sdata.tables.values():
@@ -284,7 +203,6 @@ elif type=="visium":
           table.obs["group"]=group[i]
           table.obs['cell_id'] = table.obs.index
           sdata.shapes[sample[i]].index=table.obs['cell_id']
-          print(sdata.shapes)
       del table.uns['spatialdata_attrs']
       sdata.tables={
               TABLE_KEY: TableModel.parse(
@@ -294,16 +212,15 @@ elif type=="visium":
                   instance_key='cell_id' # Column in adata.obs with instance IDs (cell_id)
               )
           }
-      print(sdata.shapes)
       sdatas.append(sdata)
 elif type=="slide_seq":
   for i in range(len(sample)):
     sdata = sc.read_h5ad(args.input_path[i])
+    sdata.obs['cell_id'] = table.obs.index
     sdata.obs['sample'] = sample[i]
     sdata.obs["group"]=group[i]
     sdata.var_names_make_unique()
     sdata.obs_names_make_unique()
-    print(sdata)
     sdatas.append(sdata)
   adata = anndata.concat(sdatas, join='inner', index_unique=None)
   adata.obs_names_make_unique
@@ -342,9 +259,8 @@ elif type=="xenium":
         table.var_names_make_unique()
         table.obs["sample"] = sample[i]
         table.obs["group"]=group[i]
-        # table.obs['cell_id'] = table.obs['cell_id'].astype(str)
+        table.obs['cell_id'] = table.obs.index
         table.obs['region'] = SHAPES_KEY
-    print(table.obs['region'])
     del table.uns['spatialdata_attrs']
     sdata.tables={
             TABLE_KEY: TableModel.parse(
@@ -355,7 +271,6 @@ elif type=="xenium":
             )
         }
     sdatas.append(sdata)
-    print(sdata)
 
 concatenated_sdata = spd.concatenate(sdatas, concatenate_tables=True)
 concatenated_sdata=QC_plot(type,concatenated_sdata,args.output_zarr_path)

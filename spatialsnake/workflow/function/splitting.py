@@ -46,11 +46,6 @@ print(args.max_y)
 print(args.min_x)
 print(args.min_y)
 
-# cropped_sdata = sdata_ST8059050.query.bounding_box(
-#     min_coordinate=[bb_xmin, bb_ymin],
-#     max_coordinate=[bb_xmax, bb_ymax],
-#     target_coordinate_system="ST8059050",
-# )
 
 def crop0(x,min_x,max_x,min_y,max_y,src):
     return spd.bounding_box_query(

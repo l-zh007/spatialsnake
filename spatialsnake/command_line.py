@@ -62,7 +62,7 @@ __doc__=f"""Main spatialsnake executable, version: {__version__}
 
 Usage:
     spatialsnake useful_tool [--option=<ways>] <INPUT>... [options]
-    spatialsnake <command> <INPUT> <TYPE> [--option=<analysis_option>] [options]
+    spatialsnake <command> <INPUT_FILE> <TYPE> [--option=<analysis_option>] [options]
     spatialsnake produce-file [--option=<analysis_option>]
     spatialsnake install-packages
     spatialsnake (-h | --help)
@@ -178,10 +178,10 @@ Utility Options:
 
 
 def check_command_line_arguments(arguments):
-    if not os.path.exists(arguments["<INPUT>"]):
-        L.info("sample list file not found ",arguments["<INPUT>"])
+    if not os.path.exists(arguments["<INPUT_FILE>"]):
+        L.info("sample list file not found ",arguments["<INPUT_FILE>"])
         return False
-    if arguments["--option"] in ["integrate","clustering","annotion_help","compare_analyze","advance_analysis"] and arguments["<INPUT>"]!="sample.txt":
+    if arguments["--option"] in ["integrate","clustering","annotion_help","compare_analyze","advance_analysis"] and arguments["<INPUT_FILE>"]!="sample.txt":
         L.info('.please confirm the file name are sample_list.txt or annotion_list or filter_list')
         return False
     if arguments["<TYPE>"] not in ['visium','visium_segment','visium_HD','xenium','Merfish','slide_seq']:
@@ -191,10 +191,10 @@ def check_command_line_arguments(arguments):
         L.info("your option are not correct please select the correct step to analysis or not select the option to run the minimize step of analysis")
         L.info("correct option include:integrate preprocess clustering annotion_help annotion compare_analyze advance_analysis splitting merge transform")
         return False
-    if "--configfile" in arguments and arguments["--configfile"]!='config.yaml':
-        if not  os.path.isfile(arguments["--configfile"]):
-          L.info("please select a .yaml file for --configfile")
-          return False
+    # if "--configfile" in arguments and arguments["--configfile"]!='config.yaml':
+    #     if not  os.path.isfile(arguments["--configfile"]):
+    #       L.info("please select a .yaml file for --configfile")
+    #       return False
     return True
 
 def check_arguments_inputfile(arguments):
@@ -259,10 +259,10 @@ class CommandLine:
         self.snakemake = self.snakemake +  " -s {} ".format(f"{spatialsnake_path}/workflow/Snakefile")
         self.load_configfile_if_available(arguments)
         if arguments['--option'] in ["integrate","preprocess","clustering","annotion_help","compare_analyze","all"]:
-          self.config.append("sample_list={}".format(arguments['<INPUT>']))
+          self.config.append("sample_list={}".format(arguments['<INPUT_FILE>']))
         self.config.append(f"spatialsnake_path={spatialsnake_path}/")
         for i,b in arguments.items():
-            if i not in ["--jobs","--configfile","--option","--unlock","--remove","--dry","--help","--version","<INPUT>","<command>","--install-packages","<TYPE>","useful_tool","<INTEGRATED_FILE>"]:
+            if i not in ["--jobs","--configfile","--option","--unlock","--remove","--dry","--help","--version","<INPUT_FILE>","<command>","--install-packages","<TYPE>","useful_tool","<INTEGRATED_FILE>"]:
                 k=i.lstrip("--")
                 if k in ["min_cells", "min_genes", "x1", "x2", "y1", "y2", "workers", "threads"]:
                   try:
@@ -347,7 +347,7 @@ class CommandLine_useful_tools:
         self.snakemake = self.snakemake + " ".join(self.config)
     
     def build_subprocess_cmd(self,arguments,cmd):
-        if arguments["--option"]=="merge":
+        if arguments["--option"] in ["merge","transform"]:
           cmd.extend(['--INPUT'])
           cmd.extend(arguments['<INPUT>'])
         else:
