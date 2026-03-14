@@ -34,8 +34,7 @@ rule cluster_rule:
     NEIGHBORS = NEIGHBORS
   shell:
       """
-      if [ "{params.cluster_algorithm}" != "banksy" ]; then
-          python {spatialsnake_path}workflow/scripts/clustering.py \
+        python {spatialsnake_path}workflow/scripts/clustering.py \
               --input_dir {input.inputs} \
               --sample_id {params.sample_id} \
               --output_zarr_path {output.merge} \
@@ -49,24 +48,6 @@ rule cluster_rule:
               --sketch {params.sketch} \
               --NEIGHBORS {params.NEIGHBORS} \
               --pcs {params.pcs}
-      else
-          python {spatialsnake_path}workflow/scripts/banksy.py \
-              --input_dir {input.inputs} \
-              --sample_id {params.sample_id} \
-              --output_zarr_path {output.merge} \
-              --type {params.run_type} \
-              --tsene {params.tsene} \
-              --MIN_DIST {params.MIN_DIST} \
-              --SPREAD {params.SPREAD} \
-              --RES {params.RES} \
-              --cluster_algorithm {params.cluster_algorithm} \
-              --n_clusters {params.n_clusters} \
-              --k_geom {params.k_geom} \
-              --max_m {params.max_m} \
-              --nbr_weight_decay {params.nbr_weight_decay} \
-              --n_comps {params.n_comps} \
-              --lambda_list {params.lambda_list}
-      fi
       """
       
 

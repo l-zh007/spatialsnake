@@ -1,0 +1,12 @@
+option: "reclustering"
+results_folder: "results"
+sample_list: "sample.txt"
+channel: "single_analysis"
+run_type: "visium"
+recluster_resolution: 0.8
+recluster_n_top_genes: 2000
+recluster_neighbors: 15
+recluster_n_pcs: 30
+recluster_marker_method: "wilcoxon"
+recluster_min_pct: 0.1
+recluster_logfc_threshold: 0.25

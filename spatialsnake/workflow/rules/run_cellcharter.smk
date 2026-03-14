@@ -1,13 +1,13 @@
 rule cellcharter_rule:
   input:
-    inputs=cellcharter_input
+    inputs=lambda wildcards: cellcharter_input
   output:
-    merge=os.path.join(results_folder,"cellcharter",f'{sample_id}_cellcharter.zarr') 
+    merge=directory(os.path.join(results_folder,"cellcharter",f'{cellcharter_sample_id}_cellcharter.zarr')) 
   params:
-    sample_id = sample_id,
+    sample_id = cellcharter_sample_id,
     run_type = run_type,
     image_type = image_type,
-    channal = channal,
+    channal = channel,
     shape_type=shape_type,
     significance=significance,
     max_cluster=max_cluster,
@@ -24,5 +24,11 @@ rule cellcharter_rule:
         --type {params.run_type} \
         --image_type {params.image_type} \
         --channal {params.channal} \
-        --shape_type {params.shape_type}
+        --shape_type {params.shape_type} \
+        --significance {params.significance} \
+        --max_cluster {params.max_cluster} \
+        --condition_col {params.condition_col} \
+        --sample_col {params.sample_col} \
+        --celltype_col {params.celltype_col} \
+        --cellcharter_col {params.cellcharter_col}
       """

@@ -1,28 +1,29 @@
 rule convert_to_loom:
     input:
-        inputs = config["senic_input"]
+        inputs = input_pysenic
     output:
-        loom = os.path.join(results_folder,"pysenic_results",f"{sample_id}.loom")
+        loom = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.loom")
     params:
-        sample_id = sample_id,
+        sample_id = cpdb_sample_id,
         types = run_type
     shell:
       """
       python {spatialsnake_path}workflow/scripts/pysenic.py \
         --input_dir {input.inputs} \
         --sample_id {params.sample_id} \
-        --loom {output.loom}
+        --loom {output.loom} \
+        --types {params.types}
       """
 
 rule pyscenic_grn:
     input:
-        loom = os.path.join(results_folder,"pysenic_results",f"{sample_id}.loom"),
-        tfs = os.path.join("data",tfs_input)    ##
+        loom = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.loom"),
+        tfs = config.get("tfs_input","")
     output:
-        grn = os.path.join(results_folder,"pysenic_results",f"{sample_id}.grn.tsv")
+        grn = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.grn.tsv")
     params:
-        workers = config.get("num_workers", 32),
-        gene_attr = config.get("gene_attribute", "var_names"),
+        workers = config.get("senic_workers", 8),
+        gene_attr = config.get("gene_attr", "var_names"),
         cell_attr = config.get("cell_attr", "cell_id")
     resources:
         mem_mb=32000 
@@ -31,7 +32,7 @@ rule pyscenic_grn:
         arboreto_with_multiprocessing.py \
             --num_workers {params.workers} \
             --output {output.grn} \
-            --method genie3 \
+            --method grnboost2 \
             --sparse \
             --gene_attribute {params.gene_attr} \
             --cell_id_attribute {params.cell_attr} \
@@ -40,15 +41,15 @@ rule pyscenic_grn:
 
 rule pyscenic_ctx:
     input:
-        grn = os.path.join(results_folder,"pysenic_results",f"{sample_id}.grn.tsv"),
-        rankings = os.path.join("data",rankings_input),
-        motifs = os.path.join("data",motifs_input),
-        loom = os.path.join(results_folder,"pysenic_results",f"{sample_id}.loom")
+        grn = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.grn.tsv"),
+        rankings = config.get("feather_input",""),
+        motifs = config.get("motifs_input",""),
+        loom = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.loom")
     output:
-        regulons = os.path.join(results_folder,"pysenic_results",f"{sample_id}.regulons.csv")
+        regulons = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.regulons.csv")
     params:
-        workers = config.get("num_workers", 10),
-        gene_attr = config.get("gene_attribute", "var_names"),
+        workers = config.get("senic_workers", 10),
+        gene_attr = config.get("gene_attr", "var_names"),
         cell_attr = config.get("cell_attr", "cell_id")
     shell:
         """
@@ -64,19 +65,23 @@ rule pyscenic_ctx:
 #            --mode "{params.mode}" \
 rule pyscenic_aucell:
     input:
-        regulons = os.path.join(results_folder,"pysenic_results",f"{sample_id}.regulons.csv")
+        regulons = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.regulons.csv")
     output:
-        aucell = os.path.join(results_folder,"pysenic_results",f"{sample_id}.aucell.loom")
+        aucell = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.aucell.loom")
     params:
-        inputs = config["senic_input"],
-        num_workers = num_workers,
-        types = run_type
+        inputs = cellPhoneDB_input if cellPhoneDB_input else config.get("senic_input", ""),
+        num_workers = config.get("senic_workers",8),
+        types = run_type,
+        celltype = celltype_col,
+        sample_id = cpdb_sample_id
     shell:
         """
         python {spatialsnake_path}workflow/scripts/pysenic_visualize.py \
             --regulons {input.regulons} \
-            --inputs {params.inputs} \
+            --input_dir {params.inputs} \
             --sample_id {params.sample_id} \
+            --celltype {params.celltype} \
+            --outputs {output.aucell} \
             --num_workers {params.num_workers} \
             --types {params.types}
         """

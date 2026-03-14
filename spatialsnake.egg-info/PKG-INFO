@@ -1,61 +1,22 @@
 Metadata-Version: 2.4
 Name: spatialsnake
-Version: 0.1.0
-Summary: spatialsnake
+Version: 0.0.1
+Summary: spatialsnake：a package for spatial transcriptomic
 Home-page: https://github.com/l-zh007/spatialsnake
 Author: lzh
-Author-email: 1714074171@qq.com
-Keywords: spatial transcription RNA analysis
-Classifier: License :: OSI Approved :: MIT License
+Author-email: l-zh007 <1714074171@qq.com>
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/l-zh007/spatialsnake
+Project-URL: Issues, https://github.com/l-zh007/spatialsnake/issues
 Classifier: Programming Language :: Python :: 3
-Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+Classifier: Operating System :: OS Independent
 Requires-Python: >=3.12.11
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: spatialdata==0.5.0
-Requires-Dist: spatialdata-io==0.3.0
-Requires-Dist: spatialdata-plot==0.2.11
-Requires-Dist: squidpy==1.6.5
-Requires-Dist: napari-spatialdata==0.5.7
-Requires-Dist: scanpy==1.10.4
-Requires-Dist: anndata==0.12.0
-Requires-Dist: mudata==0.3.2
-Requires-Dist: numpy==2.2.6
-Requires-Dist: pandas==2.2.3
-Requires-Dist: scipy==1.13.1
-Requires-Dist: scikit-learn==1.7.2
-Requires-Dist: matplotlib==3.9.4
-Requires-Dist: seaborn==0.13.2
-Requires-Dist: plotnine==0.15.0
-Requires-Dist: cell2location==0.1.5
-Requires-Dist: cellphonedb==5.0.1
-Requires-Dist: torch==2.8.0
-Requires-Dist: pytorch-lightning==2.5.5
-Requires-Dist: scvi-tools==1.4.0
-Requires-Dist: zarr==2.18.7
-Requires-Dist: h5py==3.14.0
-Requires-Dist: tifffile==2025.8.28
-Requires-Dist: imageio==2.37.0
-Requires-Dist: ome-zarr==0.11.1
-Requires-Dist: statsmodels==0.14.5
-Requires-Dist: Pint==0.25
-Requires-Dist: pyarrow==21.0.0
-Requires-Dist: click==8.3.0
-Requires-Dist: typer==0.16.0
-Requires-Dist: docopt==0.6.2
-Requires-Dist: geopandas==1.1.1
-Requires-Dist: pydeseq2==0.5.2
 Dynamic: author
-Dynamic: author-email
-Dynamic: classifier
-Dynamic: description
-Dynamic: description-content-type
 Dynamic: home-page
-Dynamic: keywords
 Dynamic: license-file
-Dynamic: requires-dist
 Dynamic: requires-python
-Dynamic: summary
 
 #   Spatialsnake  :
 
@@ -80,9 +41,9 @@ for more detail of the usage of the pipeline
 
 ### prepare the environment first.
 ```bash
-Create conda environment with the environment.yml file in github
+## Create conda environment with the environment.yml file in github code page
 
-conda env create -f environment.yml -n spatialsnake_env     [or setting your own conda env name]
+conda env create -f environment.yml -n spatialsnake_env     ## [or setting your own conda env name]
 
 conda activate spatialsnake_env
 ```
@@ -94,17 +55,17 @@ conda activate spatialsnake_env
 git clone https://github.com/l-zh007/spatialsnake.git
 
 cd spatialsnake
-pip install .         or [pip install -e .]  devolopment mode
+pip install -e .                       # or [pip install .]  优选-e开发者模式
 
 spatialsnake -h
-spatialsnake install-packages (Install coordinate R packages)
+spatialsnake install-packages          # (Install coordinate R packages)
 
 mkdir project
 cd project
 
-start your analysis with file[sample.txt] and spatialdata in [data/*]
+start your analysis with file[sample.txt] and spatialdata in [data/*] and output dir [results]
 
-please check your spatialdata folder name in accordance with sample_name in  [sample.txt]
+please make sure your spatialdata folder name in [data/] in accordance with sample_name in  [sample.txt]
 ```
 
 

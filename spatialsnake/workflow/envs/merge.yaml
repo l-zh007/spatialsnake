@@ -4,5 +4,10 @@ merge_by: 'sample'
 reordering: False
 re_sample: False
 cluster_key: 'clusters'
-
+annotation_csv: ''
+csv_cell_col: 'Barcode'
+csv_label_col: 'Grouped_Annotation'
+input_cell_col: 'cell_id'
+target_col: 'celltype'
+fallback_col: 'celltype'
 

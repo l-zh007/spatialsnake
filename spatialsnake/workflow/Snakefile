@@ -7,11 +7,11 @@
 import pandas as pd
 import os
 import sys
-import json
-import glob
 import warnings
+import json
 warnings.filterwarnings("ignore")
 import logging
+from spatialsnake.workflow.function.get_sample import get_sample_paths, get_annotion, seg_filter_sample
 L = logging.getLogger("spatialsnake_user")
 L.setLevel(logging.INFO)
 L.propagate = False
@@ -20,10 +20,7 @@ formatter = logging.Formatter('%(asctime)s: %(levelname)s - %(message)s')
 log_handler.setFormatter(formatter)
 if not L.handlers:
     L.addHandler(log_handler)
-include: "function/get_sample.smk"
-
-# if config.get("load_config")==False:
-#   configfile: "config.yaml"
+runtype = ["visium","xenium","Merfish","slide-seq","visium_segment"]
 
 annotion_list = config.get("annotion_list", "annotion.txt")
 filter_list = config.get("filter_list", False)
@@ -31,6 +28,25 @@ sample_list = config.get("sample_list", "sample.txt")
 
 spatialsnake_path = config.get("spatialsnake_path", "")
 results_folder = config.get("results_folder", "results")
+cellchat_compare_output_dir = config.get("cellchat_compare_output_dir", os.path.join(results_folder, "compare_cellchat"))
+cellchat_compare_sample_name1 = config.get("cellchat_compare_sample_name1", "")
+cellchat_compare_sample_name2 = config.get("cellchat_compare_sample_name2", "")
+cellchat_compare_pathways = config.get("cellchat_compare_pathways", "")
+cellchat_compare_source_cells = config.get("cellchat_compare_source_cells", "")
+cellchat_compare_target_cells = config.get("cellchat_compare_target_cells", "")
+cellchat_compare_receiver_cells = config.get("cellchat_compare_receiver_cells", "")
+cellchat_compare_bubble_angle = config.get("cellchat_compare_bubble_angle", 45)
+cellchat_compare_bubble_remove_isolate = config.get("cellchat_compare_bubble_remove_isolate", True)
+cellchat_compare_do_ranknet = config.get("cellchat_compare_do_ranknet", True)
+cellchat_compare_do_role_heatmap = config.get("cellchat_compare_do_role_heatmap", True)
+cellchat_compare_do_pathway_plots = config.get("cellchat_compare_do_pathway_plots", True)
+cellchat_compare_do_compare_overview = config.get("cellchat_compare_do_compare_overview", True)
+cellchat_compare_do_compare_bubble = config.get("cellchat_compare_do_compare_bubble", True)
+cellchat_compare_do_single_bubble = config.get("cellchat_compare_do_single_bubble", True)
+cellchat_compare_do_gene_expression = config.get("cellchat_compare_do_gene_expression", False)
+cellchat_compare_gene_colors = config.get("cellchat_compare_gene_colors", "white,#FEC44F,#D95F0E")
+cellchat_compare_gene_plot_type = config.get("cellchat_compare_gene_plot_type", "dot")
+cellchat_compare_save_merged = config.get("cellchat_compare_save_merged", True)
 
 option = config.get("option","integrate")
 
@@ -69,12 +85,19 @@ RES = config.get("resolution", 0.5)
 n_top_genes = config.get("n_top_genes", 1000)
 batch_method = config.get("batch_method", None)
 n_comps = config.get("n_comps", 50)
+recluster_resolution = config.get("recluster_resolution", 0.8)
+recluster_n_top_genes = config.get("recluster_n_top_genes", 2000)
+recluster_neighbors = config.get("recluster_neighbors", 15)
+recluster_n_pcs = config.get("recluster_n_pcs", 30)
+recluster_marker_method = config.get("recluster_marker_method", "wilcoxon")
+recluster_min_pct = config.get("recluster_min_pct", 0.1)
+recluster_logfc_threshold = config.get("recluster_logfc_threshold", 0.25)
 
 if channel == "single_analysis" and batch_method!=None:
     L.info("your argument harmony just allowed setting in compare_analysis channal")
     batch_method = None
 
-spacies = config.get("human", "human")
+spacies = config.get("spacies", "human")
 cluster_algorithm = config.get("cluster_algorithm", "leiden")
 anno_algorithm = config.get("anno_algorithm", "mannul")
 compare_algorithm = config.get("compare_algorithm", "DEseq2")
@@ -87,20 +110,42 @@ threshold = config.get("threshold", 0.1)
 threads = config.get("threads", 32)
 pvalue = config.get("pvalue", 0.05)
 sample_id = config.get("sample_type", "Normal")
+microenvs_file_path = config.get("microenvs_file_path", "")
+active_tf_path = config.get("active_tf_path", "")
+degs_file_path = config.get("degs_file_path", "")
+niche_col = config.get("niche_col", "")
+is_singlecell = config.get("is_singlecell", False)
+cpdb_method = config.get("cpdb_method", "statistical")
+cpdb_de_method = config.get("cpdb_de_method", "wilcoxon")
 n_clusters = config.get("n_clusters", 10)
 output_name = config.get("output_name", "Normal")
 mt_threshold = config.get("mt_threshold", 50.0)
+significance = config.get("significance", 0.05)
+max_cluster = config.get("max_cluster", 10)
+condition_col = config.get("condition_col", "condition")
+sample_col = config.get("sample_col", "sample")
+celltype_col = config.get("celltype_col", "celltype")
+liana_method = config.get("liana_method", "cellphonedb")
+liana_resource_name = config.get("liana_resource_name", "consensus")
+liana_expr_prop = config.get("liana_expr_prop", 0.1)
+liana_min_cells = config.get("liana_min_cells", 5)
+liana_use_raw = config.get("liana_use_raw", True)
+cellcharter_col = config.get("cellcharter_col", "spatial_cluster")
+cell_type1 = config.get("cell_type1", "")
+cell_type2 = config.get("cell_type2", "")
+gene_family = config.get("gene_family", "")
+celltype = celltype_col
+cellPhoneDB_input = config.get("cellPhoneDB_input", "")
 
 geojson = "cell_segmentations.geojson"
 image = "tissue_hires_image.png"
 scale_factors = "scalefactors_json.json"
 coor_file = "BeadLocationsForR.csv"
 
-k_geom =config.get("k_geom")
-max_m = config.get("max_m")
-nbr_weight_decay = config.get("nbr_weight_decay")
-pca_dims = config.get("pca_dims")
-lambda_list = config.get("lambda_list")
+k_geom = config.get("k_geom", 15)
+max_m = config.get("max_m", 1)
+nbr_weight_decay = config.get("nbr_weight_decay", "scaled_gaussian")
+lambda_list = config.get("lambda_list", [0.8])
 
 ## downsample for spatialdata
 sketch = config.get("sketch",False)
@@ -113,43 +158,126 @@ min_x=config.get("min_x")
 max_y=config.get("max_y")
 min_y=config.get("min_y")
 
-if type != "xenium":
+feather_input = config.get("feather_input", "")
+print(feather_input,"666666") 
+
+if run_type != "xenium":
     image_type = config.get("image_type", "hires")
     shape_type = config.get("shape_type", "cell_boundaries")
 else:
     image_type = config.get("image_type", "morphology_focus")
     shape_type = config.get("shape_type", "cell_circle")
 
+consistent_option = ["integrate","preprocess","clustering","annotion_help","annotion"]
 
-
-if os.path.exists(sample_list) == True:
+if  option in consistent_option and anno_algorithm == "mannul":
     main_file = []
     samples = []
     bin_size = []
     group = []
     if channel == 'single_analysis':
-        if run_type == "visium" or run_type == "xenium" or run_type == "visium_segment" or run_type == "slide_seq":
-            samples, main_file = get_sample_paths(sample_list)
+        if run_type in runtype:
+            samples, main_file = get_sample_paths(sample_list, run_type,channel,option,require_non_empty=True)
         elif run_type == "visium_HD":
-            samples, main_file, bin_size = get_sample_paths(sample_list)
+            samples, main_file, bin_size = get_sample_paths(sample_list, run_type,channel,option,require_non_empty=True)
     else:
-        if run_type == "visium" or run_type == "xenium" or run_type == "visium_segment" or run_type == "slide_seq":
-            samples, main_file, group = get_sample_paths(sample_list)
+        if run_type in runtype:
+            samples, main_file, group = get_sample_paths(sample_list, run_type,channel,option,require_non_empty=True)
         elif run_type == "visium_HD":
-            samples, main_file, bin_size, group = get_sample_paths(sample_list)
+            samples, main_file, bin_size, group = get_sample_paths(sample_list,run_type,channel,option,require_non_empty=True)
     main_file = main_file[0]
+elif option == "compare_stage" and runpipe != "cellchat":
+    main_file = []
+    samples = []
+    bin_size = []
+    group = []
+    if channel == 'single_analysis':
+        if run_type in runtype:
+            samples, main_file = get_sample_paths(sample_list, run_type,channel,option,require_non_empty=True)
+        elif run_type == "visium_HD":
+            samples, main_file, bin_size = get_sample_paths(sample_list, run_type,channel,option,require_non_empty=True)
+    else:
+        if run_type in runtype:
+            samples, main_file, group = get_sample_paths(sample_list, run_type,channel,option,require_non_empty=True)
+        elif run_type == "visium_HD":
+            samples, main_file, bin_size, group = get_sample_paths(sample_list,run_type,channel,option,require_non_empty=True)
+    if len(main_file) > 0:
+        main_file = main_file[0]
+else:
+    samples = []
+    downstream_file = []
+    reference=[]
+    scale_factors_files = []
+    cellchat_sample_names = []
+    cellchat_scale_factors = []
+    cellchat_output_name = None
+    cellcharter_input = ""
+    cellcharter_sample_id = sample_id
+    banksy_input = ""
+    banksy_sample_id = sample_id
+    if option=="annotion":
+        samples,downstream_file,reference = get_sample_paths(sample_list, run_type,channel,option,require_non_empty=False)
+    else:
+        samples,downstream_file,scale_factors_files= get_sample_paths(sample_list, run_type,channel,option,require_non_empty=False)
+    if option == "compare_stage" and runpipe == "cellchat":
+        if len(downstream_file) == 0:
+            sys.exit("\ncompare_stage: 未提供 CellChat 比较所需的 rds 文件路径")
+        bad = [p for p in downstream_file if (not os.path.isfile(p)) or (os.path.splitext(p)[1].lower() != ".rds")]
+        if len(bad) > 0:
+            L.info(f"以下路径不可用或非 .rds 文件: {bad}")
+            sys.exit("\ncompare_stage: 请在 sample.txt 第二列提供有效的 CellChat .rds 路径")
+    if option == "advance_analysis" and runpipe == "cellchat" and channel == "compare_analysis":
+        cellchat_sample_names = samples
+        cellchat_scale_factors = scale_factors_files
+        if len(downstream_file) > 0:
+            derived_name = os.path.splitext(os.path.basename(downstream_file[0]))[0]
+            cellchat_output_name = derived_name if derived_name else "concatenated_sdata"
+        else:
+            cellchat_output_name = "concatenated_sdata"
+        samples = [cellchat_output_name]
+    if option == "advance_analysis" and runpipe == "cellcharter":
+        if len(downstream_file) == 0:
+            sys.exit("\nadvance_analysis: 未提供 CellCharter 输入数据路径")
+        cellcharter_input = downstream_file[0]
+        if channel == "single_analysis" and len(samples) > 0:
+            cellcharter_sample_id = samples[0]
+        elif channel == "compare_analysis":
+            derived_name = os.path.splitext(os.path.basename(downstream_file[0]))[0]
+            cellcharter_sample_id = derived_name if derived_name else "concatenated_sdata"
+    if option == "advance_analysis" and runpipe == "banksy":
+        if len(downstream_file) == 0:
+            sys.exit("\nadvance_analysis: 未提供 BANKSY 输入数据路径")
+        banksy_input = downstream_file[0]
+        if channel == "single_analysis" and len(samples) > 0:
+            banksy_sample_id = samples[0]
+        elif channel == "compare_analysis":
+            derived_name = os.path.splitext(os.path.basename(downstream_file[0]))[0]
+            banksy_sample_id = derived_name if derived_name else "concatenated_sdata"
+    if option == "advance_analysis" and (runpipe == "cellPhoneDB" or runpipe == "pysenic" or runpipe == "liana"):
+        if not cellPhoneDB_input:
+            if len(downstream_file) == 0:
+                sys.exit("\nadvance_analysis: 未提供 CellPhoneDB 输入数据路径")
+            cellPhoneDB_input = downstream_file[0]
+        if channel == "compare_analysis":
+            cpdb_sample_id = "concatenated_sdata"
+        elif len(samples) > 0:
+            cpdb_sample_id = samples[0]
+        else:
+            cpdb_sample_id = sample_id
+    print(samples,downstream_file,reference,scale_factors_files,"@@@@@@@@@@@")
+
 def parameter_output(samples, option):
     outs = []
     if option == 'integrate':
         if channel == 'single_analysis':
-            if run_type == "visium" or run_type == "xenium" or run_type == "visium_segment":
+            if run_type in runtype:
                 outs += expand(os.path.join(results_folder, "{sample}",'integrate',"{sample}.zarr"), sample=samples)
             if run_type == "visium_HD":
                 outs += expand(os.path.join(results_folder, "{sample}_{bin}um", 'integrate',"{sample}.zarr"), zip, sample=samples, bin=bin_size)
             if run_type == "slide_seq":
                 outs += expand(os.path.join(results_folder, "{sample}",'integrate',"{sample}.h5ad"), sample=samples)
         if channel == "compare_analysis" and flag == 'merge':
-            if run_type == "visium" or run_type == "xenium" or run_type == "visium_segment":
+            if run_type in runtype:
                 outs += expand(os.path.join(results_folder, "{group}", "{sample}.zarr"), zip, sample=samples, group=group)
             if run_type == "visium_HD":
                 outs += expand(os.path.join(results_folder, "{group}_{bin}um", "{sample}.zarr"), zip, sample=samples, bin=bin_size, group=group)
@@ -160,7 +288,7 @@ def parameter_output(samples, option):
         return outs
     if option == "preprocess":
         if channel == 'single_analysis':
-            if run_type == "visium" or run_type == "xenium" or run_type == "visium_segment":
+            if run_type in runtype:
                 outs += expand(os.path.join(results_folder, "{sample}", 'preprocess', "filter_{sample}.zarr"), sample=samples)
             if run_type == "visium_HD":
                 outs += expand(os.path.join(results_folder, "{sample}_{bin}um", 'preprocess', "filter_{sample}.zarr"), zip, sample=samples, bin=bin_size)
@@ -177,9 +305,9 @@ def parameter_output(samples, option):
             return(expand(os.path.join(results_folder, "{sample}", 'clustering', 'kegg_data.csv'), sample=samples))
         if channel == 'compare_analysis':
             return(os.path.join(results_folder, "merge_data", 'clustering', 'kegg_data.csv'))
-    if option == "annotion" or option == "clustering":
+    if option == "clustering" or (option == "annotion" and anno_algorithm == "mannul"):
         if channel == 'single_analysis':
-            if run_type == "visium" or run_type == "xenium" or run_type == "visium_segment":
+            if run_type in runtype:
                 outs += expand(os.path.join(results_folder, "{sample}", option, "{sample}.zarr"), sample=samples)
             if run_type == "visium_HD":
                 outs += expand(os.path.join(results_folder, "{sample}_{bin}um", option, "{sample}.zarr"), zip, sample=samples, bin=bin_size)
@@ -188,24 +316,53 @@ def parameter_output(samples, option):
         if channel == "compare_analysis":
             outs.append(os.path.join(results_folder, "merge_data", option, "concatenated_sdata"))
         return outs
-    if option == "compare_analyze":
+    if option == "reclustering":
+        outs += expand(os.path.join(results_folder, "{sample}", "reclustering", "marker_genes.csv"), sample=samples)
+        return outs
+    if anno_algorithm != "mannul" and option == "annotion":
+        if channel == 'single_analysis':
+            if run_type in runtype:
+                outs += expand(os.path.join(results_folder, "{sample}", anno_algorithm, "{sample}.zarr"), sample=samples)
+            if run_type == "visium_HD":
+                outs += expand(os.path.join(results_folder, "{sample}", anno_algorithm, "{sample}.zarr"),sample=samples)
+            if run_type == "slide_seq":
+                outs += expand(os.path.join(results_folder, "{sample}", anno_algorithm, "{sample}.h5ad"), sample=samples)
+        if channel == "compare_analysis":
+            outs.append(os.path.join(results_folder, "merge_data", anno_algorithm, "concatenated_sdata"))
+        return outs
+    if option == "compare_stage":
+        if runpipe == "cellchat":
+            return(cellchat_compare_output_dir)
         return(os.path.join(results_folder, "merge_data", 'compare_analysis', 'positive', 'kegg_data.csv'))
     if option == "advance_analysis":
         if runpipe == "cellPhoneDB":
             if channel == 'single_analysis':
-                outs += expand(os.path.join(results_folder, "{sample}", runpipe, "{sample}_heatmap.png"), sample=samples)
+                outs += expand(os.path.join(results_folder, f"{cpdb_sample_id}", "cellPhoneDB_results", f"{cpdb_sample_id}_heatmap.png"))
             if channel == "compare_analysis":
-                outs.append(os.path.join(results_folder, "merge_data", runpipe, "concentrate_heatmap.png"))
-        if runpipe == "pysenic":
-            outs.append(os.path.join(results_folder, "pysenic_results", f"{sample_id}.aucell.loom"))
+                outs.append(os.path.join(results_folder, "merge_data", "cellPhoneDB_results", "concentrate_heatmap.png"))
+        elif runpipe == "pysenic":
+            outs.append(os.path.join(results_folder, "pysenic_results", f"{cpdb_sample_id}.aucell.loom"))
+        elif runpipe == "liana":
+            outs.append(os.path.join(results_folder,"liana_output",f"{cpdb_sample_id}.zarr"))
+        elif runpipe == "cellcharter":
+            outs.append(os.path.join(results_folder, "cellcharter", f"{cellcharter_sample_id}_cellcharter.zarr"))
+        elif runpipe == "banksy":
+            outs.append(os.path.join(results_folder, "banksy", f"{banksy_sample_id}_banksy.zarr"))
+        elif runpipe == "cellchat":
+            cellchat_samples = samples
+            if channel == "compare_analysis" and cellchat_output_name:
+                cellchat_samples = [cellchat_output_name]
+            outs += expand(os.path.join(results_folder, "{sample}", "cellchat", "{sample}_cellchat_network.png"), sample=cellchat_samples)
+            outs += expand(os.path.join(results_folder, "{sample}", "cellchat", "{sample}_cellchat_network.pdf"), sample=cellchat_samples)
+            outs += expand(os.path.join(results_folder, "{sample}", "cellchat", "{sample}_cellchat_stats.csv"), sample=cellchat_samples)
+            outs += expand(os.path.join(results_folder, "{sample}", "cellchat", "{sample}_cellchat_lr.csv"), sample=cellchat_samples)
         return outs
-    if channel == "useful_tool":
-        if option=="splitting":
-           outs.append()
 
 def input_file(run_type):
-    if run_type == "visium" or run_type == "xenium" or run_type == "slide_seq":
+    if run_type in runtype and run_type != "Merfish":
         return(os.path.join(data_fold, '{sample}', main_file))
+    elif run_type == "Merfish":
+        return(os.path.join(data_fold, "{sample}"))
     elif run_type == "visium_HD":
         return(os.path.join(data_fold, '{sample}', "binned_outputs", "square_{bin}um", main_file))
     elif run_type == "visium_segment":
@@ -215,14 +372,14 @@ def get_output(run_type):
     if channel == 'single_analysis':
         if run_type == "visium_HD":
             return(directory(os.path.join(results_folder, "{sample}_{bin}um", "{sample}.zarr")))
-        elif run_type == "visium" or run_type == "xenium" or run_type == "visium_segment":
+        elif run_type in runtype:
             return(directory(os.path.join(results_folder, "{sample}", "{sample}.zarr")))
         elif run_type == "slide_seq":
             return(os.path.join(results_folder, "{sample}", "{sample}.h5ad"))
     elif channel == "compare_analysis":
         if run_type == "visium_HD":
             return(directory(os.path.join(results_folder, "{group}_{bin}um", "{sample}.zarr")))
-        elif run_type == "visium" or run_type == "xenium" or run_type == "visium_segment":
+        elif run_type in runtype:
             return(directory(os.path.join(results_folder, "{group}", "{sample}.zarr")))
         elif run_type == "slide_seq":
             return(os.path.join(results_folder, "{group}", "{sample}.h5ad"))  
@@ -231,7 +388,7 @@ def nomal_file(run_type, segs):
     if channel == 'single_analysis':
         if run_type == "visium_HD":
             return((os.path.join(results_folder, "{sample}_{bin}um", segs, "{sample}.zarr")))
-        elif run_type == "visium" or run_type == "xenium" or run_type == "visium_segment":
+        elif run_type in runtype:
             return(os.path.join(results_folder, "{sample}", segs, "{sample}.zarr"))
         elif run_type == "slide_seq":
             return(os.path.join(results_folder, "{sample}", segs, "{sample}.h5ad"))
@@ -240,8 +397,8 @@ def nomal_file(run_type, segs):
 
 def check_cell2Location_file(samples, run_type, input_singlecell, input_spatial, channel):
     if input_spatial == "" and not os.path.isdir(nomal_file(run_type, "")):
-        sys.exit("please provide your st_file path or you can load in the zarr data with [spatialsnake integrate] which save in [results/]")
         L.info("please promiss your st_file haven't been normalization Log transformation Variance stabilizing transformation  PCA、t-SNE or UMAP....")
+        sys.exit("please provide your st_file path or you can load in the zarr data with [spatialsnake integrate] which save in [results/]")
     if input_singlecell == "":
         L.info("please promiss your sc data has been anno")
         sys.exit("please provide your st_file path or you can download h5ad in your own path")
@@ -264,6 +421,7 @@ else:
     L.info("!!!!! you are filter the sample by different params in filter_list.txt")
     filter_dict = seg_filter_sample(filter_list)
 flag = 'ALL'
+print(parameter_output(samples, option))
 rule all:
     input:
         parameter_output(samples, option)
@@ -277,30 +435,50 @@ elif option == "preprocess":
     include: "rules/preprocess.smk"
 elif option == "clustering":
     include: "rules/cluster.smk"
+elif option == "reclustering":
+    include: "rules/reclustering.smk"
 elif option == "annotion_help":
     include: "rules/annotion_help.smk"
 elif option == "annotion":
     if anno_algorithm == "cell2Location":
-        input_spatial = config.get("input_spatial", "") if config.get("input_spatial", "") != "" else nomal_file(run_type, "")
-        input_singlecell = config.get("input_singlecell", "")
-        input_st = check_cell2Location_file(samples, run_type, input_singlecell, input_spatial, channel)
+        input_spatial = downstream_file[0]
+        input_singlecell = reference[0]
         include: "rules/cell2Location_run.smk"
     elif anno_algorithm == "mannul":
-        anno_data = get_annotion(annotion_list, samples)
+        anno_data = get_annotion(annotion_list, samples,channel,results_folder)
         include: "rules/mannul.smk"
+    elif anno_algorithm == "reannotation":
+        anno_data = get_annotion(annotion_list, samples,channel,results_folder)
+        include: "rules/reannotation.smk"
     elif anno_algorithm == "RCTD":
+        input_spatial = downstream_file[0]
+        input_singlecell = reference[0]
         include: "rules/RCTD.smk"
-elif option == "compare_analyze":
-    include: "rules/compare_analyze.smk"
+elif option == "compare_stage":
+    if runpipe == "cellchat":
+        include: "rules/compare_LR.smk"
+    else:
+        if channel == "compare_analysis":
+            annotion_input = os.path.join(results_folder, "merge_data", "annotion", "concatenated_sdata")
+        include: "rules/compare_gene.smk"
 elif option == "advance_analysis":
     if runpipe == "cellPhoneDB":
         include: "rules/cellPhoneDB.smk"
     elif runpipe == "pysenic":
+        input_pysenic = downstream_file[0]
+        print(input_pysenic)
         include: "rules/py_senic.smk"
     elif runpipe == "liana":
+        liana_inputs = downstream_file[0]
         include: "rules/run_liana.smk"
     elif runpipe == "cellcharter":
         include: "rules/run_cellcharter.smk"
+    elif runpipe == "banksy":
+        include: "rules/run_banksy.smk"
+    elif runpipe == "cellchat":
+        input_spatial = downstream_file[0]
+        input_singlecell = scale_factors_files[0]
+        include: "rules/run_cellchat.smk"
 elif option == "all":
     include: "rules/integrate.smk"
     if channel == "compare_analysis":
@@ -309,12 +487,3 @@ elif option == "all":
     include: "rules/preprocess.smk"
     include: "rules/cluster.smk"
     include: "rules/annotion_help.smk"
-elif channel=="useful_tool":
-    if option =="slice":
-      include: "rule/run_slice.smk"
-    
-    
-    
-    
-    
-    

@@ -16,7 +16,7 @@ rule cluster_rule:
   output:
     merge=nomal_file(run_type,"clustering") if run_type == "slide_seq" else directory(nomal_file(run_type,"clustering"))
   params:
-    sample_id = lambda wildcards: "concatenated_sdata" if channel=="compare_analysis" and seg_filter==False else wildcards.sample,
+    sample_id = lambda wildcards: "concatenated_sdata" if channel=="compare_analysis"  else wildcards.sample,
     run_type = run_type,
     tsene = tsene,
     MIN_DIST = MIN_DIST,
@@ -29,7 +29,9 @@ rule cluster_rule:
     nbr_weight_decay = nbr_weight_decay,
     n_comps = n_comps,
     lambda_list = lambda_list,
-    sketch = sketch
+    sketch = sketch,
+    pcs = pcs,
+    NEIGHBORS = NEIGHBORS
   shell:
       """
       if [ "{params.cluster_algorithm}" != "banksy" ]; then
@@ -44,7 +46,9 @@ rule cluster_rule:
               --RES {params.RES} \
               --cluster_algorithm {params.cluster_algorithm} \
               --n_clusters {params.n_clusters} \
-              --sketch {params.sketch}
+              --sketch {params.sketch} \
+              --NEIGHBORS {params.NEIGHBORS} \
+              --pcs {params.pcs}
       else
           python {spatialsnake_path}workflow/scripts/banksy.py \
               --input_dir {input.inputs} \

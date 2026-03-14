@@ -20,7 +20,7 @@ args = parser.parse_args()
 output_dir = os.path.dirname(args.loom)
 print(output_dir)
 os.makedirs(output_dir,exist_ok=True)
-if types=="slide_seq" or os.path.splitext(args.input_dir)[1].lower()==".h5ad":
+if args.types=="slide_seq" or os.path.splitext(args.input_dir)[1].lower()==".h5ad":
   adata = sc.read_h5ad(args.input_dir)
 else:
   concatenated_sdata = spd.read_zarr(args.input_dir)

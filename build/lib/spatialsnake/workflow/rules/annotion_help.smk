@@ -18,7 +18,7 @@ rule annotion_help:
     merge=annotion_help_output(run_type,'marker_genes_pval.csv')
     # os.path.join(results_folder,"{sample}",'clustering','marker_genes_pval.csv') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'clustering','marker_genes_pval.csv') 
   params:
-    sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" and seg_filter==False else wildcards.sample,
+    sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" else wildcards.sample,
     run_type = run_type,
     image_type = image_type,
     image_slice = image_slice,
@@ -46,11 +46,10 @@ rule enrich_rule:
     inputs = annotion_help_output(run_type,'marker_genes_pval.csv')
   output:
     merge = annotion_help_output(run_type,'kegg_data.csv')
-    #os.path.join(results_folder,"{sample}",'clustering','kegg_data.csv') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'clustering','kegg_data.csv')
   params:
     spacies = spacies,
     run_type = run_type,
-    sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" and seg_filter==False else wildcards.sample,
+    sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" else wildcards.sample,
   shell:
       """
       Rscript {spatialsnake_path}workflow/scripts/enrichment.R \

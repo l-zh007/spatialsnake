@@ -20,6 +20,6 @@ max_m: 1
 nbr_weight_decay: "scaled_gaussian"
 lambda_list: 0.2
 sketch: False                       # whether use sketch method to analysis the spatialdata
-
-
+pcs: 25
+NEIGHBORS: 10
 

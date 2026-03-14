@@ -116,10 +116,11 @@ def plot_auc_heatmap_scanpy(auc_mtx,adata, groupby, top_genes=None, figsize=(10,
         groupby=groupby,
         figsize=figsize,
         cmap='Reds',  # 使用红色系，适合AUC值
-        dendrogram=True,
+        dendrogram=False,
         standard_scale='var',  # 按TF标准化
         swap_axes=True,  # 交换轴，使TF在y轴
-        show_gene_labels=True)
+        show_gene_labels=True,
+        show=False)
     plt.savefig(outputs, dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()  
   

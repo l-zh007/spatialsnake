@@ -13,6 +13,7 @@ import bbknn
 import anndata
 import geosketch as sketch
 import warnings
+from spatialsnake.workflow.function.pca_choosing import select_pca_dimensions
 warnings.filterwarnings("ignore")
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
 parser.add_argument('--input_dir', type=str, required=True, 
@@ -134,10 +135,16 @@ plt.show()
 plt.close()
 
 
-sc.pp.normalize_total(adata, target_sum = None)
+if "counts" not in adata.layers:
+    adata.raw = adata.copy()
+else:
+    raw_adata = adata.copy()
+    raw_adata.X = adata.layers['counts']
+    adata.raw = raw_adata
+    del raw_adata
+
+sc.pp.normalize_total(adata, target_sum = 1e4)
 sc.pp.log1p(adata)
-
-
 
 
 
@@ -152,7 +159,7 @@ if args.variable=='True':
   adata = adata[:, adata.var.highly_variable]
   print("select highly gene")
 
-
+sc.pp.scale(adata, max_value=10)
 sc.tl.pca(adata,use_highly_variable=False)
 
 
@@ -179,12 +186,15 @@ else:
   sdata=adata
   del adata
 if args.batch_method=="harmony":
+    print("using harmony_integrate")
     sce.pp.harmony_integrate(sdata, key="region", basis="X_pca",max_iter_harmony=20)
 elif args.batch_method=="BBkNN":
     bbknn.bbknn(sdata,batch_key="region")
+    print("using harmony_integrate")
 
-# sc.pp.neighbors(sdata, n_neighbors=args.NEIGHBORS, n_pcs=20)
-sc.pp.neighbors(sdata, n_neighbors=args.NEIGHBORS, use_rep="X_pca",metric="correlation",n_pcs=30)
+
+
+
 
 sc.pl.pca_variance_ratio(sdata, log=True,n_pcs=20)
 plt.title("pca_variance_ratio")
@@ -197,6 +207,10 @@ plt.close()
 
 print("final adata")
 print(sdata)
+
+
+pca_selection=select_pca_dimensions(sdata)
+print("******* recommand pcs :",pca_selection)
 
 if type!="slide_seq":
   sdata.obs['cell_id'] = sdata.obs['cell_id'].astype(str)

@@ -1,6 +1,8 @@
 def input_file(run_type):
   if run_type=="visium" or run_type=="xenium" or run_type=="slide_seq":
     return(os.path.join(data_fold,'{sample}',main_file))
+  elif run_type=="Merfish":
+    return(os.path.join(data_fold,'{sample}'))
   elif run_type=="visium_HD":
     return(os.path.join(data_fold,'{sample}',"binned_outputs","square_{bin}um",main_file))
   elif run_type=="visium_segment":
@@ -9,14 +11,14 @@ def get_output(run_type):
   if channel == 'single_analysis':
     if run_type=="visium_HD":
       return(directory(os.path.join(results_folder, "{sample}_{bin}um",'integrate', "{sample}.zarr")))
-    elif run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+    elif run_type=="visium" or run_type=="xenium" or run_type=="visium_segment" or run_type=="Merfish":
       return(directory(os.path.join(results_folder, "{sample}",'integrate', "{sample}.zarr")))
     elif run_type=="slide_seq":
       return(os.path.join(results_folder, "{sample}",'integrate',"{sample}.h5ad"))
   elif channel=="compare_analysis":
     if run_type=="visium_HD":
       return(directory(os.path.join(results_folder, "{group}_{bin}um", "{sample}.zarr")))
-    elif run_type=="visium" or run_type=="xenium" or run_type=="visium_segment":
+    elif run_type=="visium" or run_type=="xenium" or run_type=="visium_segment" or run_type=="Merfish":
       return(directory(os.path.join(results_folder, "{group}", "{sample}.zarr")))
     elif run_type=="slide_seq":
       return(os.path.join(results_folder, "{group}", "{sample}.h5ad"))

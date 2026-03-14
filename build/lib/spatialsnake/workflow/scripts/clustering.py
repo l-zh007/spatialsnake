@@ -1,8 +1,9 @@
 import os
 os.environ["OPENBLAS_NUM_THREADS"] = "64"
 os.environ["OMP_NUM_THREADS"] = "16"
+import warnings
+warnings.filterwarnings("ignore")
 import spatialdata as spd
-# import spatialdata_plot as splt
 import spatialdata_io as so
 import geosketch as sketch
 import numpy as np
@@ -12,12 +13,7 @@ import scanpy.external as sce
 import json
 import gc
 import geopandas as gpd
-from spatialdata.models import Image2DModel, TableModel, ShapesModel
 import matplotlib.pyplot as plt
-import warnings
-warnings.filterwarnings("ignore")
-from pydeseq2.dds import DeseqDataSet
-from pydeseq2.ds import DeseqStats
 from PIL import Image
 from spatialdata.transformations import Identity, Scale
 from shapely.geometry import Polygon
@@ -46,8 +42,11 @@ parser.add_argument('--cluster_algorithm', type=str, required=False,
 parser.add_argument('--n_clusters', type=float, required=False,
                    help='Path for the output zarr file')
 parser.add_argument('--sketch', type=str, required=False,
-                   help='Path for the output zarr file')            
-      
+                   help='Path for the output zarr file')
+parser.add_argument('--pcs', type=int, required=False,
+                   help='Path for the output zarr file')
+parser.add_argument('--NEIGHBORS', type=int, required=False,
+                   help='Path for the output zarr file')
 args = parser.parse_args()
 type=args.type
 
@@ -62,12 +61,18 @@ else:
   for table in concatenated_sdata.tables.keys():
     table=table
     adata_for_sketch = concatenated_sdata[table]
-print("init adata")
-print(adata_for_sketch)  
+
+
+
+pca_selection = args.pcs
+print("手动主成分选择")
+  
+sc.pp.neighbors(adata_for_sketch, n_neighbors=args.NEIGHBORS, use_rep="X_pca", metric="euclidean", n_pcs=pca_selection)
+
 
 if args.tsene=="True":
   print("running tsene !!!!!!!!!!!!!")
-  sc.tl.tsne(adata_for_sketch, n_pcs=50, perplexity=30)
+  sc.tl.tsne(adata_for_sketch, n_pcs=pca_selection, perplexity=30)
       
 if args.cluster_algorithm=="leiden":    
   sc.tl.leiden(adata_for_sketch, flavor="igraph",key_added="clusters", resolution=args.RES,random_state=0)
@@ -84,6 +89,7 @@ sc.tl.umap(adata_for_sketch,min_dist=args.MIN_DIST, spread=args.SPREAD)
 
 sketch = args.sketch=="True"
 if sketch:
+  print("using sketch !!!!!!!!!!!!!")
   sketch_adata =sc.read_h5ad(os.path.join(os.path.dirname(args.input_dir),"sketch.h5ad"))
   print(sketch_adata)
   chunk_size = 100000
@@ -98,9 +104,11 @@ if sketch:
   adata_query_ingested = sc.concat(adata_query_ingested_list)
   adata_query_ingested.var=adata_query_chunk.var
   adata_query_ingested.varm=adata_for_sketch.varm
-  color=adata_query_ingested.uns['clusters_colors']
   adata_query_ingested.uns=adata_for_sketch.uns
-  adata_query_ingested.uns['clusters_colors']=color
+  if "region_colors" in adata_query_ingested.uns.keys():
+    adata_query_ingested.uns['region_colors']=adata_query_ingested.uns['region_colors']
+  else:
+    adata_query_ingested.uns['clusters_colors']=adata_query_ingested.uns['clusters_colors']
 else:
   adata_query_ingested=adata_for_sketch
 del adata_for_sketch
@@ -118,6 +126,7 @@ plt.close()
 
 
 if args.tsene=="True":
+  print("running tsene !!!!!!!!!!!!!")
   sc.pl.tsne(adata_query_ingested, color=[
       "total_counts",
       "n_genes_by_counts",

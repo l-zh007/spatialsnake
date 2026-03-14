@@ -259,8 +259,11 @@ elif type=="xenium":
         table.var_names_make_unique()
         table.obs["sample"] = sample[i]
         table.obs["group"]=group[i]
-        table.obs['cell_id'] = table.obs.index
+        table.obs['cell_id'] = table.obs.index.astype(str)
         table.obs['region'] = SHAPES_KEY
+        table.obs['region'] = table.obs['region'].astype('category')
+    if SHAPES_KEY in sdata.shapes:
+        sdata.shapes[SHAPES_KEY].index = table.obs['cell_id']
     del table.uns['spatialdata_attrs']
     sdata.tables={
             TABLE_KEY: TableModel.parse(
@@ -277,4 +280,3 @@ concatenated_sdata=QC_plot(type,concatenated_sdata,args.output_zarr_path)
 concatenated_sdata.write(args.output_zarr_path, overwrite=True)
 del concatenated_sdata, sdatas
 gc.collect()
-

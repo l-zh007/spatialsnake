@@ -19,6 +19,7 @@ from PIL import Image
 from spatialdata.transformations import Identity, Scale
 from shapely.geometry import Polygon
 from spatialsnake.workflow.function.plot import cluster_proportion
+from spatialsnake.workflow.function.export_cluster_csv import export_cluster_csv
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
 parser.add_argument('--input_dir', type=str, required=True, 
                    help='Path to the raw data directory')
@@ -61,7 +62,8 @@ if args.anno_data:
 #     '8': 'Goblet',
 #     '9': 'Enterocyte'
 # }
-def render_spatial_plots(shapes,images,systems):
+def render_spatial_plots(concatenated_sdata,shapes,images,systems):
+    print(images,shapes,systems,"@@@@@@@@@@@@@")
     for i in range(len(images)):
         sys=systems[0] if len(valid_coord_systems)<2 else systems[i]
         title=images[i].replace("_hires_image","")
@@ -94,7 +96,7 @@ def slide_seq_plot(adata):
         bbox_inches='tight')
     plt.close()
 
-def annotion(adata):
+def annotion(adata,cell_annotation):
   original_clusters = adata.obs['clusters']
   print(original_clusters)
   new_categories = original_clusters.astype('string').map(cell_annotation)
@@ -104,7 +106,7 @@ def annotion(adata):
 
 if type=="slide_seq":
   adata = sc.read_h5ad(args.input_dir)
-  adata = annotion(adata)
+  adata = annotion(adata,cell_annotation)
   slide_seq_plot(adata)
 else:
   concatenated_sdata = spd.read_zarr(args.input_dir)
@@ -112,6 +114,8 @@ else:
   for table in concatenated_sdata.tables.keys():
     table=table
     adata = concatenated_sdata[table]
+  adata = annotion(adata,cell_annotation)
+  concatenated_sdata[table] = adata
   sample_cnt=args.sample_cnt
   image_elements = list(concatenated_sdata.images.keys())
   shape_elements = list(concatenated_sdata.shapes.keys())
@@ -135,16 +139,13 @@ else:
   else:
       systems=valid_coord_systems
   print(shape_count,shape_elements)
-  if shape_count>1 and type!="visium":
-      for i in range(len(shape_elements)):
-        if args.shape_type in shape_elements[i]:
-          shapes.append(shape_elements[i])
-  else:
-      shapes=shape_elements
-  print(shapes)
-  print(images)
-  print(systems)
-  render_spatial_plots(shapes,images,systems) 
+  #if shape_count>1 and type!="visium":
+      #for i in range(len(shape_elements)):
+        #if args.shape_type in shape_elements[i]:
+          #shapes.append(shape_elements[i])
+      #print(shapes,"66666")
+  shapes=shape_elements
+  render_spatial_plots(concatenated_sdata,shapes,images,systems) 
 
 
 cluster_proportion(adata, sample_col='region', 
@@ -172,6 +173,16 @@ plt.savefig(
       bbox_inches='tight')
 plt.show()
 plt.close()
+
+export_cluster_csv(
+  adata if args.type=="slide_seq" else concatenated_sdata,
+  args.type,
+  dir_path,
+  cell_id_col="cell_id",
+  info_col="celltype",
+  sample_col="region",
+  sample_id=args.sample_id
+)
 
 
 

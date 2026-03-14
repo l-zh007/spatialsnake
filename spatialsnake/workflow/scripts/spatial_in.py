@@ -21,6 +21,19 @@ from spatialdata.transformations import Identity, Scale
 from shapely.geometry import Polygon
 import argparse
 import seaborn as sns
+from merfish_universal_reader import inject_transcripts_points_if_missing, MerfishPointsConfig
+
+def parse_bool(value):
+  if isinstance(value, bool):
+    return value
+  if value is None:
+    return False
+  value_str = str(value).strip().lower()
+  if value_str in ["true", "1", "yes", "y", "t"]:
+    return True
+  if value_str in ["false", "0", "no", "n", "f", "none", "null", ""]:
+    return False
+  raise argparse.ArgumentTypeError(f"Invalid boolean value: {value}")
 
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
 parser.add_argument('--input_dir', type=str, required=True, 
@@ -39,10 +52,10 @@ parser.add_argument('--channel', type=str, required=False,
 parser.add_argument("--bin_size", type=str, required=False, help="bin")
 
 ####### args of xenium
-parser.add_argument("--cells_boundaries", type=bool, required=False, help="bin")
-parser.add_argument("--nucleus_boundaries", type=bool, required=False, help="bin")
-parser.add_argument("--nucleus_labels", type=bool, required=False, help="bin")
-parser.add_argument("--morphology_mip", type=bool, required=False, help="bin")
+parser.add_argument("--cells_boundaries", type=parse_bool, required=False, help="bin")
+parser.add_argument("--nucleus_boundaries", type=parse_bool, required=False, help="bin")
+parser.add_argument("--nucleus_labels", type=parse_bool, required=False, help="bin")
+parser.add_argument("--morphology_mip", type=parse_bool, required=False, help="bin")
 
 ##########args of segment visium
 parser.add_argument("--scale_factors", type=str, required=False, help="bin")
@@ -59,8 +72,17 @@ args = parser.parse_args()
 
 
 count_file= args.count_file
-real_dir = "/".join(os.path.normpath(args.input_dir).split(os.path.sep)[:2])
 type=args.type
+_input_norm = os.path.normpath(args.input_dir)
+if type == "visium_HD":
+  parts = _input_norm.split(os.path.sep)
+  if "binned_outputs" in parts:
+    idx = parts.index("binned_outputs")
+    real_dir = os.path.join(*parts[:idx]) if idx > 0 else os.path.dirname(_input_norm)
+  else:
+    real_dir = os.path.dirname(_input_norm)
+else:
+  real_dir = _input_norm if os.path.isdir(_input_norm) else os.path.dirname(_input_norm)
 
 
 def QC_plot(type,sdata,zarr_name):
@@ -70,6 +92,8 @@ def QC_plot(type,sdata,zarr_name):
       adata = sdata[table]
   else:
     adata=sdata
+  print("333")
+  print(adata)
   adata.var["mt"] = adata.var_names.str.startswith(("MT-", "mt-"))
   sc.pp.calculate_qc_metrics(
     adata, 
@@ -339,9 +363,49 @@ def create_zarr(count_matrix_path,image_path,scale_factors_path,geojson_path,sam
 
 def create_zarr_xenium(path_to_inputs,zarr_name,cells_boundaries,nucleus_boundaries,nucleus_labels,morphology_mip):
     sdata = spatialdata_io.xenium(path_to_inputs,cells_boundaries=cells_boundaries, nucleus_boundaries=nucleus_boundaries,nucleus_labels=nucleus_labels,morphology_mip=morphology_mip,n_jobs=4,cells_as_circles=True)
+    new_images = {}
+    for img_name in sdata.images.keys():
+        new_name = f"{args.sample_id}_{img_name}"
+        new_images[new_name] = sdata.images[img_name]
+    sdata.images = new_images
+    new_images = {}
+    for shapes_name in sdata.shapes.keys():
+        new_name = f"{args.sample_id}_{shapes_name}"
+        new_images[new_name] = sdata.shapes[shapes_name]
+    sdata.shapes = new_images
+    new_images = {}
+    for labels_name in sdata.labels.keys():
+        new_name = f"{args.sample_id}_{labels_name}"
+        new_images[new_name] = sdata.labels[labels_name]
+    sdata.labels = new_images
+
+    new_images = {}
+    for points_name in sdata.points.keys():
+        new_name = f"{args.sample_id}_{points_name}"
+        new_images[new_name] = sdata.points[points_name]
+    sdata.points = new_images
+
+    new_images = {}
+    SHAPES_KEY = f"{args.sample_id}"+'_cell_circles'
+    TABLE_KEY = 'table'
     for table in sdata.tables.values():
-        table.obs['cell_id'] = table.obs.index
-        table.obs["group"] = args.sample_id
+        table.var_names_make_unique()
+        table.obs['cell_id'] = table.obs['cell_id'].astype(str)
+        table.obs["sample"] = args.sample_id
+        table.obs['region'] = SHAPES_KEY
+        table.obs['region'] = table.obs['region'].astype('category')
+        print(table.obs)
+    if SHAPES_KEY in sdata.shapes:
+        sdata.shapes[SHAPES_KEY].index = table.obs['cell_id']
+    del table.uns['spatialdata_attrs']
+    sdata.tables={
+            TABLE_KEY: TableModel.parse(
+                table,
+                region=SHAPES_KEY,
+                region_key='region',
+                instance_key='cell_id'
+            )
+        }
     sdata=QC_plot(type,sdata,zarr_name)
     sdata.write(zarr_name,overwrite=True)
     
@@ -357,6 +421,25 @@ def creat_zarr_slide_seq(zarr_name,count_file,coor_file):
   adata.obs["group"] = args.sample_id
   adata=QC_plot(type,adata,zarr_name)
   adata.write(zarr_name)
+
+def create_zarr_merscope(path_to_inputs, zarr_name):
+  sdata = spatialdata_io.merscope(path_to_inputs)
+  warns = inject_transcripts_points_if_missing(
+    sdata,
+    path_to_inputs,
+    MerfishPointsConfig(points_key="transcripts")
+  )
+  for warn in warns:
+    print("WARNING:", warn)
+  for table in sdata.tables.values():
+    if "cell_id" not in table.obs.columns:
+      table.obs["cell_id"] = table.obs.index
+    table.obs["group"] = args.sample_id
+    print(table)
+  print(sdata)
+  if args.channel == "single_analysis":
+    sdata = QC_plot(type, sdata, zarr_name)
+  sdata.write(zarr_name, overwrite=True)
 
 if type=='visium_segment':
         count_file=os.path.join(f'data/{args.sample_id}/segmented_outputs',count_file)
@@ -390,13 +473,12 @@ elif type=="slide_seq":
 elif type=="xenium":
       print(args.cells_boundaries,args.nucleus_boundaries,args.nucleus_labels,args.morphology_mip)
       create_zarr_xenium(path_to_inputs=real_dir,zarr_name=args.output_zarr_path,cells_boundaries=args.cells_boundaries,nucleus_boundaries=args.nucleus_boundaries,nucleus_labels=args.nucleus_labels,morphology_mip=args.morphology_mip)
+elif type=="Merfish":
+      create_zarr_merscope(path_to_inputs=real_dir, zarr_name=args.output_zarr_path)
 
 
 
       
-
-
-
 
 
 

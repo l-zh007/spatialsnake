@@ -1,0 +1,8 @@
+INPUT:
+output_dir: 'results/useful_results'
+merge_by: 'sample'
+reordering: False
+re_sample: False
+cluster_key: 'clusters'
+
+

@@ -18,7 +18,6 @@ from PIL import Image
 from spatialdata.transformations import Identity, Scale
 from shapely.geometry import Polygon
 from sklearn.cluster import KMeans
-from spatialsnake.workflow.function.pca_choosing import select_pca_dimensions
 import argparse
 ############################clustering################################
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
@@ -64,13 +63,11 @@ else:
     adata_for_sketch = concatenated_sdata[table]
 
 
-if True:
-  pca_selection=select_pca_dimensions(adata_for_sketch)
-  print(pca_selection)
 
-
-
-sc.pp.neighbors(adata_for_sketch, n_neighbors=args.NEIGHBORS, use_rep="X_pca",metric="correlation",n_pcs=pca_selection)
+pca_selection = args.pcs
+print("手动主成分选择")
+  
+sc.pp.neighbors(adata_for_sketch, n_neighbors=args.NEIGHBORS, use_rep="X_pca", metric="euclidean", n_pcs=pca_selection)
 
 
 if args.tsene=="True":
@@ -92,6 +89,7 @@ sc.tl.umap(adata_for_sketch,min_dist=args.MIN_DIST, spread=args.SPREAD)
 
 sketch = args.sketch=="True"
 if sketch:
+  print("using sketch !!!!!!!!!!!!!")
   sketch_adata =sc.read_h5ad(os.path.join(os.path.dirname(args.input_dir),"sketch.h5ad"))
   print(sketch_adata)
   chunk_size = 100000
@@ -106,9 +104,11 @@ if sketch:
   adata_query_ingested = sc.concat(adata_query_ingested_list)
   adata_query_ingested.var=adata_query_chunk.var
   adata_query_ingested.varm=adata_for_sketch.varm
-  color=adata_query_ingested.uns['clusters_colors']
   adata_query_ingested.uns=adata_for_sketch.uns
-  adata_query_ingested.uns['clusters_colors']=color
+  if "region_colors" in adata_query_ingested.uns.keys():
+    adata_query_ingested.uns['region_colors']=adata_query_ingested.uns['region_colors']
+  else:
+    adata_query_ingested.uns['clusters_colors']=adata_query_ingested.uns['clusters_colors']
 else:
   adata_query_ingested=adata_for_sketch
 del adata_for_sketch
@@ -126,6 +126,7 @@ plt.close()
 
 
 if args.tsene=="True":
+  print("running tsene !!!!!!!!!!!!!")
   sc.pl.tsne(adata_query_ingested, color=[
       "total_counts",
       "n_genes_by_counts",

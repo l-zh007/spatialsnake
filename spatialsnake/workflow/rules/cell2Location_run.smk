@@ -1,12 +1,11 @@
-
 rule cell2Location_rule:
   input:
     input_spatial=input_spatial,
     input_singlecell = input_singlecell
   output:
-    output_dir_zarr=temp(directory(os.path.join(results_folder,"{sample}",'annotion','tem.zarr'))) if channel == 'single_analysis' else temp(os.path.join(results_folder,"merge_data",'annotion','tem_concatenated_sdata'))
+    output_dir_zarr=temp(directory(os.path.join(results_folder,"{sample}",'cell2Location','tem.zarr')))
   params:
-    sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" and seg_filter==False else wildcards.sample,
+    sample_id = samples,
     run_type = run_type,
     max_epochs_reference=config.get('max_epochs_reference',250),
     remove_mt=config.get('remove_mt',True),
@@ -30,18 +29,16 @@ rule cell2Location_rule:
 
 rule cell2Location_visualize_rule:
   input:
-    inputs=os.path.join(results_folder,"{sample}",'annotion','tem.zarr') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'annotion','tem_concatenated_sdata')
+    inputs=os.path.join(results_folder,"{sample}",'cell2Location','tem.zarr')
   output:
-    merge = directory(os.path.join(results_folder,"{sample}",'annotion','{sample}.zarr')) if channel == 'single_analysis' else directory(os.path.join(results_folder,"merge_data",'annotion','cell2Lo_concatenated_sdata'))
+    merge = directory(os.path.join(results_folder,"{sample}",'cell2Location','{sample}.zarr'))
   params:
-    sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" and seg_filter==False else wildcards.sample,
+    sample_id = samples,
     run_type = run_type,
     image_type = image_type,
     image_slice = False,
-    coord = coord,
     sample_cnt = len(samples) if channel=="comparision_analysis" else 1,
-    shape_type=shape_type,
-    input_st = input_st
+    shape_type=shape_type
   shell:
       """
       python {spatialsnake_path}workflow/scripts/cell2locate_visualize.py \
@@ -52,33 +49,5 @@ rule cell2Location_visualize_rule:
         --image_type {params.image_type} \
         --image_slice {params.image_slice} \
         --sample_cnt {params.sample_cnt} \
-        --coord {params.coord} \
-        --input_st {params.input_st} \
         --shape_type {params.shape_type}
       """
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

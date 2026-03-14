@@ -1,8 +1,5 @@
 def get_output(type):
-  if seg_filter==False:
-    return(os.path.join(results_folder, "merge_data", "concatenated_sdata"))
-  else:
-    return(os.path.join(results_folder, "merge_data", 'preprocess',"filter_concatenated_sdata"))
+    return(os.path.join(results_folder, "merge_data", "integrate","concatenated_sdata"))
 
 rule merge_in:
   input:
@@ -13,8 +10,7 @@ rule merge_in:
     main_file = main_file,
     run_type = run_type,
     group = group,
-    sample =samples,
-    seg_filter = seg_filter
+    sample =samples
   shell:
       """
       python {spatialsnake_path}workflow/scripts/spatial_in_multiple.py \
@@ -22,8 +18,7 @@ rule merge_in:
         --output_zarr_path {output.merge} \
         --type {params.run_type} \
         --sample_id {params.sample} \
-        --group {params.group} \
-        --seg_filter {params.seg_filter}
+        --group {params.group}
       """
     
   

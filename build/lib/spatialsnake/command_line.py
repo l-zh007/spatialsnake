@@ -2,35 +2,45 @@
 '''
 Created on 2025/10/5
 spatialsnake main
-@author: lzh,xulabgdpu,1714074171@qq.com
+@author: Zhenghao Lin,2400507123@gdpu.edu.stu
 '''
-import re
-import warnings
-warnings.filterwarnings("ignore")
-from docopt import docopt
-import os
-import sys
-import subprocess
-import shutil
 import datetime
+import logging
+import os
 import random
+import shutil
+import subprocess
+import sys
 import timeit
-import errno
-import yaml
-from yaml.loader import SafeLoader
-from subprocess import call
-import pathlib
-from collections import defaultdict
+import warnings
+from typing import Any, Dict, List, Optional
+
 import spatialsnake
+import yaml
+from docopt import docopt
+from yaml.loader import SafeLoader
 
+# Filter warnings
+warnings.filterwarnings("ignore")
 
+# Configure Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s: %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
 
-spatialsnake_path=os.path.dirname(spatialsnake.__file__)
-option = ["integrate","preprocess","clustering","annotion_help","annotion","compare_analyze","advance_analysis","splitting","merge","transform"]
+# Constants
+SPATIALSNAKE_PATH = os.path.dirname(spatialsnake.__file__)
+VALID_OPTIONS = [
+    "integrate", "preprocess", "clustering", "annotion_help", "annotion",
+    "compare_stage", "advance_analysis", "splitting", "merge", "transform"
+]
 
 __author__ = 'lzh'
-__version__= '0.1.0'
-__logo__="""
+__version__ = '0.1.0'
+__logo__ = """
      
    _____
   /     \\    SpatialSnake
@@ -40,22 +50,20 @@ __logo__="""
   /|||||\\   Analysis
  |/|||||\\|  Pipeline
    ~~~~~    v0.1.0                                              
-"""  
+"""
 
-__licence__="""
+__licence__ = """
 MIT License
 Copyright (c) 2025
 ...
 """
 
-##### [options]  : 以--开头的所有参数通配符
-
-__doc__=f"""Main spatialsnake executable, version: {__version__}
+__doc__ = f"""Main spatialsnake executable, version: {__version__}
 {__logo__} 
 
 Usage:
-    spatialsnake <command> <INPUT> <TYPE> [--option=<analysis_option>] [options]
-    spatialsnake useful_tool [--option=<ways>] <INPUT> [options]
+    spatialsnake useful_tool [--option=<ways>] <INPUT>... [options]
+    spatialsnake <command> <INPUT_FILE> <TYPE> [--option=<analysis_option>] [options]
     spatialsnake produce-file [--option=<analysis_option>]
     spatialsnake install-packages
     spatialsnake (-h | --help)
@@ -71,7 +79,7 @@ analysis option:
     clustering
     annotion_help
     annotion
-    compare_analyze
+    compare_stage
     advance_analysis
 
 Type Arguments:
@@ -101,20 +109,22 @@ Preprocessing Step Options (--option preprocess):
     --min_genes <INT>         Minimum genes per spot [default: 200].
     --seg_filter <BOOL>       to seg filter the differnet sample dataset when command compare_anaysis [default: False].
     --filter_list <FILE>      filename of filter [default: False]
-    --batch_method <TEXT>     batch method for multiple sample analysis [default: harmony]
+    --batch_method <TEXT>     batch method for multiple sample analysis [default: None]
     --sketch <BOOL>           whether use sketch method to analysis [default: False]
+    --mt_threshold <FLOAT>    the mt params percent to filter the cell [default: 50.0].
     
 Clustering Step Options (--option clustering):
     --resolution <FLOAT>        Cluster resolution [default: 0.5].
     --cluster_algorithm <TEXT>  Clustering algorithm [default: leiden].
     --tsene <BOOL>              umap [default:False].
     --n_clusters <INT>          kmeans params of cluster [default: 15].
+    --pcs <INT>                 dimension pca select [default: 25].
     
 Annotation Help Step Options (--option annotion_help):
     --markers_algorithm <TEXT>       Automatically detect marker genes [default: wilcoxon].
     --spacies <TEXT>            Automatically detect marker genes [default: human].
     
-Compare_analyze option Options (--option compare_analysis)
+Compare_stage option Options (--option compare_stage)
     --cell_focus <TEXT>         celltype you focus to compare in different sample[default: None].
     --compare_algorithm <TEXT>  compare analysys [default: DEseq2].
 Annotation option Options (--option annotion):
@@ -123,27 +133,43 @@ Annotation option Options (--option annotion):
     --shape_type <TEXT>         Automatically detect marker genes [default: cell_boundaries].
     --image_type <TEXT>         Automatically detect marker genes [default: hires].
     --device <TEXT>                 cpu or GPU accelerate [default: cuda].
+    --max_cores <INT>               max cores for parallel [default: 16].
 
 Advanced Analysis option Options (--option advance_analysis):
     --runpipe <TEXT>          Run  which analysis analysis.[default: advance_analysis]
     --senic_input <DIR>       Input file for PySCENIC analysis.[default: sample.zarr]
-    --motifs_input <FILE>     PySCENIC database directory.[default: motifs-v9-nr.hgnc-m0.001-o0.0.tbl]
-    --feather_input <FILE>    path for necessary file of pyscenic.[default: hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather]
-    --tfs_input <FILE>        path for necessary file of pyscenic.[default: hs_hgnc_tfs.txt]
+    --motifs_input <FILE>     PySCENIC database directory.[default: data/motifs-v9-nr.hgnc-m0.001-o0.0.tbl]
+    --feather_input <FILE>    path for necessary file of pyscenic.[default: data/hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather]
+    --tfs_input <FILE>        path for necessary file of pyscenic.[default: data/hs_hgnc_tfs.txt]
     --count-data <TEXT>       gene type for cellPhoneDB [default: hgnc_symbol].
-    --threads <INT>           workers for cellphoneDB [default: 8].
+    --threads <INT>           workers for cellphoneDB [default: 16].
     --output_name <TEXT>      output name for cellPhoneDB [default: Normal].
+    --workers <INT>           workers for pysenic [default: 32].
 
-useful_tool params Option:
-    --output_zarr_path <FILE> output dir for splitted file [default: results]
-    --split_by <TEXT>          slice out with the barcode in table[anndata] .obs [default: clusters]
-    --max_x   <FLOAT>         coordinate of image boundaries [default: 0]
-    --min_x   <FLOAT>         coordinate of image boundaries [default: 2000]
-    --max_y   <FLOAT>         coordinate of image boundaries [default: 2000]
-    --min_y   <FLOAT>         coordinate of image boundaries [default: 0]
-    
+useful_tool splitting Option:
+    --output_dir=<TEXT>       output dir for splitted file [default: results/useful_results]
+    --split_by=<TEXT>         slice out with the barcode in table[anndata] .obs [default: clusters]
+    --barcodes=<TEXT>         comma-separated values for split_by filter [default: ""]
+    --roi_csv=<TEXT>          csv file or directory for ROI splitting [default: ""]
+    --shape_elements=<TEXT>   slice out with the shape [default: None]
+    --max_x=<FLOAT>         coordinate of image boundaries [default: 0]
+    --min_x=<FLOAT>         coordinate of image boundaries [default: 2000]
+    --max_y=<FLOAT>         coordinate of image boundaries [default: 2000]
+    --min_y=<FLOAT>         coordinate of image boundaries [default: 0]
+
+useful_tool merge Option:
+    --merge_by=<TEXT>               merge by cluster celltype or sample [default: sample]
+    --reordering=<BOOL>             whether reordering the cluster when concat the [default: False]
+    --re_sample=<BOOL>              whether add the sample lable[default: False]
+    --cluster_key=<TEXT>            the concat lable in the zarr/table/obs [default: clusters]
+
+useful_tool transform Option:
+    --save_image=<BOOL>            save images in h5ad [default: True]
+    --transform_from=<TEXT>        transform from [default: zarr]
+    --transform_to=<TEXT>          transform to [default: h5ad]
+
 General Options:
-    -j <INT>, --jobs <INT>   Number of CPU cores [default: 32].
+    -j <INT>, --jobs <INT>   Number of CPU cores [default: 16].
     --results_folder <DIR>     Output directory [default: results].
 
 Utility Options:
@@ -156,334 +182,458 @@ Utility Options:
 
 """
 
-# Preprocessing Step Options (--option preprocess):
-#     --integration-method TEXT   Integration method [default: harmony].
-#     --annotion_list FILE    for the filter params in different sample
-#     --min_cells INT         Minimum spots per gene [default: 3].
-#     --min_genes INT         Minimum genes per spot [default: 200].
-#     --variable BOOL         Filter the variable spot to analysis [default: False].
-#     --harmony BOOL          harmony method [default: True].
-#     --seg_filter BOOL       to seg filter the differnet sample dataset when command compare_anaysis.
-#     --NEIGHBORS FLOAT       neighbors for pca umap.
-# Clustering Step Options (--option clustering):
-#     --resolution FLOAT   Cluster resolution [default: 0.5].
-#     --cluster_algorithm TEXT Clustering algorithm [default: leiden].
-#     --tsene BOOL        umap [default:False]
-#     --MIN_DIST FLOAT    umap_key [default:0.3]
-#     --SPREAD FLOAT      umap_key [default:1]
-# 
-# Annotation Help Step Options (--option annotion_help):
-#     --image_slice BOOL        containing marker genes for cell types[default: False].
-#     --markers_algorithm TEXT       Automatically detect marker genes [default: wilcoxon].
-#     --shape_type TEXT         Automatically detect marker genes [default: cell_boundaries].
-#     --image_type TEXT         Automatically detect marker genes [default: hires].
-#     --spacies TEXT            Automatically detect marker genes [default: human].
-#     --image_slice BOOL              params for the image slice to depandent size [default: False].
-#     --x1 INT
-#     --x2 INT
-#     --y1 INT
-#     --y2 INT
-# Compare_analyze option Options (--option compare_analysis)    
-#     --cell_focus TEXT         celltype you focus to compare in different sample.
-#     --compare_algorithm TEXT  compare analysys [default: DEseq2].
-# Annotation option Options (--option annotion):
-#     --annotation-file FILE    Annotation file for cell typing (required for annotion step)
-#     --anno_algorithm TEXT     Annotation method [default: mannul].
-#     --shape_type TEXT         Automatically detect marker genes [default: cell_boundaries].
-#     --image_type TEXT         Automatically detect marker genes [default: hires].
-#     --slice BOOL              params for the image slice to depandent size [default: False].
-#     --x1 INT
-#     --x2 INT
-#     --y1 INT
-#     --y2 INT
-#     --max_epochs_reference INT    params for cell2Location model train and test [default: 250].
-#     --remove_mt BOOL              params for cell2Location model train and test [default: True].
-#     --N_cells_per_location INT    params for cell2Location model train and test [default: 30].
-#     --max_epochs_st INT           params for cell2Location model train and test [default: 30000].
-#     --device TEXT                 cpu or GPU accelerate [default: cuda].
-#     
-# Advanced Analysis option Options (--option advance_analysis):
-#     --advance_channel TEXT        Run  which analysis analysis.
-#     --pyscenic-input FILE   Input file for PySCENIC analysis.
-#     --pyscenic-db FILE      PySCENIC database directory.
-#     --pyscenic-feature FILE path for necessary file of pyscenic.
-#     --pyscenic-tfs FILE     path for necessary file of pyscenic.
-#     --cell_attr TEXT        cell_id for pyscenic [default: cell_id]
-#     --workers INT           workers for pyscenic [default: 8].
-#     --count-data TEXT       gene type for cellPhoneDB [default: hgnc_symbol].
-#     --threads INT           workers for cellphoneDB [default: 8].
-#     --output_name           output name for cellPhoneDB [default: Normal].
-#     
-# Cell Segmentation Options (applicable to multiple option):
-#     --zarr_file FILE        seg with the sample name or region
 
-def check_command_line_arguments(arguments):
-    if arguments["useful_tool"]:
-        return True
-    if not os.path.exists(arguments["<INPUT>"]):
-        print("sample list file not found ",arguments["<INPUT>"])
+class BaseCommandLine:
+    """Base class for handling command line execution and logging."""
+
+    def __init__(self, arguments: Dict[str, Any]):
+        self.arguments = arguments
+        self.runid = "".join(random.choices("abcdefghisz", k=3) + random.choices("123456789", k=5))
+        self.config: List[str] = []
+        self.parameters: Dict[str, Any] = {}
+        self.log_enabled = True
+        self.cmd_str = ""
+        self.configfile_loaded = False
+
+    def __str__(self):
+        return self.cmd_str
+
+    def __repr__(self):
+        return self.cmd_str
+
+    def add_config_argument(self):
+        """Append config arguments to command string."""
+        raise NotImplementedError
+
+    def prepare_arguments(self):
+        """Parse arguments and prepare command string."""
+        raise NotImplementedError
+
+    def write_to_log(self, start_time: float):
+        """Write execution details to log file."""
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        logname = f"spatialsnake_{self.runid}_{timestamp}_runlog.log"
+        stop_time = timeit.default_timer()
+
+        if self.log_enabled:
+            try:
+                with open(logname, "w") as f:
+                    f.write(__logo__ + "\n")
+                    f.write(f"Run ID : {self.runid}\n")
+                    f.write(f"spatialsnake version : {__version__}\n")
+                    f.write(f"spatialsnake arguments : {' '.join(sys.argv)}\n")
+                    option_val = self.arguments.get("--option", "unknown")
+                    f.write(f"the running step : {option_val}\n")
+                    f.write("-" * 30 + "\n")
+                    f.write(f"Command arguments : {self.cmd_str}\n\n")
+                    f.write("-" * 30 + "\n")
+                    f.write("Run parameters in this option:\n")
+                    for key, value in sorted(self.parameters.items()):
+                        if value is not None and value != "":
+                            f.write(f"  {key.ljust(25)} {value}\n")
+                    f.write("\n")
+                    f.write(f"Total run time: {(stop_time - start_time) / 60:.2f} mins \n")
+                    f.write("Useful Information:\n")
+                    f.write("-" * 20 + "\n")
+                    f.write("  ⚠  For help: [spatialsnake --help ]\n")
+                    f.write("  ⚠  For setting more params please run: [spatialsnake produce-file --option=step]\n")
+                    f.write("  ⚠  Output files are stored in the 'results' directory\n")
+                    f.write("  ⚠  Use 【spatialsnake [command] [..] --config-file config.yaml】 to run spatialsnake if you want to customize the parameter settings in config.yaml file. \n")
+                    f.write("=" * 60 + "\n")
+            except Exception as e:
+                logger.error(f"Failed to write log file: {e}")
+
+    def execute(self):
+        """Execute the prepared command."""
+        start_time = timeit.default_timer()
+        try:
+            self.prepare_arguments()
+            logger.info(f"Executing command: {self.cmd_str}")
+            subprocess.check_call(str(self.cmd_str), shell=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Command execution failed with return code {e.returncode}")
+            sys.exit(e.returncode)
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+            sys.exit(1)
+        finally:
+            self.write_to_log(start_time)
+
+
+class WorkflowRunner(BaseCommandLine):
+    """Handles Snakemake workflow execution."""
+
+    def __init__(self, arguments: Dict[str, Any]):
+        super().__init__(arguments)
+        self.snakemake_cmd = "snakemake --rerun-incomplete -k "
+        self.cmd_str = self.snakemake_cmd
+
+    def add_config_argument(self):
+        self.cmd_str += " --config " + " ".join(self.config)
+
+    def load_configfile(self):
+        step = self.arguments.get("--option")
+        configfile = None
+        
+        if self.arguments.get("--configfile") and os.path.isfile(self.arguments["--configfile"]):
+            configfile = self.arguments["--configfile"]
+            self.cmd_str += f" --configfile={configfile}"
+            self.configfile_loaded = True
+        else:
+            # Fallback to default env config
+            default_config = os.path.join(SPATIALSNAKE_PATH, f"workflow/envs/{step}.yaml")
+            self.cmd_str += f" --configfile={default_config}"
+            configfile = default_config
+            self.arguments["--configfile"] = default_config
+            
+        if configfile and os.path.exists(configfile):
+            try:
+                with open(configfile) as f:
+                    self.parameters = yaml.load(f, Loader=SafeLoader) or {}
+            except Exception as e:
+                logger.warning(f"Failed to load config file {configfile}: {e}")
+
+    def prepare_arguments(self):
+        jobs = self.arguments.get('--jobs', 4)
+        self.cmd_str += f" -j {jobs} "
+        self.cmd_str += f" -s {os.path.join(SPATIALSNAKE_PATH, 'workflow/Snakefile')} "
+        
+        self.load_configfile()
+        
+        if self.arguments.get('--option') in ["integrate", "preprocess", "clustering", "annotion_help", "compare_stage", "all","advance_analysis"]:
+            self.config.append(f"sample_list={self.arguments.get('<INPUT_FILE>')}")
+            
+        self.config.append(f"spatialsnake_path={SPATIALSNAKE_PATH}/")
+        
+        # Parse dynamic arguments
+        exclude_keys = {
+            "--jobs", "--configfile", "--option", "--unlock", "--remove", 
+            "--dry", "--help", "--version", "<INPUT_FILE>", "<command>", 
+            "--install-packages", "<TYPE>", "useful_tool", "<INTEGRATED_FILE>"
+        }
+        
+        for key, value in self.arguments.items():
+            if key in exclude_keys:
+                continue
+                
+            clean_key = key.lstrip("--")
+            
+            # Integer validation
+            if clean_key in ["min_cells", "min_genes", "x1", "x2", "y1", "y2", "workers", "threads"]:
+                try:
+                    int(value)
+                except (ValueError, TypeError):
+                    logger.error(f"Error: {clean_key} must be an integer, got '{value}'")
+                    sys.exit(1)
+            
+            # Check if parameter is relevant for loaded config
+            if self.parameters.get(clean_key) is None:
+                continue
+
+            if not self.configfile_loaded:
+                self.config.append(f"{clean_key}={value}")
+                self.parameters[clean_key] = str(value)
+            else:
+                # Prefer value from config file unless overridden in sys.argv?
+                # The original logic was a bit weird: 
+                # if self.parameters.get(k) and i not in sys.argv: use config value
+                # else: use argument value
+                # But 'i' is the key from arguments dict (e.g. "--min_cells").
+                
+                if self.parameters.get(clean_key) and key not in sys.argv:
+                     self.config.append(f"{clean_key}={self.parameters[clean_key]}")
+                else:
+                     self.config.append(f"{clean_key}={value}")
+                     self.parameters[clean_key] = str(value)
+
+        self.config.append(f"runid={self.runid}")
+        
+        if self.arguments.get("--option"):
+            self.config.append(f"option={self.arguments['--option']}")
+            
+        self.config.append(f"channel={self.arguments.get('<command>')}")
+        self.config.append(f"run_type={self.arguments.get('<TYPE>')}")
+        
+        if self.arguments.get("--dry"):
+            self.cmd_str += " -n "
+            self.log_enabled = False
+        if self.arguments.get("--unlock"):
+            self.cmd_str += " --unlock "
+            self.log_enabled = False
+        if self.arguments.get("--remove"):
+            self.cmd_str += " --delete-all-output "
+            self.log_enabled = False
+            
+        self.add_config_argument()
+
+
+class ToolRunner(BaseCommandLine):
+    """Handles useful_tool execution."""
+
+    def __init__(self, arguments: Dict[str, Any]):
+        super().__init__(arguments)
+        self.cmd_str = "python "
+
+    def add_config_argument(self):
+        self.cmd_str += " ".join(self.config)
+
+    def load_configfile(self):
+        tool = self.arguments.get("--option")
+        if tool:
+            self.config.append(os.path.join(SPATIALSNAKE_PATH, f"workflow/function/{tool}.py"))
+            
+        configfile = None
+        if self.arguments.get("--configfile") and os.path.isfile(self.arguments["--configfile"]):
+            configfile = self.arguments["--configfile"]
+            self.configfile_loaded = True
+            logger.info(f"Using config file: {configfile}")
+        else:
+            default_config = os.path.join(SPATIALSNAKE_PATH, f"workflow/envs/{tool}.yaml")
+            configfile = default_config
+            self.arguments["--configfile"] = default_config
+            logger.info(f"Using default config file: {configfile}")
+            
+        if configfile and os.path.exists(configfile):
+            try:
+                with open(configfile) as f:
+                    self.parameters = yaml.load(f, Loader=SafeLoader) or {}
+            except Exception as e:
+                logger.warning(f"Failed to load config file {configfile}: {e}")
+
+    def build_subprocess_cmd(self):
+        if self.arguments.get("--option") in ["merge", "transform"]:
+            self.config.extend(['--INPUT'])
+            inputs = self.arguments.get('<INPUT>', [])
+            if isinstance(inputs, list):
+                self.config.extend(inputs)
+            else:
+                 self.config.append(str(inputs))
+        elif self.arguments.get("--option") == "splitting":
+            inputs = self.arguments.get('<INPUT>')
+            input_value = inputs[0] if isinstance(inputs, list) and len(inputs) > 0 else inputs
+            self.config.append(f"--INPUT_FIlE {input_value}")
+        else:
+            # Original code: cmd.append("--INPUT {}".format(arguments['<INPUT>']))
+            # <INPUT> is usually a list in docopt if ... is used, but here for useful_tool it is <INPUT>...
+            # But in the original code for non-merge/transform: 
+            # cmd.append("--INPUT {}".format(arguments['<INPUT>']))
+            # If <INPUT> is a list, format might behave weirdly if not handled.
+            # Assuming <INPUT> is a list, let's join it or take first? 
+            # The original code used arguments['<INPUT>'] directly in format.
+            # If docopt returns list for <INPUT>..., then format will stringify the list.
+            inputs = self.arguments.get('<INPUT>')
+            self.config.append(f"--INPUT {inputs}")
+
+    def prepare_arguments(self):
+        self.load_configfile()
+        self.build_subprocess_cmd()
+        
+        exclude_keys = {"--jobs", "--configfile", "--option", "useful_tool", "<INPUT>"}
+        
+        for key, value in self.arguments.items():
+            if key in exclude_keys:
+                continue
+                
+            clean_key = key.lstrip("--")
+            if self.parameters.get(clean_key) is None:
+                continue
+                
+            if not self.configfile_loaded:
+                self.config.append(f"{key} {value}")
+                self.parameters[clean_key] = str(value)
+            else:
+                if self.parameters.get(clean_key) and key not in sys.argv:
+                    self.config.append(f"{key} {self.parameters[clean_key]}")
+                else:
+                    self.config.append(f"{key} {value}")
+                    self.parameters[clean_key] = str(value)
+                    
+        self.add_config_argument()
+
+
+def validate_workflow_arguments(arguments: Dict[str, Any]) -> bool:
+    """Validate arguments for workflow commands."""
+    input_file = arguments.get("<INPUT_FILE>")
+    if input_file and not os.path.exists(input_file):
+        logger.error(f"Sample list file not found: {input_file}")
         return False
-    if arguments["--option"] in ["integrate","clustering","annotion_help","compare_analyze","advance_analysis"] and arguments["<INPUT>"]!="sample.txt":
-        print('.please confirm the file name are sample_list.txt or annotion_list or filter_list')
+        
+    option = arguments.get("--option")
+    if option in ["integrate", "clustering", "annotion_help", "compare_stage", "advance_analysis"]:
+        if input_file != "sample.txt":
+             # This seems like a strict requirement in the original code
+             logger.warning("Please confirm the file name is sample.txt (or appropriate list file)")
+             # The original code returned False here if not "sample.txt"
+             # "if ... and arguments["<INPUT_FILE>"]!="sample.txt": return False"
+             # I will keep it strict as per original.
+             logger.error("For integrate/clustering/etc., input file must be 'sample.txt'")
+             return False
+
+    type_arg = arguments.get("<TYPE>")
+    valid_types = ['visium', 'visium_segment', 'visium_HD', 'xenium', 'Merfish', 'slide_seq']
+    if type_arg not in valid_types:
+        logger.error(f"Invalid spatialdata type. Valid types: {', '.join(valid_types)}")
         return False
-    if arguments["<TYPE>"] not in ['visium','visium_segment','visium_HD','xenium','Merfish','slide_seq']:
-        print("please select the correct spatialdata type like:'visium','visium_segment','visium_HD','xenium','Merfish','slide_seq'")
+
+    if option and option not in VALID_OPTIONS:
+        logger.error("Invalid option selected.")
+        logger.info(f"Correct options include: {' '.join(VALID_OPTIONS)}")
         return False
-    if arguments["--option"] not in option:
-        print("your option are not correct please select the correct step to analysis or not select the option to run the minimize step of analysis")
-        print("correct option include:"+option)
-        return False
-    if "--configfile" in arguments and arguments["--configfile"]!='config.yaml':
-        if not  os.path.isfile(arguments["--configfile"]):
-          print("please select a .yaml file for --configfile")
-          return False
+
     return True
 
 
-
-class CommandLine:
-    def __init__(self):
-        self.snakemake="snakemake --rerun-incomplete -k "
-        self.runid="".join(random.choices("abcdefghisz",k=3) + random.choices("123456789",k=5))
-        self.config=[]
-        self.configfile_loaded=False
-        self.is_useful_tool_sample=False
-        self.is_this_an_useful_tool_run=False
-        self.parameters=dict()
-        self.log=True
-        
-    def __str__(self):
-        return self.snakemake
-    def __repr__(self):
-        return self.snakemake
+def validate_tool_arguments(arguments: Dict[str, Any]) -> bool:
+    """Validate arguments for useful_tool."""
+    # Note: <INPUT> is a list for 'useful_tool' command in docopt because of <INPUT>...
+    # But check_arguments_inputfile in original code treated it as single path in one check: os.path.exists(arguments["<INPUT>"])
+    # If <INPUT> is a list, os.path.exists will fail. 
+    # Let's check how docopt parses `spatialsnake useful_tool ... <INPUT>...`
+    # It returns a list.
+    # The original code:
+    # if not os.path.exists(arguments["<INPUT>"]):
+    # This implies arguments["<INPUT>"] was expected to be a string or the original code was buggy for multiple inputs?
+    # Or maybe <INPUT>... means list, but if user provides one, it is a list of one.
+    # I will iterate if it is a list.
     
+    inputs = arguments.get("<INPUT>")
+    if isinstance(inputs, list):
+        for inp in inputs:
+            if not os.path.exists(inp):
+                logger.error(f"Input file not found: {inp}")
+                return False
+    elif isinstance(inputs, str):
+        if not os.path.exists(inputs):
+            logger.error(f"Input file not found: {inputs}")
+            return False
 
-    def add_config_argument(self):
-        self.snakemake = self.snakemake + " --config " + " ".join(self.config)
+    option = arguments.get("--option")
+    valid_tool_options = ["splitting", "transform", "merge"]
+    if option not in valid_tool_options:
+        logger.error(f"Invalid option for useful_tool. Valid options: {', '.join(valid_tool_options)}")
+        return False
 
-
-    def load_configfile_if_available(self,arguments):
-        step = arguments["--option"] if not self.is_this_an_useful_tool_run else arguments["<command>"]
-        if self.configfile_loaded is False:
-            if "--configfile" in arguments and os.path.isfile(arguments["--configfile"]):
-                self.snakemake = self.snakemake + " --configfile={}".format(arguments["--configfile"])
-                configfile=arguments["--configfile"]
-                self.configfile_loaded=True
-            else:
-               self.snakemake = self.snakemake + " --configfile={}".format(spatialsnake_path + f"/workflow/envs/{step}.yaml")
-               configfile=spatialsnake_path + f"/workflow/envs/{step}.yaml"
-               arguments["--configfile"]=spatialsnake_path + f"/workflow/envs/{step}.yaml"
-            with open(configfile) as f:
-               self.parameters=yaml.load(f,Loader=SafeLoader)
-
-    def prepare_arguments(self,arguments):
-        jobs = arguments.get('--jobs', 4)
-        self.snakemake = self.snakemake + " -j {} ".format(jobs)
-        self.snakemake = self.snakemake +  " -s {} ".format(f"{spatialsnake_path}/workflow/Snakefile")
-        self.load_configfile_if_available(arguments)
-        if arguments['--option'] in ["integrate","preprocess","clustering","annotion_help","compare_analyze","all"]:
-          self.config.append("sample_list={}".format(arguments['<INPUT>']))
-        self.config.append(f"spatialsnake_path={spatialsnake_path}/")
-        for i,b in arguments.items():
-            if i not in ["--jobs","--configfile","--option","--unlock","--remove","--dry","--help","--version","<INPUT>","<command>","--install-packages","<TYPE>","useful_tool","<INTEGRATED_FILE>"]:
-                k=i.lstrip("--")
-                if k in ["min_cells", "min_genes", "x1", "x2", "y1", "y2", "workers", "threads"]:
-                  try:
-                    int(b)
-                  except ValueError:
-                    print(f"Error: {k} must be an integer")
-                    sys.exit(1)
-                if self.parameters.get(k)==None:
-                  continue
-                if self.configfile_loaded is False: 
-                    self.config.append(k + "=" + str(b))
-                    self.parameters[k]=str(b)
-                else:
-                    if self.parameters.get(k) and i not in sys.argv:
-                        self.config.append(k + "=" + str(self.parameters.get(k)))
-                    else:
-                        self.config.append(k + "=" + str(b))
-                        self.parameters[k]=str(b)
+    if option == "splitting":
+        split_by = arguments.get("--split_by") # docopt maps --split_by to --split_by usually, but let's check original usage.
+        # Original code used arguments["split_by"] but docopt usually keeps --. 
+        # Wait, the usage says `[--split_by=<TEXT>]`. Docopt key would be `--split_by`.
+        # But original code accessed `arguments["split_by"]`. This implies some preprocessing or docopt implementation detail?
+        # Standard docopt returns keys as specified in Usage or Options.
+        # In Usage: `spatialsnake useful_tool ...`
+        # In Options: `--split_by=<TEXT>`
+        # So key is `--split_by`.
+        # However, `CommandLine.prepare_arguments` iterates `arguments.items()` and strips `--`.
+        # `check_arguments_inputfile` accessed `arguments["split_by"]`.
+        # If the key is `--split_by`, `arguments["split_by"]` would raise KeyError.
+        # Unless the user passed `split_by` as a command/argument? No.
+        # I suspect the original code might have had issues or I am missing something about docopt.
+        # I will assume the key is `--split_by`.
         
-        self.config.append("runid={}".format(self.runid))
-        if arguments["--option"]:
-            self.config.append("option={}".format(arguments["--option"]))
-        if self.is_this_an_useful_tool_run is False:
-            self.config.append("channel={}".format(arguments['<command>']))
-            self.config.append("run_type={}".format(arguments["<TYPE>"]))
-        if "--dry" in arguments and arguments["--dry"]:
-            self.snakemake = self.snakemake + " -n "
-            self.log=False
-        if "--unlock" in arguments and arguments["--unlock"]:
-            self.snakemake = self.snakemake + " --unlock "
-            self.log=False
-        if "--remove" in arguments and arguments["--remove"]:
-            self.snakemake = self.snakemake + " --delete-all-output "
-            self.log=False
-        self.add_config_argument()
-        
+        val = arguments.get("--split_by")
+        # Also need to check if user passed it?
+        # If user didn't pass it, docopt uses default "clusters".
+        if val and val not in ["sample", "image", "cluster", "clusters","group","region","celltype","ROI","ROIs"]:
+             # "cluster" was in original check list: ["sample",'image',"cluster"]
+             # But default is "clusters".
+             logger.error("split_by must be one of: sample, image, cluster, ROI")
+             return False
+
+    return True
+
+
+def install_packages():
+    """Run the R package installation script."""
+    r_script_path = os.path.join(SPATIALSNAKE_PATH, "workflow/scripts/install_packages.R")
+    try:
+        logger.info(f"Running R script: {r_script_path}")
+        subprocess.check_call(["Rscript", r_script_path])
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install packages: {e}")
+        sys.exit(e.returncode)
+    except FileNotFoundError:
+        logger.error("Rscript not found or script missing.")
+        sys.exit(1)
+
+
+def generate_config_file(arguments: Dict[str, Any]):
+    """Generate configuration file."""
+    step = arguments.get("--option")
+    command = arguments.get("<command>")
     
-    def write_to_log(self,start,arguments):
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        logname = f"spatialsnake_{self.runid}_{timestamp}_runlog.log"
-        stop = timeit.default_timer()
-        if self.log:
-            with open(logname,"w") as f:
-                f.write(__logo__ + "\n")
-                f.write("Run ID : " + self.runid + "\n")
-                f.write("spatialsnake version : " + __version__ + "\n")
-                f.write("spatialsnake arguments : " + " ".join(sys.argv) + "\n")
-                f.write("the running step : "+self.parameters["option"]+"\n")
-                f.write("------------------------------" + "\n")
-                f.write("Snakemake arguments : " + str(self.snakemake) + "\n\n")
-                f.write("------------------------------" + "\n")
-                f.write("Run parameters in this option:\n")
-                for key, value in sorted(self.parameters.items()):
-                    if value is not None and value != "":
-                        f.write(f"  {key.ljust(25)} {value}\n")
-                f.write("\n")
-                f.write("Total run time: {t:.2f} mins \n".format(t=(stop-start)/60))
-                f.write("Useful Information:\n")
-                f.write("-" * 20 + "\n")
-                f.write("  ⚠  For help: [spatialsnake --help ]\n")
-                f.write("  ⚠  For setting more params please run: [spatialsnake produce-file --option=step]\n")
-                f.write("  ⚠  Output files are stored in the 'results' directory\n")
-                f.write("  ⚠  Use 【spatialsnake [command] [..] --config-file config.yaml】 to run spatialsnake if you want to customize the parameter settings in config.yaml file. \n")
-                f.write("=" * 60 + "\n")
-                
-class CommandLine_useful_tools:
-    def __init__(self):
-        self.snakemake="python "
-        self.runid="".join(random.choices("abcdefghisz",k=3) + random.choices("123456789",k=5))
-        self.config=[]
-        self.configfile_loaded=False
-        self.is_this_an_useful_tool_run=True
-        self.parameters=dict()
-        self.log=True
-        
-    def __str__(self):
-        return self.snakemake
-    def __repr__(self):
-        return self.snakemake
-      
-    def add_config_argument(self):
-        self.snakemake = self.snakemake + " ".join(self.config)
+    # Logic from original main() to determine 'step'
+    if arguments.get("produce-file"):
+         if command not in ['useful_tool', 'transform']:
+             # If command is not useful_tool/transform, use --option as step.
+             # But arguments['<command>'] is None if running `spatialsnake produce-file ...`
+             # The usage for produce-file is: `spatialsnake produce-file [--option=<analysis_option>]`
+             pass
 
-    def load_configfile_if_available(self,arguments):
-        if arguments["--option"]:
-            tool = arguments["--option"]
-            # self.config.append("option={}".format(arguments["--option"]))
-            self.config.append(spatialsnake_path + f"/workflow/function/{tool}.py")
-        print(spatialsnake_path + f"/workflow/envs/{tool}.yaml")
-        if self.configfile_loaded is False:
-            print(spatialsnake_path)
-            if "--configfile" in arguments and os.path.isfile(arguments["--configfile"]):
-                configfile=arguments["--configfile"]
-                self.configfile_loaded=True
-                print(configfile)
-            else:
-               configfile=spatialsnake_path + f"/workflow/envs/{tool}.yaml"
-               arguments["--configfile"]=spatialsnake_path + f"/workflow/envs/{tool}.yaml"
-               print(configfile)
-            with open(configfile) as f:
-               self.parameters=yaml.load(f,Loader=SafeLoader)
-    def prepare_arguments(self,arguments):
-        # jobs = arguments.get('--jobs', 4)
-        self.load_configfile_if_available(arguments)
-        self.config.append("--INPUT {}".format(arguments['<INPUT>']))
-        for i,b in arguments.items():
-            if i not in ["--jobs","--configfile","--option","useful_tool","<INPUT>"]:
-                k=i.lstrip("--")
-                if self.parameters.get(k)==None:
-                  continue
-                if self.configfile_loaded is False: 
-                    self.config.append(i + " " + str(b))
-                    self.parameters[k]=str(b)
-                else:
-                    if self.parameters.get(k) and i not in sys.argv:
-                        self.config.append(i +" "+ str(self.parameters.get(k)))
-                    else:
-                        self.config.append(i + " "+str(b))
-                        self.parameters[k]=str(b)
-        self.add_config_argument()
-        
+    # Simplified logic:
+    if step not in VALID_OPTIONS + ["all"]:
+        logger.error("Please set correct params: --option=<step_name> or --option=all")
+        return
+
+    logger.info(f"Generating config.yaml file for: {step}...")
     
-    def write_to_log(self,start,arguments):
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        logname = f"spatialsnake_{self.runid}_{timestamp}_runlog.log"
-        stop = timeit.default_timer()
-        if self.log:
-            with open(logname,"w") as f:
-                f.write(__logo__ + "\n")
-                f.write("Run ID : " + self.runid + "\n")
-                f.write("spatialsnake version : " + __version__ + "\n")
-                f.write("spatialsnake arguments : " + " ".join(sys.argv) + "\n")
-                f.write("the running step : "+arguments["--option"]+"\n")
-                f.write("------------------------------" + "\n")
-                f.write("Snakemake arguments : " + str(self.snakemake) + "\n\n")
-                f.write("------------------------------" + "\n")
-                f.write("Run parameters in this option:\n")
-                for key, value in sorted(self.parameters.items()):
-                    if value is not None and value != "":
-                        f.write(f"  {key.ljust(25)} {value}\n")
-                f.write("\n")
-                f.write("Total run time: {t:.2f} mins \n".format(t=(stop-start)/60))
-                f.write("Useful Information:\n")
-                f.write("-" * 20 + "\n")
-                f.write("  ⚠  For help: [spatialsnake --help ]\n")
-                f.write("  ⚠  For setting more params please run: [spatialsnake produce-file --option=step]\n")
-                f.write("  ⚠  Output files are stored in the 'results' directory\n")
-                f.write("  ⚠  Use 【spatialsnake [command] [..] --config-file config.yaml】 to run spatialsnake if you want to customize the parameter settings in config.yaml file. \n")
-                f.write("=" * 60 + "\n")
-
-
-
- 
-def run_useful_tool(arguments):
-    start = timeit.default_timer()
-    snakemake_argument=CommandLine_useful_tools()
-    snakemake_argument.is_this_an_useful_tool_run = True
-    snakemake_argument.prepare_arguments(arguments)
-    print(snakemake_argument)
-    subprocess.check_call(str(snakemake_argument),shell=True)
-    snakemake_argument.write_to_log(start,arguments)
-
-def run_workflow(arguments):
-    start = timeit.default_timer()
-    snakemake_argument=CommandLine()
-    snakemake_argument.prepare_arguments(arguments)
-    subprocess.check_call(str(snakemake_argument),shell=True)
-    snakemake_argument.write_to_log(start,arguments)
+    try:
+        if step == "all":
+            src = os.path.join(SPATIALSNAKE_PATH, "config.yaml")
+            dst = "config.yaml"
+            shutil.copyfile(src, dst)
+        else:
+            src = os.path.join(SPATIALSNAKE_PATH, f"workflow/envs/{step}.yaml")
+            dst = f"{step}.yaml"
+            shutil.copyfile(src, dst)
+            
+        logger.info("You can use this as a config-file for a spatialsnake run.")
+        logger.info("⚠  How to set your own params:")
+        logger.info("   Add params: --config-file <file-path> in the command line")
+        
+    except FileNotFoundError:
+        logger.error(f"Source config file not found: {src}")
+    except Exception as e:
+        logger.error(f"Error generating config file: {e}")
 
 
 def main():
+    """Main entry point."""
+    try:
         cli_arguments = docopt(__doc__, version=__version__)
-        if cli_arguments["produce-file"]:
-            step = cli_arguments["--option"] if not cli_arguments['<command>'] == 'useful_tool' or not cli_arguments['<command>'] == 'transform' else cli_arguments["<command>"]
-            if step not in ["integrate","preprocess","clustering","annotion_help","annotion","compare_analyze","advance_analysis","all"]:
-              print("please setting correct params : --option=<step_name>   or  --option=all to get all step params")
-              return
-            print(f"Generating config.yaml file: {step}.yaml..........")
-            print("You can use this as a config-file for a spatialsnake run. You may change the settings in it.")
-            if step=="all":
-              shutil.copyfile(spatialsnake_path + "/config.yaml", 'config.yaml')
-            else:
-              shutil.copyfile(spatialsnake_path + f"/workflow/envs/{step}.yaml", f'{step}.yaml')
-            print("⚠     How to setting your own params:")
-            print("Add params: --config-file <file-path> in the command line when you run the pipeline")
-            return
-        elif cli_arguments["install-packages"]:
-            r_script_path = spatialsnake_path + "/workflow/scripts/install_packages.R"
-            subprocess.check_call(["Rscript", r_script_path])
-            return
-        if not check_command_line_arguments(cli_arguments):
-            print("""Please check your command line arguments. Use "spatialsnake --help" for more information""")
-            return
-        if cli_arguments['<command>'] == 'single_analysis':
-            run_workflow(cli_arguments)
-        elif cli_arguments['<command>'] == 'compare_analysis':
-            run_workflow(cli_arguments)
-        elif cli_arguments['useful_tool']:
-            run_useful_tool(cli_arguments)
-        elif cli_arguments['transform']:
-           run_transform(cli_arguments)
+    except Exception as e:
+        logger.error(f"Error parsing arguments: {e}")
+        return
+
+    # Debug print as in original? Maybe remove for production, but user asked to keep core functions.
+    # Original code had `print(cli_arguments)` in some branches.
+    # I'll rely on logging.
+
+    if cli_arguments.get("produce-file"):
+        generate_config_file(cli_arguments)
+        return
+
+    if cli_arguments.get("install-packages"):
+        install_packages()
+        return
+
+    if cli_arguments.get("useful_tool"):
+        # print(cli_arguments) # Original had this
+        if not validate_tool_arguments(cli_arguments):
+             return
+        runner = ToolRunner(cli_arguments)
+        runner.execute()
+        return
+
+    # Workflow commands
+    # print(cli_arguments) # Original had this
+    
+    if not validate_workflow_arguments(cli_arguments):
+        logger.info("Please check your command line arguments. Use 'spatialsnake --help' for more information")
+        return
+
+    command = cli_arguments.get("<command>")
+    if command in ['single_analysis', 'compare_analysis']:
+        runner = WorkflowRunner(cli_arguments)
+        runner.execute()
+
+if __name__ == '__main__':
+    main()

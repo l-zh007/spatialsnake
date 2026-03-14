@@ -22,6 +22,18 @@ from shapely.geometry import Polygon
 import argparse
 import seaborn as sns
 
+def parse_bool(value):
+  if isinstance(value, bool):
+    return value
+  if value is None:
+    return False
+  value_str = str(value).strip().lower()
+  if value_str in ["true", "1", "yes", "y", "t"]:
+    return True
+  if value_str in ["false", "0", "no", "n", "f", "none", "null", ""]:
+    return False
+  raise argparse.ArgumentTypeError(f"Invalid boolean value: {value}")
+
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
 parser.add_argument('--input_dir', type=str, required=True, 
                    help='Path to the raw data directory')
@@ -39,10 +51,10 @@ parser.add_argument('--channel', type=str, required=False,
 parser.add_argument("--bin_size", type=str, required=False, help="bin")
 
 ####### args of xenium
-parser.add_argument("--cells_boundaries", type=bool, required=False, help="bin")
-parser.add_argument("--nucleus_boundaries", type=bool, required=False, help="bin")
-parser.add_argument("--nucleus_labels", type=bool, required=False, help="bin")
-parser.add_argument("--morphology_mip", type=bool, required=False, help="bin")
+parser.add_argument("--cells_boundaries", type=parse_bool, required=False, help="bin")
+parser.add_argument("--nucleus_boundaries", type=parse_bool, required=False, help="bin")
+parser.add_argument("--nucleus_labels", type=parse_bool, required=False, help="bin")
+parser.add_argument("--morphology_mip", type=parse_bool, required=False, help="bin")
 
 ##########args of segment visium
 parser.add_argument("--scale_factors", type=str, required=False, help="bin")
@@ -61,7 +73,6 @@ args = parser.parse_args()
 count_file= args.count_file
 real_dir = "/".join(os.path.normpath(args.input_dir).split(os.path.sep)[:2])
 type=args.type
-
 
 
 def QC_plot(type,sdata,zarr_name):
@@ -340,9 +351,49 @@ def create_zarr(count_matrix_path,image_path,scale_factors_path,geojson_path,sam
 
 def create_zarr_xenium(path_to_inputs,zarr_name,cells_boundaries,nucleus_boundaries,nucleus_labels,morphology_mip):
     sdata = spatialdata_io.xenium(path_to_inputs,cells_boundaries=cells_boundaries, nucleus_boundaries=nucleus_boundaries,nucleus_labels=nucleus_labels,morphology_mip=morphology_mip,n_jobs=4,cells_as_circles=True)
+    new_images = {}
+    for img_name in sdata.images.keys():
+        new_name = f"{args.sample_id}_{img_name}"
+        new_images[new_name] = sdata.images[img_name]
+    sdata.images = new_images
+    new_images = {}
+    for shapes_name in sdata.shapes.keys():
+        new_name = f"{args.sample_id}_{shapes_name}"
+        new_images[new_name] = sdata.shapes[shapes_name]
+    sdata.shapes = new_images
+    new_images = {}
+    for labels_name in sdata.labels.keys():
+        new_name = f"{args.sample_id}_{labels_name}"
+        new_images[new_name] = sdata.labels[labels_name]
+    sdata.labels = new_images
+
+    new_images = {}
+    for points_name in sdata.points.keys():
+        new_name = f"{args.sample_id}_{points_name}"
+        new_images[new_name] = sdata.points[points_name]
+    sdata.points = new_images
+
+    new_images = {}
+    SHAPES_KEY = f"{args.sample_id}"+'_cell_circles'
+    TABLE_KEY = 'table'
     for table in sdata.tables.values():
-        table.obs['cell_id'] = table.obs.index
-        table.obs["group"] = args.sample_id
+        table.var_names_make_unique()
+        table.obs['cell_id'] = table.obs['cell_id'].astype(str)
+        table.obs["sample"] = args.sample_id
+        table.obs['region'] = SHAPES_KEY
+        table.obs['region'] = table.obs['region'].astype('category')
+        print(table.obs)
+    if SHAPES_KEY in sdata.shapes:
+        sdata.shapes[SHAPES_KEY].index = table.obs['cell_id']
+    del table.uns['spatialdata_attrs']
+    sdata.tables={
+            TABLE_KEY: TableModel.parse(
+                table,
+                region=SHAPES_KEY,
+                region_key='region',
+                instance_key='cell_id'
+            )
+        }
     sdata=QC_plot(type,sdata,zarr_name)
     sdata.write(zarr_name,overwrite=True)
     
@@ -395,8 +446,6 @@ elif type=="xenium":
 
 
       
-
-
 
 
 

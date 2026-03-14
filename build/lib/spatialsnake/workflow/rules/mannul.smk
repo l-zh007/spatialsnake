@@ -4,7 +4,7 @@ rule annotion_mannel:
   output:
     merge=directory(nomal_file(run_type,"annotion")) if run_type!="slide_seq" else nomal_file(run_type,"annotion")
   params:
-    sample_id = lambda wildcards: "concatenated_sdata" if channel=="compare_analysis" and seg_filter==False else wildcards.sample,
+    sample_id = lambda wildcards: "concatenated_sdata" if channel=="compare_analysis" else wildcards.sample,
     run_type = run_type,
     anno_data = lambda wildcards: f"--anno_data '{json.dumps(anno_data)}'",
     image_type = image_type,

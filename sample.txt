@@ -1,5 +1,0 @@
-samples path_to_dir bin_size group
-Non_Lesional_1 data/Non_Lesional_1 Normal
-Non_Lesional_2 data/Non_Lesional_2 Normal
-Lesional_1 data/Lesional_1 Cancer
-Lesional_2 data/Lesional_2 Cancer

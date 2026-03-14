@@ -1,16 +1,17 @@
 rule liana_rule:
   input:
-    inputs=liana_inputs
+    liana_inputs=liana_inputs
   output:
-    merge=os.path.join(results_folder,'liana_output',"liana_data.h5ad")
+    merge=os.path.join(results_folder,"liana_output",f"{cpdb_sample_id}.zarr")
   params:
     run_type = run_type,
-    bandwidth=bandwidth,
-    cutoff=cutoff,
-    resource_name=resource_name,
-    celltype=celltype,
-    expr_prop=expr_prop,
-    sp_cellchat=sp_cellchat
+    sample_id = cpdb_sample_id,
+    liana_method = liana_method,
+    liana_resource_name = liana_resource_name,
+    liana_expr_prop = liana_expr_prop,
+    liana_min_cells = liana_min_cells,
+    liana_use_raw = liana_use_raw,
+    celltype=celltype
   shell:
       """
       python {spatialsnake_path}workflow/scripts/liana.py \
@@ -18,12 +19,12 @@ rule liana_rule:
         --sample_id {params.sample_id} \
         --output_zarr_path {output.merge} \
         --type {params.run_type} \
-        --bandwidth {params.bandwidth} \
-        --cutoff {params.cutoff} \
-        --resource_name {params.resource_name} \
+        --method {params.liana_method} \
+        --resource_name {params.liana_resource_name} \
         --celltype {params.celltype} \
-        --expr_prop {params.expr_prop} \
-        --sp_cellchat {params.sp_cellchat}
+        --expr_prop {params.liana_expr_prop} \
+        --min_cells {params.liana_min_cells} \
+        --use_raw {params.liana_use_raw}
       """
       
       
