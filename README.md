@@ -1,20 +1,34 @@
-<h1 align="center">spatialsnake</h1>
-
-<p align="center">
-  A Snakemake workflow for spatial transcriptomics powered by the <code>spatialdata</code> framework.
-</p>
-
-<p align="center">
-  <a href="https://spatialsnake-tutorial.readthedocs.io/en/latest/">
-    <img src="https://img.shields.io/badge/docs-Read%20the%20Documentation-blue" alt="Documentation">
-  </a>
-  <a href="https://pypi.org/project/spatialsnake/">
-    <img src="https://img.shields.io/pypi/v/spatialsnake" alt="PyPI">
-  </a>
-  <a href="https://snakemake.github.io">
-    <img src="https://img.shields.io/badge/snakemake-%E2%89%A58.0.0-brightgreen.svg" alt="Snakemake">
-  </a>
-</p>
+<table border="0" cellspacing="0" cellpadding="0">
+  <tbody>
+    <tr>
+      <td valign="middle" style="padding-right: 18px; padding-top: 6px; padding-bottom: 6px;">
+        <img
+          src="./spatialsnake-logo.png"
+          alt="spatialsnake logo"
+          width="120"
+          style="border-radius: 14px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.14); display: block;"
+        />
+      </td>
+      <td valign="middle" style="padding-top: 6px; padding-bottom: 6px;">
+        <h1 style="margin: 0; padding: 0;">spatialsnake</h1>
+        <p style="margin: 6px 0 10px 0;">
+          A Snakemake workflow for spatial transcriptomics powered by the <code>spatialdata</code> framework.
+        </p>
+        <p style="margin: 0;">
+          <a href="https://spatialsnake-tutorial.readthedocs.io/en/latest/">
+            <img src="https://img.shields.io/badge/docs-Read%20the%20Documentation-blue" alt="Documentation">
+          </a>
+          <a href="https://pypi.org/project/spatialsnake/">
+            <img src="https://img.shields.io/pypi/v/spatialsnake" alt="PyPI">
+          </a>
+          <a href="https://snakemake.github.io">
+            <img src="https://img.shields.io/badge/snakemake-%E2%89%A58.0.0-brightgreen.svg" alt="Snakemake">
+          </a>
+        </p>
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 `spatialsnake` is an automated pipeline for `spatial transcriptomics` analysis. Implemented in `Python` on top of the `scverse` ecosystem, it uses SpatialData to convert datasets from multiple spatial transcriptomics platforms into a unified `zarr`-based object format. This design supports a consistent workflow spanning data ingestion, preprocessing, clustering, annotation, and downstream analysis through a command-line interface with workflow-based parameter control.
 
