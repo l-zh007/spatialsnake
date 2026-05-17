@@ -8,8 +8,7 @@ channel: "compare_analysis"         # the channel of analysis style [single_anal
 
 
 
-seg_filter: False                   # whether filter the sample with different Standard
-filter_list: False                  # file path with different filter Standard of samples
+filter_list: False                  # bool flag: True means read per-sample min_cells/min_genes/mt_threshold from sample.txt
 min_genes: 3                        # params of minimal genes contain of each spot
 min_cells: 3                        # params of minimal cell contain of each gene
 mt_threshold: 80.0                  # the mt params percent to filter the cell
@@ -20,9 +19,5 @@ n_top_genes: 3000                   # the num of top variable  genes
 n_comps: 50                         # pca params
 sketch: False                       # whether use sketch method to analysis the spatialdata
 sample_rate: 0.30                   # downsample rate of sketch method
-
-
-
-
 
 

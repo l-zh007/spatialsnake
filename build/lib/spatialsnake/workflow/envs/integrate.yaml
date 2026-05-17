@@ -19,11 +19,13 @@ geojson: 'cell_segmentations.geojson'   # name of visium segment data
 image: 'tissue_hires_image.png'         # name of visium segment data 
 scale_factors: 'scalefactors_json.json' # name of visium segment data
 coor_file: "BeadLocationsForR.csv"      # name of slideseq data
-
-
-
-
-
+bin_size: 50                           # bin size for Stereo-seq tissue GEM fallback aggregation
+merscope_z_layers: 3                   # optional, e.g. 0 or 0,1,2 ; use "None" for spatialdata_io.merscope default
+merscope_region_name: "None"          # optional; use "None" for spatialdata_io.merscope default
+merscope_transcripts: True             # spatialdata_io.merscope default
+merscope_cells_boundaries: True        # spatialdata_io.merscope default
+merscope_cells_table: True             # spatialdata_io.merscope default
+merscope_mosaic_images: True           # spatialdata_io.merscope default
 
 
 

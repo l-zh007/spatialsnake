@@ -28,7 +28,7 @@ else:
   for table in concatenated_sdata.tables.keys():
     table=table
     adata = concatenated_sdata[table]
-#adata.write_loom(args.loom)
+adata.write_loom(args.loom)
 
 
 # with loompy.connect("./Non_Lession.loom") as ds:

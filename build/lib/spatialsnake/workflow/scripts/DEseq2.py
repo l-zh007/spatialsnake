@@ -149,6 +149,23 @@ for group1, group2 in contrast_pairs:
     result_df["contrast"] = f"{group1}_vs_{group2}"
     result_df["group1"] = group1
     result_df["group2"] = group2
+    result_df["comparison_group"] = group1
+    result_df["reference_group"] = group2
+    result_df["higher_in_group"] = np.where(
+        result_df["log2FoldChange"] > 0,
+        group1,
+        np.where(result_df["log2FoldChange"] < 0, group2, "None")
+    )
+    result_df["lower_in_group"] = np.where(
+        result_df["log2FoldChange"] > 0,
+        group2,
+        np.where(result_df["log2FoldChange"] < 0, group1, "None")
+    )
+    result_df["regulation_label"] = np.where(
+        result_df["log2FoldChange"] > 0,
+        f"Higher_in_{group1}",
+        np.where(result_df["log2FoldChange"] < 0, f"Higher_in_{group2}", "None")
+    )
     result_df["gene"] = result_df.index
     result_df.to_csv(os.path.join(diff_dir, f"{group1}_vs_{group2}.csv"))
     all_results.append(result_df)

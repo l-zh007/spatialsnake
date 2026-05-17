@@ -141,7 +141,7 @@ def merge_reannotation_to_base(
     csv_label_col,
     input_cell_col,
     target_col,
-    fallback_col
+    original_celltype_col
 ):
     csv_paths = parse_csv_inputs(annotation_csv)
     if len(csv_paths) == 0:
@@ -163,10 +163,10 @@ def merge_reannotation_to_base(
     else:
         cell_series = table.obs.index.astype(str)
 
-    if fallback_col in table.obs.columns:
-        merged_labels = table.obs[fallback_col].astype(str).copy()
-    elif target_col in table.obs.columns:
+    if target_col in table.obs.columns:
         merged_labels = table.obs[target_col].astype(str).copy()
+    elif original_celltype_col in table.obs.columns:
+        merged_labels = table.obs[original_celltype_col].astype(str).copy()
     else:
         merged_labels = pd.Series(["Unknown"] * table.n_obs, index=table.obs.index)
 
@@ -177,6 +177,8 @@ def merge_reannotation_to_base(
 
     table.obs["cell_id"] = table.obs.index.astype(str)
     table.uns["spatialdata_attrs"]["instance_key"] = "cell_id"
+    print(table)
+    print(table.obs)
     sdata.tables[table_key] = table
     os.makedirs(output_dir, exist_ok=True)
     sdata.write(os.path.join(output_dir, "concatenated_sdata.zarr"), overwrite=True)
@@ -207,10 +209,10 @@ if __name__ == '__main__':
                        help='annotation column in csv')
     parser.add_argument('--input_cell_col', type=str, default='cell_id',
                        help='cell id column in base zarr table obs')
-    parser.add_argument('--target_col', type=str, default='celltype',
+    parser.add_argument('--target_col', type=str, default='sub_celltype',
                        help='target column to write merged annotation')
-    parser.add_argument('--fallback_col', type=str, default='celltype',
-                       help='fallback column for cells not in csv')
+    parser.add_argument('--original_celltype_col', type=str, default='celltype',
+                       help='original celltype column in base zarr table obs')
     args = parser.parse_args()
     print("starting .......................")
     print(args.INPUT)
@@ -230,7 +232,7 @@ if __name__ == '__main__':
             csv_label_col=args.csv_label_col,
             input_cell_col=args.input_cell_col,
             target_col=args.target_col,
-            fallback_col=args.fallback_col
+            original_celltype_col=args.original_celltype_col
         )
     else:
         sdatas = merge_by_clusters(args.INPUT, reordering, args.cluster_key)
@@ -238,7 +240,6 @@ if __name__ == '__main__':
         concatenated_sdata.write(os.path.join(args.output_dir,"concatenated_sdata.zarr"), overwrite=True)
         del concatenated_sdata, sdatas
     gc.collect()
-
 
 
 

@@ -147,7 +147,7 @@ def seg_filter_sample(filter_list):
     return sample_dict    
     
 
-def get_annotion(file_path, samples):
+def get_annotation(file_path, samples):
     if not os.path.isfile(file_path):
       L.info(f"the {file_path} file not found")
       sys.exit()

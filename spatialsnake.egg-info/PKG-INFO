@@ -1,18 +1,86 @@
 Metadata-Version: 2.4
 Name: spatialsnake
 Version: 0.0.1
-Summary: spatialsnake：a package for spatial transcriptomic
+Summary: A Python package for spatial transcriptomics analysis workflows.
 Home-page: https://github.com/l-zh007/spatialsnake
 Author: lzh
-Author-email: l-zh007 <1714074171@qq.com>
+Author-email: lzh <1714074171@qq.com>
 License-Expression: MIT
 Project-URL: Homepage, https://github.com/l-zh007/spatialsnake
 Project-URL: Issues, https://github.com/l-zh007/spatialsnake/issues
-Classifier: Programming Language :: Python :: 3
+Keywords: spatial transcriptomics,bioinformatics,snakemake,spatialdata
 Classifier: Operating System :: OS Independent
-Requires-Python: >=3.12.11
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+Requires-Python: >=3.12,<3.13
 Description-Content-Type: text/markdown
 License-File: LICENSE
+Requires-Dist: setuptools<81,>=80.9.0
+Requires-Dist: spatialdata==0.5.0
+Requires-Dist: spatialdata-io==0.3.0
+Requires-Dist: spatialdata-plot==0.2.11
+Requires-Dist: squidpy==1.6.5
+Requires-Dist: napari-spatialdata==0.5.7
+Requires-Dist: numpy==2.2.6
+Requires-Dist: scanpy==1.10.4
+Requires-Dist: anndata==0.12.0
+Requires-Dist: umap-learn==0.5.7
+Requires-Dist: pandas==2.2.3
+Requires-Dist: scipy==1.13.1
+Requires-Dist: scikit-learn==1.7.2
+Requires-Dist: numba==0.62.1
+Requires-Dist: llvmlite==0.45.1
+Requires-Dist: shapely==2.1.1
+Requires-Dist: matplotlib==3.9.4
+Requires-Dist: seaborn==0.13.2
+Requires-Dist: plotnine==0.15.0
+Requires-Dist: Pillow==11.3.0
+Requires-Dist: cell2location==0.1.5
+Requires-Dist: scvi-tools==1.4.0
+Requires-Dist: zarr==2.18.7
+Requires-Dist: h5py==3.14.0
+Requires-Dist: tifffile==2025.8.28
+Requires-Dist: imageio==2.37.0
+Requires-Dist: ome-zarr==0.11.1
+Requires-Dist: statsmodels==0.14.5
+Requires-Dist: Pint==0.25
+Requires-Dist: pyarrow==21.0.0
+Requires-Dist: click==8.3.0
+Requires-Dist: typer==0.16.0
+Requires-Dist: docopt==0.6.2
+Requires-Dist: PyYAML==6.0.3
+Requires-Dist: geosketch==1.3
+Requires-Dist: cell2location==0.1.5
+Requires-Dist: geopandas==1.1.1
+Requires-Dist: pydeseq2==0.5.2
+Requires-Dist: harmonypy==0.0.10
+Requires-Dist: igraph==0.11.9
+Requires-Dist: louvain==0.8.2
+Provides-Extra: extended
+Requires-Dist: scikit-misc==0.5.2; extra == "extended"
+Requires-Dist: dask-image==2024.5.3; extra == "extended"
+Requires-Dist: ipython==9.5.0; extra == "extended"
+Requires-Dist: pyogrio==0.12.1; extra == "extended"
+Requires-Dist: pooch==1.8.2; extra == "extended"
+Requires-Dist: dask==2024.11.2; extra == "extended"
+Requires-Dist: dask-expr==1.1.19; extra == "extended"
+Requires-Dist: pims==0.7; extra == "extended"
+Requires-Dist: xarray==2025.1.2; extra == "extended"
+Requires-Dist: pyro-ppl==1.9.1; extra == "extended"
+Requires-Dist: pyro-api==0.1.1; extra == "extended"
+Requires-Dist: opt-einsum==3.3.0; extra == "extended"
+Requires-Dist: cellphonedb==5.0.1; extra == "extended"
+Requires-Dist: torch==2.8.0; extra == "extended"
+Requires-Dist: pytorch-lightning==2.5.5; extra == "extended"
+Requires-Dist: cellcharter==0.3.5; extra == "extended"
+Requires-Dist: cytoolz==1.0.1; extra == "extended"
+Requires-Dist: ktplotspy==0.3.3; extra == "extended"
+Requires-Dist: liana==1.6.1; extra == "extended"
+Requires-Dist: loompy==3.0.8; extra == "extended"
+Requires-Dist: pyscenic==0.12.1; extra == "extended"
+Requires-Dist: leidenalg; extra == "extended"
 Dynamic: author
 Dynamic: home-page
 Dynamic: license-file

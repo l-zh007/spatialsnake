@@ -1,26 +1,24 @@
 import os
-import sys
 import spatialdata as spd
-import spatialdata_plot as splt
-import spatialdata_io as so
-import geosketch as sketch
 import numpy as np
 import pandas as pd
 import scanpy as sc
-import scanpy.external as sce
 import spatialdata_io
 import json
-import gc
 import geopandas as gpd
 from spatialdata.models import Image2DModel, TableModel, ShapesModel
 import matplotlib.pyplot as plt
-from pydeseq2.dds import DeseqDataSet
-from pydeseq2.ds import DeseqStats
 from PIL import Image
 from spatialdata.transformations import Identity, Scale
 from shapely.geometry import Polygon
 import argparse
 import seaborn as sns
+from spatialsnake.workflow.function.merfish_utils import (
+    align_merfish_image_to_shape_space,
+    find_merfish_transform_csv,
+)
+from spatialsnake.workflow.function.stereoseq_spec import parse_stereoseq_input_spec
+from spatialsnake.workflow.function.stereoseq_v8 import stereoseq_v8
 
 def parse_bool(value):
   if isinstance(value, bool):
@@ -33,7 +31,6 @@ def parse_bool(value):
   if value_str in ["false", "0", "no", "n", "f", "none", "null", ""]:
     return False
   raise argparse.ArgumentTypeError(f"Invalid boolean value: {value}")
-
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
 parser.add_argument('--input_dir', type=str, required=True, 
                    help='Path to the raw data directory')
@@ -49,6 +46,7 @@ parser.add_argument('--channel', type=str, required=False,
                    help='Path for the output zarr file')                   
 ########## args of visium HD
 parser.add_argument("--bin_size", type=str, required=False, help="bin")
+parser.add_argument("--input_spec", type=str, required=False, help="Stereo-seq input mode")
 
 ####### args of xenium
 parser.add_argument("--cells_boundaries", type=parse_bool, required=False, help="bin")
@@ -65,14 +63,29 @@ parser.add_argument("--geojson", type=str, required=False, help="bin")
 ######args of slide seq
 parser.add_argument("--coor_file", type=str, required=False, help="bin")
 
-#######args of Merfish
+####### args of merscope/merfish
+parser.add_argument("--merscope_z_layers", type=int, required=False, help="Optional z layers for spatialdata_io.merscope")
+parser.add_argument("--merscope_region_name", type=str, required=False, help="Optional region name for spatialdata_io.merscope")
+parser.add_argument("--merscope_transcripts", type=parse_bool, required=False, help="Load transcripts in spatialdata_io.merscope")
+parser.add_argument("--merscope_cells_boundaries", type=parse_bool, required=False, help="Load cell boundaries in spatialdata_io.merscope")
+parser.add_argument("--merscope_cells_table", type=parse_bool, required=False, help="Load cells table in spatialdata_io.merscope")
+parser.add_argument("--merscope_mosaic_images", type=parse_bool, required=False, help="Load mosaic images in spatialdata_io.merscope")
 
 args = parser.parse_args()
 
 
 count_file= args.count_file
-real_dir = "/".join(os.path.normpath(args.input_dir).split(os.path.sep)[:2])
 type=args.type
+_input_norm = os.path.normpath(args.input_dir)
+if type == "visium_HD":
+  parts = _input_norm.split(os.path.sep)
+  if "binned_outputs" in parts:
+    idx = parts.index("binned_outputs")
+    real_dir = os.path.join(*parts[:idx]) if idx > 0 else os.path.dirname(_input_norm)
+  else:
+    real_dir = os.path.dirname(_input_norm)
+else:
+  real_dir = _input_norm if os.path.isdir(_input_norm) else os.path.dirname(_input_norm)
 
 
 def QC_plot(type,sdata,zarr_name):
@@ -101,7 +114,7 @@ def QC_plot(type,sdata,zarr_name):
     image_num=4
   else:
     image_num=2
-  fig, axs = plt.subplots(1, image_num, figsize=(15, 4))
+  _, axs = plt.subplots(1, image_num, figsize=(15, 4))
   axs[0].set_title("Total transcripts per cell")
   sns.histplot(
     adata.obs["total_counts"],
@@ -199,6 +212,35 @@ def QC_plot(type,sdata,zarr_name):
     return adata
 
 
+def align_shapes_with_table_cell_id(sdata, sample_id=None, table_key="table"):
+  shape_keys = list(getattr(sdata, "shapes", {}).keys())
+  table_items = list(getattr(sdata, "tables", {}).items())
+  if not shape_keys or not table_items:
+    return sdata
+
+  shape_key = shape_keys[0]
+  _, table = table_items[0]
+  table.var_names_make_unique()
+  table.obs_names = table.obs_names.astype(str)
+  table.obs["cell_id"] = table.obs_names
+  if sample_id is not None:
+    table.obs["sample"] = sample_id
+    table.obs["group"] = sample_id
+  table.obs["region"] = shape_key
+  table.obs["region"] = table.obs["region"].astype("category")
+  sdata.shapes[shape_key].index = table.obs["cell_id"]
+  table.uns.pop("spatialdata_attrs", None)
+  sdata.tables = {
+    table_key: TableModel.parse(
+      table,
+      region=shape_key,
+      region_key="region",
+      instance_key="cell_id",
+    )
+  }
+  return sdata
+
+
 
 
 
@@ -212,9 +254,11 @@ def QC_plot(type,sdata,zarr_name):
 def create_zarr_bin(path_to_inputs,sample_id,zarr_name,filtered_counts_file,bin_size):
     print(zarr_name)
     sdata = spatialdata_io.visium_hd(path_to_inputs, dataset_id=sample_id, filtered_counts_file=filtered_counts_file, bin_size=bin_size)
-    for table in sdata.tables.values():
-        table.obs['cell_id'] = table.obs.index
-        table.obs["group"] = sample_id
+    sdata = align_shapes_with_table_cell_id(
+        sdata,
+        sample_id=sample_id,
+        table_key="table",
+    )
     sdata=QC_plot(type,sdata,zarr_name)
     sdata.write(zarr_name, overwrite=True)
 
@@ -350,7 +394,7 @@ def create_zarr(count_matrix_path,image_path,scale_factors_path,geojson_path,sam
     sdata.write(zarr_name, overwrite=True)
 
 def create_zarr_xenium(path_to_inputs,zarr_name,cells_boundaries,nucleus_boundaries,nucleus_labels,morphology_mip):
-    sdata = spatialdata_io.xenium(path_to_inputs,cells_boundaries=cells_boundaries, nucleus_boundaries=nucleus_boundaries,nucleus_labels=nucleus_labels,morphology_mip=morphology_mip,n_jobs=4,cells_as_circles=True)
+    sdata = spatialdata_io.xenium(path_to_inputs,cells_boundaries=cells_boundaries, nucleus_boundaries=nucleus_boundaries,nucleus_labels=nucleus_labels,morphology_mip=morphology_mip,n_jobs=4,cells_as_circles=True,morphology_focus = True)
     new_images = {}
     for img_name in sdata.images.keys():
         new_name = f"{args.sample_id}_{img_name}"
@@ -410,12 +454,124 @@ def creat_zarr_slide_seq(zarr_name,count_file,coor_file):
   adata=QC_plot(type,adata,zarr_name)
   adata.write(zarr_name)
 
+
+
+def _create_mock_spatialdata(sample_id: str, platform: str):
+    """
+    Create a tiny SpatialData object for smoke testing imaging platform branches.
+    This is used only when MOCK_DATASET.txt exists under --input_dir.
+    """
+    import numpy as np
+    import pandas as pd
+    import anndata as ad
+    from spatialdata import SpatialData
+    from spatialdata.models import TableModel, Image2DModel
+
+    # ----- tiny counts -----
+    genes = [f"Gene{i}" for i in range(5)]
+    cells = [f"{platform}_cell{i}" for i in range(5)]
+    X = np.arange(25, dtype=np.float32).reshape(5, 5)
+
+    region_value = str(sample_id)
+
+    obs = pd.DataFrame(index=cells)
+    # region ����ͬʱ��1) obs ���� region �� 2) TableModel.parse ��ʽ�� region=...
+    obs["region"] = pd.Categorical([region_value] * len(cells))
+    obs["cell_id"] = obs.index
+    obs["group"] = region_value
+
+    var = pd.DataFrame(index=genes)
+    adata = ad.AnnData(X=X, obs=obs, var=var)
+
+    # ----- coordinates -----
+    coords = np.stack([np.arange(len(cells)), np.arange(len(cells))], axis=1).astype(np.float32)
+    adata.obsm["spatial"] = coords
+
+    table = TableModel.parse(
+        adata,
+        region=region_value,
+        region_key="region",
+        instance_key="cell_id",
+    )
+
+    # ----- tiny image (10x10) -----
+    img = (np.arange(100).reshape(10, 10) % 255).astype(np.uint8)
+    img = img[None, :, :]  # ���� channel ά�� -> (1, 10, 10)
+    img = Image2DModel.parse(img, dims=("c", "y", "x"))
+
+    sdata = SpatialData(tables={"table": table}, images={"mock_image": img})
+    return sdata
+
+
+
+def create_zarr_merscope(path_to_inputs, zarr_name):
+    """Read Vizgen MERSCOPE / MERFISH output directory via spatialdata-io."""
+    # Mock mode
+    if os.path.exists(os.path.join(path_to_inputs, 'MOCK_DATASET.txt')):
+        sdata = _create_mock_spatialdata(args.sample_id, 'merscope')
+    else:
+        sdata = spatialdata_io.merscope(
+            path_to_inputs,
+            z_layers=args.merscope_z_layers,
+            transcripts=args.merscope_transcripts,
+            cells_boundaries=args.merscope_cells_boundaries,
+            cells_table=args.merscope_cells_table,
+            mosaic_images=args.merscope_mosaic_images,
+        )
+
+    for _, table in sdata.tables.items():
+        table.obs['cell_id'] = table.obs.index
+        if 'sample' not in table.obs.columns:
+            table.obs['sample'] = args.sample_id
+        else:
+            table.obs['sample'] = table.obs['sample'].astype(str)
+    print(sdata)
+    transform_csv = find_merfish_transform_csv(path_to_inputs)
+    if transform_csv and os.path.isfile(transform_csv):
+        sdata = align_merfish_image_to_shape_space(
+            sdata,
+            transform_csv=transform_csv,
+            coordinate_system="global",
+            register_points=True,
+        )
+    else:
+        print(f"WARNING: MERFISH transform csv not found, skip alignment: {transform_csv}")
+
+    if args.channel == "single_analysis":
+        sdata = QC_plot(type, sdata, zarr_name)
+    sdata.write(zarr_name, overwrite=True)
+
+def create_zarr_stereoseq(path_to_inputs, zarr_name, bin_size=None):
+  input_specs = parse_stereoseq_input_spec(args.input_spec if args.input_spec not in [None, ""] else bin_size)
+  sdata = stereoseq_v8(
+      path_to_inputs,
+      bin_sizes=input_specs,
+      load_analysis=False,
+  )
+
+  for _, table in sdata.tables.items():
+    spatial_attrs = table.uns.get('spatialdata_attrs', {}) if hasattr(table, 'uns') else {}
+    instance_key = spatial_attrs.get('instance_key')
+    region_key = spatial_attrs.get('region_key', 'region')
+    region_name = spatial_attrs.get('region', args.sample_id)
+    if instance_key == 'cell_id' and 'cell_id' not in table.obs.columns:
+      table.obs['cell_id'] = table.obs.index
+    if 'cell_id' not in table.obs.columns and table.obs.index.is_unique:
+      table.obs['cell_id'] = table.obs.index.astype(str)
+    if region_key not in table.obs.columns:
+      table.obs[region_key] = region_name
+    if 'sample' not in table.obs.columns:
+      table.obs['sample'] = args.sample_id
+    table.obs['group'] = args.sample_id
+  if args.channel == "single_analysis":
+    sdata = QC_plot(type, sdata, zarr_name)
+  sdata.write(zarr_name, overwrite=True)
+
 if type=='visium_segment':
         count_file=os.path.join(f'data/{args.sample_id}/segmented_outputs',count_file)
         image_file=os.path.join(f'data/{args.sample_id}/segmented_outputs/spatial',args.image)
         scale_factors_file=os.path.join(f'data/{args.sample_id}/segmented_outputs/spatial',args.scale_factors)
         geojson_file=os.path.join(f'data/{args.sample_id}/segmented_outputs',args.geojson)
-        print(count_file,args.image,args.scale_factors,args.geojson)
         create_zarr(count_matrix_path=count_file,
                 image_path=image_file,
                 scale_factors_path=scale_factors_file,
@@ -440,16 +596,13 @@ elif type=="slide_seq":
       count_file=os.path.join(f'data/{args.sample_id}',args.count_file)
       creat_zarr_slide_seq(zarr_name=args.output_zarr_path,count_file=count_file,coor_file=coor_file)
 elif type=="xenium":
-      print(args.cells_boundaries,args.nucleus_boundaries,args.nucleus_labels,args.morphology_mip)
       create_zarr_xenium(path_to_inputs=real_dir,zarr_name=args.output_zarr_path,cells_boundaries=args.cells_boundaries,nucleus_boundaries=args.nucleus_boundaries,nucleus_labels=args.nucleus_labels,morphology_mip=args.morphology_mip)
+elif type in ["Merfish", "merscope", "MERFISH"]:
+      create_zarr_merscope(path_to_inputs=real_dir, zarr_name=args.output_zarr_path)
+
+elif type in ["stereoseq", "StereoSeq", "Stereo-seq"]:
+      create_zarr_stereoseq(path_to_inputs=real_dir, zarr_name=args.output_zarr_path, bin_size=args.bin_size)
 
 
 
       
-
-
-
-
-
-
-

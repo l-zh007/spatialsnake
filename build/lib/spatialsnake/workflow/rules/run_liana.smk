@@ -2,7 +2,7 @@ rule liana_rule:
   input:
     liana_inputs=liana_inputs
   output:
-    merge=os.path.join(results_folder,"liana_output",f"{cpdb_sample_id}.zarr")
+    merge=directory(os.path.join(results_folder,f"{cpdb_sample_id}","liana_output",f"{cpdb_sample_id}.zarr"))
   params:
     run_type = run_type,
     sample_id = cpdb_sample_id,
@@ -14,7 +14,7 @@ rule liana_rule:
     celltype=celltype
   shell:
       """
-      python {spatialsnake_path}workflow/scripts/liana.py \
+      python {spatialsnake_path}workflow/scripts/run_liana.py \
         --input_dir {input.liana_inputs} \
         --sample_id {params.sample_id} \
         --output_zarr_path {output.merge} \

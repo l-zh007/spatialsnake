@@ -2,6 +2,7 @@ library(AnnotationDbi)
 library(dplyr)
 library(clusterProfiler)
 library(org.Hs.eg.db)
+library(org.Mm.eg.db)
 library(optparse)
 library(ggplot2)
 library(ggsankey)
@@ -14,13 +15,23 @@ option_list <- list(
   make_option(c("--sample_id")),
   make_option(c("--type")))
 opt <- parse_args(OptionParser(option_list=option_list))
-
+options(timeout = 6000000)
 parent_dir <- dirname(opt$input_dir)
 print(parent_dir)
 file_path <- opt$output_path
 output_path<-dirname(file_path)
 spacies=opt$spacies
-orgdb=ifelse(spacies == "human", "org.Hs.0eg.db", "org.Mm.eg.db")
+
+if (spacies == "human") {
+  orgdb <- org.Hs.eg.db
+  kegg_organism <- "hsa"
+} else if (spacies == "mouse") {
+  orgdb <- org.Mm.eg.db
+  kegg_organism <- "mmu"
+} else {
+  stop("Unsupported spacies value: ", spacies, ". Expected 'human' or 'mouse'.")
+}
+
 filename<-opt$input_dir
 marker_genes_pval <- read.csv(opt$input_dir, header = T)
 # gene_list<-marker_genes_pval["gene_name"]
@@ -31,28 +42,38 @@ marker_genes_pval <- read.csv(opt$input_dir, header = T)
 group <- data.frame(gene=marker_genes_pval$names,
                     group=marker_genes_pval$group)
 
-Gene_ID <- bitr(marker_genes_pval$names, fromType="SYMBOL", 
+Gene_ID <- bitr(unique(marker_genes_pval$names), fromType="SYMBOL", 
                 toType="ENTREZID", 
-                OrgDb="org.Hs.eg.db")
+                OrgDb=orgdb)
+
+if (nrow(Gene_ID) == 0) {
+  stop("No valid SYMBOL keys were found for spacies='", spacies,
+       "'. Please check whether the marker gene symbols match the selected species.")
+}
+
 markers_data  <- merge(Gene_ID,group,by.x='SYMBOL',by.y='gene')
+
+if (nrow(markers_data) == 0) {
+  stop("No genes remained after merging ENTREZID conversion results with input groups.")
+}
 
 
 data_GO <- compareCluster(
   ENTREZID~group, 
   data=markers_data, 
   fun="enrichGO", 
-  OrgDb="org.Hs.eg.db",
+  OrgDb=orgdb,
   ont = "ALL",
   pAdjustMethod = "BH",
   pvalueCutoff = 0.05,
   qvalueCutoff = 0.05
 )
 
-options(timeout = 180)
 data_kegg <- compareCluster(
   ENTREZID~group, 
   data=markers_data, 
   fun="enrichKEGG",
+  organism = kegg_organism,
   pAdjustMethod = "BH",
   pvalueCutoff = 0.05,
   qvalueCutoff = 0.05)

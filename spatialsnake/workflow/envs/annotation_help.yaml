@@ -1,0 +1,20 @@
+# total params
+option: "annotation_help"          # the analysis step for pipeline
+results_folder: "results"           # the results data folder name
+data_fold: "data"                   # the raw mat data folder name
+sample_list: "sample.txt"           # the sample detail information file
+run_type: "visium"                  # the spatial transcription data type
+channel: "compare_analysis"         # the channel of analysis style [single_analysis] or [compare_analysis]
+
+
+markers_algorithm: 'wilcoxon'                   # find markers algorithm of each clusters [default: wilcoxon].
+shape_type: False                        # shape data name of spatialdata shapes visualize [cell_boundaries ].
+image_type: False                         # image data name of spatialdata images to visualize [hires] [low]
+vis_mode: "auto"                           # Stereo-seq visualization mode [auto|point|shape]. auto prefers shape when available.
+point_size: 2.8                            # point render size for point-based visualization.
+spacies: "human"                            # GO and kegg analysis params [human] or [mouse]
+image_slice: False                        # whether slice image to depandent size
+x1: 0                                 # system of the sliced image size
+x2: 0
+y1: 0
+y2: 0

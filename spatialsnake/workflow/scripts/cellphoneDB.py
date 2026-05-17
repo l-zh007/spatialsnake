@@ -98,6 +98,8 @@ iterations = args.iterations if args.iterations is not None else 500
 threads = args.threads if args.threads is not None else 32
 pvalue = args.pvalue if args.pvalue is not None else 0.05
 input_ext = os.path.splitext(input_path)[1].lower()
+print("666666")
+print(input_path)
 
 if input_ext in [".h5ad", ".h5"] or run_type == "slide_seq":
   adata = sc.read_h5ad(input_path)
@@ -126,20 +128,19 @@ out_path = os.path.join(output_dir,f"cellphonedb_output")
 os.makedirs(out_path, exist_ok=True)
 
 microenvs_file_path = None
-if args.microenvs_file_path and os.path.isfile(args.microenvs_file_path):
-  microenvs_file_path = args.microenvs_file_path
-if not is_singlecell and microenvs_file_path is None:
-  if not niche_col:
-    raise ValueError("niche_col is required for spatial data")
-  if niche_col not in adata.obs.columns:
-    raise ValueError(f"niche_col not found in obs: {niche_col}")
-  microenvs_df = adata.obs[[celltype_col, niche_col]].copy()
-  microenvs_df = microenvs_df.dropna()
-  microenvs_df[celltype_col] = microenvs_df[celltype_col].astype(str)
-  microenvs_df[niche_col] = microenvs_df[niche_col].astype(str)
-  microenvs_df = microenvs_df.rename(columns={celltype_col: "cell_type", niche_col: "microenvironment"})
-  microenvs_file_path = os.path.join(output_dir, f"{args.sample_id}_microenvs.txt")
-  microenvs_df.to_csv(microenvs_file_path, sep="\t", index=False)
+if not is_singlecell:
+  if niche_col in adata.obs.columns:
+    microenvs_df = adata.obs[[celltype_col, niche_col]].copy()
+    microenvs_df = microenvs_df.dropna()
+    microenvs_df[celltype_col] = microenvs_df[celltype_col].astype(str)
+    microenvs_df[niche_col] = microenvs_df[niche_col].astype(str)
+    microenvs_df = microenvs_df.rename(columns={celltype_col: "cell_type", niche_col: "microenvironment"})
+    microenvs_file_path = os.path.join(output_dir, f"{args.sample_id}_microenvs.txt")
+    microenvs_df.to_csv(microenvs_file_path, sep="\t", index=False)
+  elif args.microenvs_file_path and os.path.isfile(args.microenvs_file_path):
+    microenvs_file_path = args.microenvs_file_path
+  else:
+    print("your data with run with no spatial limited since your params setting")
 
 active_tf_path = args.active_tf_path if args.active_tf_path and os.path.isfile(args.active_tf_path) else None
 
@@ -170,9 +171,9 @@ else:
     "output_path": out_path,
     "output_suffix": args.output_name,
   }
-  if active_tf_path:
+  if active_tf_path is not None:
     cpdb_kwargs["active_tfs_file_path"] = active_tf_path
-  if microenvs_file_path:
+  if microenvs_file_path is not None:
     cpdb_kwargs["microenvs_file_path"] = microenvs_file_path
   cpdb_results = cpdb_statistical_analysis_method.call(**cpdb_kwargs)
 

@@ -3,6 +3,8 @@ import os
 
 with open("requirements.txt") as req:
     requirements = [line.strip() for line in req if line.strip() and not line.startswith('#')]
+with open("requirements-extended.txt") as req_ext:
+    requirements_extended = [line.strip() for line in req_ext if line.strip() and not line.startswith('#')]
 
 class CleanCommand(Command):
     """Custom clean command to tidy up the project root."""
@@ -19,12 +21,15 @@ with open("README.md", "r", encoding="utf-8") as readme:  # 添加encoding
 
 setup(
     name="spatialsnake",
-    version="0.1.0",
+    version="0.0.1",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
     install_requires=requirements,
-    python_requires=">=3.12.11",
+    extras_require={
+        "extended": requirements_extended,
+    },
+    python_requires=">=3.12,<3.13",
     include_package_data=True,
     zip_safe=False,
     entry_points={

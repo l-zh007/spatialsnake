@@ -3,12 +3,11 @@ option: "advance_analysis"
 results_folder: "results"
 data_fold: "data"
 sample_list: "sample.txt"
-annotion_list: "annotion.txt"
+annotation_list: "annotation.txt"
 
 run_type: "visium"
 channel: "compare_analysis"
-seg_filter: False
-filter_list: 'filter_list.txt'
+filter_list: False
 
 image_slice: False
 markers_algorithm: 'wilcoxon'
@@ -61,9 +60,6 @@ threshold:
 threads:
 pvalue:
 output_name:
-
-
-
 
 
 

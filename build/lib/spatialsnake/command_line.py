@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 '''
-Created on 2025/10/5
 spatialsnake main
-@author: Zhenghao Lin,2400507123@gdpu.edu.stu
+@author: Zhenghao Lin,2400507123@gdpu.edn.stu
 '''
 import datetime
+import importlib.util
 import logging
 import os
 import random
@@ -13,7 +13,7 @@ import subprocess
 import sys
 import timeit
 import warnings
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import spatialsnake
 import yaml
@@ -34,22 +34,23 @@ logger = logging.getLogger(__name__)
 # Constants
 SPATIALSNAKE_PATH = os.path.dirname(spatialsnake.__file__)
 VALID_OPTIONS = [
-    "integrate", "preprocess", "clustering", "annotion_help", "annotion",
-    "compare_stage", "advance_analysis", "splitting", "merge", "transform"
+    "integrate", "preprocess", "clustering", "annotation_help", "annotation",
+    "compare_stage", "advance_analysis", "reclustering", "splitting", "merge", "transform"
 ]
 
 __author__ = 'lzh'
-__version__ = '0.1.0'
+__version__ = '0.2.4'
 __logo__ = """
-     
-   _____
-  /     \\    SpatialSnake
- |  ()  |   ------------
-  \\  ^  /   Automated
-   |||||     Spatial
-  /|||||\\   Analysis
- |/|||||\\|  Pipeline
-   ~~~~~    v0.1.0                                              
+
+  ╭─── SpatialSnake · v0.2.4 ───╮
+  │                              │
+  │    ●───●───●───●───●───●    │
+  │    │ ╲ │ ╱ │ ╲ │ ╱ │ ╲ │    │
+  │    ●───●───●───●───●───●    │
+  │                              │
+  │   Spatial Transcriptomics    │
+  │      Analysis Pipeline       │
+  ╰──────────────────────────────╯
 """
 
 __licence__ = """
@@ -77,8 +78,9 @@ analysis option:
     integrate
     preprocess
     clustering
-    annotion_help
-    annotion
+    reclustering
+    annotation_help
+    annotation
     compare_stage
     advance_analysis
 
@@ -89,10 +91,11 @@ Type Arguments:
     xenium
     Merfish
     slide_seq
+    stereoseq
 
 INPUT Arguments:
     sample.txt
-    annotion.txt
+    annotation.txt
     filter_list
     
 Basic Configuration:
@@ -103,13 +106,20 @@ Integration Step Options (--option integrate):
     --nucleus_boundaries <BOOL>  xenium key in load in data [default: False].
     --nucleus_labels <BOOL>      xenium key in load in data [default: False].
     --morphology_mip <BOOL>      xenium key in load in data [default: False].
+    --bin_size <INT>             legacy fallback for Stereo-seq; prefer `sample.txt` column 3 `input_spec` (`cellbin`, `adjusted_cellbin`, or `50,150`) [default: 50].
+    --merscope_z_layers <TEXT>   optional z layers for `spatialdata_io.merscope`, e.g. `0` or `0,1,2`.
+    --merscope_region_name <TEXT> optional region name for `spatialdata_io.merscope`.
+    --merscope_transcripts <BOOL> load transcripts in `spatialdata_io.merscope` [default: True].
+    --merscope_cells_boundaries <BOOL> load cell boundaries in `spatialdata_io.merscope` [default: True].
+    --merscope_cells_table <BOOL> load cells table in `spatialdata_io.merscope` [default: True].
+    --merscope_mosaic_images <BOOL> load mosaic images in `spatialdata_io.merscope` [default: True].
 
 Preprocessing Step Options (--option preprocess):
     --min_cells <INT>         Minimum spots per gene [default: 3].
     --min_genes <INT>         Minimum genes per spot [default: 200].
     --seg_filter <BOOL>       to seg filter the differnet sample dataset when command compare_anaysis [default: False].
     --filter_list <FILE>      filename of filter [default: False]
-    --batch_method <TEXT>     batch method for multiple sample analysis [default: None]
+    --batch_method <TEXT>     batch method for multiple sample analysis [default: harmony]
     --sketch <BOOL>           whether use sketch method to analysis [default: False]
     --mt_threshold <FLOAT>    the mt params percent to filter the cell [default: 50.0].
     
@@ -119,32 +129,44 @@ Clustering Step Options (--option clustering):
     --tsene <BOOL>              umap [default:False].
     --n_clusters <INT>          kmeans params of cluster [default: 15].
     --pcs <INT>                 dimension pca select [default: 25].
+
+Reclustering Step Options (--option reclustering):
+    --recluster_resolution <FLOAT>      Leiden resolution [default: 0.8].
+    --recluster_n_top_genes <INT>       Highly variable genes count [default: 2000].
+    --recluster_neighbors <INT>         Neighbors for graph construction [default: 15].
+    --recluster_n_pcs <INT>             Number of PCs for neighbors [default: 30].
+    --recluster_marker_method <TEXT>    Marker test method [default: wilcoxon].
+    --recluster_min_pct <FLOAT>         Min fraction for marker filtering [default: 0.1].
+    --recluster_logfc_threshold <FLOAT> Min log2FC for marker filtering [default: 0.25].
     
-Annotation Help Step Options (--option annotion_help):
+Annotation Help Step Options (--option annotation_help):
     --markers_algorithm <TEXT>       Automatically detect marker genes [default: wilcoxon].
     --spacies <TEXT>            Automatically detect marker genes [default: human].
-    
 Compare_stage option Options (--option compare_stage)
     --cell_focus <TEXT>         celltype you focus to compare in different sample[default: None].
     --compare_algorithm <TEXT>  compare analysys [default: DEseq2].
-Annotation option Options (--option annotion):
-    --annotation-file <FILE>    Annotation file for cell typing (required for annotion step)
-    --anno_algorithm <TEXT>     Annotation method [default: mannul].
+Annotation option Options (--option annotation):
+    --annotation-file <FILE>    Annotation file for cell typing (required for annotation step)
+    --anno_algorithm <TEXT>     Annotation method (mannul/reannotation/cell2Location/RCTD) [default: mannul].
     --shape_type <TEXT>         Automatically detect marker genes [default: cell_boundaries].
     --image_type <TEXT>         Automatically detect marker genes [default: hires].
+    --vis_mode <TEXT>           Spatial visualization mode [auto/point/shape, default: auto].
+    --point_size <FLOAT>        Point render size for point-based visualization [default: 2.5].
     --device <TEXT>                 cpu or GPU accelerate [default: cuda].
     --max_cores <INT>               max cores for parallel [default: 16].
+    --zarr_input <DIR>       Input file for PySCENIC analysis.
 
 Advanced Analysis option Options (--option advance_analysis):
     --runpipe <TEXT>          Run  which analysis analysis.[default: advance_analysis]
     --senic_input <DIR>       Input file for PySCENIC analysis.[default: sample.zarr]
-    --motifs_input <FILE>     PySCENIC database directory.[default: data/motifs-v9-nr.hgnc-m0.001-o0.0.tbl]
-    --feather_input <FILE>    path for necessary file of pyscenic.[default: data/hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather]
-    --tfs_input <FILE>        path for necessary file of pyscenic.[default: data/hs_hgnc_tfs.txt]
+    --motifs_input <FILE>     PySCENIC database directory.
+    --feather_input <FILE>    path for necessary file of pyscenic.
+    --tfs_input <FILE>        path for necessary file of pyscenic.
     --count-data <TEXT>       gene type for cellPhoneDB [default: hgnc_symbol].
     --threads <INT>           workers for cellphoneDB [default: 16].
     --output_name <TEXT>      output name for cellPhoneDB [default: Normal].
     --workers <INT>           workers for pysenic [default: 32].
+    --niche_col <TEXT>          niche column in the zarr/table/obs
 
 useful_tool splitting Option:
     --output_dir=<TEXT>       output dir for splitted file [default: results/useful_results]
@@ -158,10 +180,16 @@ useful_tool splitting Option:
     --min_y=<FLOAT>         coordinate of image boundaries [default: 0]
 
 useful_tool merge Option:
-    --merge_by=<TEXT>               merge by cluster celltype or sample [default: sample]
+    --merge_by=<TEXT>               merge by cluster celltype sample or reannotation [default: sample]
     --reordering=<BOOL>             whether reordering the cluster when concat the [default: False]
     --re_sample=<BOOL>              whether add the sample lable[default: False]
     --cluster_key=<TEXT>            the concat lable in the zarr/table/obs [default: clusters]
+    --annotation_csv=<TEXT>         csv path, csv directory, or comma-separated csv paths [default: ""]
+    --csv_cell_col=<TEXT>           cell id column in annotation csv [default: Barcode]
+    --csv_label_col=<TEXT>          label column in annotation csv [default: Grouped_Annotation]
+    --input_cell_col=<TEXT>         cell id column in base zarr table obs [default: cell_id]
+    --target_col=<TEXT>             output column name written to base zarr [default: sub_celltype]
+    --original_celltype_col=<TEXT>  original celltype column used when first creating target_col [default: celltype]
 
 useful_tool transform Option:
     --save_image=<BOOL>            save images in h5ad [default: True]
@@ -212,11 +240,13 @@ class BaseCommandLine:
     def write_to_log(self, start_time: float):
         """Write execution details to log file."""
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        logname = f"spatialsnake_{self.runid}_{timestamp}_runlog.log"
+        log_dir = "log"
+        logname = os.path.join(log_dir, f"spatialsnake_{self.runid}_{timestamp}_runlog.log")
         stop_time = timeit.default_timer()
 
         if self.log_enabled:
             try:
+                os.makedirs(log_dir, exist_ok=True)
                 with open(logname, "w") as f:
                     f.write(__logo__ + "\n")
                     f.write(f"Run ID : {self.runid}\n")
@@ -274,7 +304,6 @@ class WorkflowRunner(BaseCommandLine):
     def load_configfile(self):
         step = self.arguments.get("--option")
         configfile = None
-        
         if self.arguments.get("--configfile") and os.path.isfile(self.arguments["--configfile"]):
             configfile = self.arguments["--configfile"]
             self.cmd_str += f" --configfile={configfile}"
@@ -300,7 +329,7 @@ class WorkflowRunner(BaseCommandLine):
         
         self.load_configfile()
         
-        if self.arguments.get('--option') in ["integrate", "preprocess", "clustering", "annotion_help", "compare_stage", "all","advance_analysis"]:
+        if self.arguments.get('--option') in ["integrate", "preprocess", "clustering", "reclustering", "annotation_help", "annotation", "compare_stage", "all", "advance_analysis"]:
             self.config.append(f"sample_list={self.arguments.get('<INPUT_FILE>')}")
             
         self.config.append(f"spatialsnake_path={SPATIALSNAKE_PATH}/")
@@ -311,15 +340,16 @@ class WorkflowRunner(BaseCommandLine):
             "--dry", "--help", "--version", "<INPUT_FILE>", "<command>", 
             "--install-packages", "<TYPE>", "useful_tool", "<INTEGRATED_FILE>"
         }
-        
         for key, value in self.arguments.items():
             if key in exclude_keys:
                 continue
                 
             clean_key = key.lstrip("--")
+            if clean_key == "annotation-file":
+                clean_key = "annotation_list"
             
             # Integer validation
-            if clean_key in ["min_cells", "min_genes", "x1", "x2", "y1", "y2", "workers", "threads"]:
+            if clean_key in ["min_cells", "min_genes", "x1", "x2", "y1", "y2", "workers", "threads", "bin_size"]:
                 try:
                     int(value)
                 except (ValueError, TypeError):
@@ -331,6 +361,8 @@ class WorkflowRunner(BaseCommandLine):
                 continue
 
             if not self.configfile_loaded:
+                if value is None:  ### 测试专用
+                    continue
                 self.config.append(f"{clean_key}={value}")
                 self.parameters[clean_key] = str(value)
             else:
@@ -345,14 +377,24 @@ class WorkflowRunner(BaseCommandLine):
                 else:
                      self.config.append(f"{clean_key}={value}")
                      self.parameters[clean_key] = str(value)
-
         self.config.append(f"runid={self.runid}")
         
         if self.arguments.get("--option"):
             self.config.append(f"option={self.arguments['--option']}")
             
+        type_value = self.arguments.get('<TYPE>')
+        type_alias = {
+            "merfish": "Merfish",
+            "merscope": "Merfish",
+            "MERFISH": "Merfish",
+            "MERSCOPE": "Merfish",
+            "StereoSeq": "stereoseq",
+            "Stereo-seq": "stereoseq",
+            "stereo-seq": "stereoseq",
+        }
+        type_norm = type_alias.get(type_value, type_value)
         self.config.append(f"channel={self.arguments.get('<command>')}")
-        self.config.append(f"run_type={self.arguments.get('<TYPE>')}")
+        self.config.append(f"run_type={type_norm}")
         
         if self.arguments.get("--dry"):
             self.cmd_str += " -n "
@@ -459,7 +501,7 @@ def validate_workflow_arguments(arguments: Dict[str, Any]) -> bool:
         return False
         
     option = arguments.get("--option")
-    if option in ["integrate", "clustering", "annotion_help", "compare_stage", "advance_analysis"]:
+    if option in ["integrate", "clustering", "reclustering", "annotation_help", "compare_stage", "advance_analysis"]:
         if input_file != "sample.txt":
              # This seems like a strict requirement in the original code
              logger.warning("Please confirm the file name is sample.txt (or appropriate list file)")
@@ -470,7 +512,18 @@ def validate_workflow_arguments(arguments: Dict[str, Any]) -> bool:
              return False
 
     type_arg = arguments.get("<TYPE>")
-    valid_types = ['visium', 'visium_segment', 'visium_HD', 'xenium', 'Merfish', 'slide_seq']
+    type_alias = {
+        "merfish": "Merfish",
+        "merscope": "Merfish",
+        "MERFISH": "Merfish",
+        "MERSCOPE": "Merfish",
+        "StereoSeq": "stereoseq",
+        "Stereo-seq": "stereoseq",
+        "stereo-seq": "stereoseq",
+    }
+    type_arg = type_alias.get(type_arg, type_arg)
+    arguments["<TYPE>"] = type_arg
+    valid_types = ['visium', 'visium_segment', 'visium_HD', 'xenium', 'Merfish', 'slide_seq', 'stereoseq']
     if type_arg not in valid_types:
         logger.error(f"Invalid spatialdata type. Valid types: {', '.join(valid_types)}")
         return False
@@ -514,7 +567,6 @@ def validate_tool_arguments(arguments: Dict[str, Any]) -> bool:
         return False
 
     if option == "splitting":
-        split_by = arguments.get("--split_by") # docopt maps --split_by to --split_by usually, but let's check original usage.
         # Original code used arguments["split_by"] but docopt usually keeps --. 
         # Wait, the usage says `[--split_by=<TEXT>]`. Docopt key would be `--split_by`.
         # But original code accessed `arguments["split_by"]`. This implies some preprocessing or docopt implementation detail?
@@ -542,17 +594,41 @@ def validate_tool_arguments(arguments: Dict[str, Any]) -> bool:
 
 
 def install_packages():
-    """Run the R package installation script."""
+    _install_pybanksy_if_needed()
+    """Install R and optional Python packages."""
     r_script_path = os.path.join(SPATIALSNAKE_PATH, "workflow/scripts/install_packages.R")
     try:
         logger.info(f"Running R script: {r_script_path}")
         subprocess.check_call(["Rscript", r_script_path])
     except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to install packages: {e}")
+        logger.error(f"Failed to install R packages: {e}")
         sys.exit(e.returncode)
     except FileNotFoundError:
         logger.error("Rscript not found or script missing.")
         sys.exit(1)
+
+
+def _install_pybanksy_if_needed():
+    """pybanksy metadata declares numpy<2.0 which conflicts with our numpy>=2.
+    Install it with --no-deps since all its true dependencies are already
+    satisfied by spatialsnake core requirements."""
+    try:
+        if importlib.util.find_spec("pybanksy") is not None:
+            return
+    except Exception:
+        return
+
+    logger.info("Installing pybanksy (BANKSY spatial clustering) ...")
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "pybanksy==1.3.4", "--no-deps"],
+        )
+        logger.info("pybanksy installed successfully.")
+    except subprocess.CalledProcessError:
+        logger.warning(
+            "Failed to install pybanksy automatically. "
+            "You can install it manually later: pip install pybanksy==1.3.4 --no-deps"
+        )
 
 
 def generate_config_file(arguments: Dict[str, Any]):

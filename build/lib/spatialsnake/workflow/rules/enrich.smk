@@ -8,7 +8,7 @@ def enrich_input(option):
     return(os.path.join(results_folder,"merge_data","DEseq2","marker_gene.csv"))
 def enrich_output(option):
   if channel == 'single_analysis':
-    os.path.join(results_folder,"{sample}",'clustering','enrich_output','{cluster}_kegg_plot.png') 
+    return(os.path.join(results_folder,"{sample}",'clustering','enrich_output','{cluster}_kegg_plot.png')) 
   else:
     return(os.path.join(results_folder,"merge_data",'clustering','marker_csv',"{cluster}_kegg_plot.png"))
   if option=="DEseq2":
@@ -17,12 +17,12 @@ rule enrich_rule:
   input:
     inputs = enrich_input(option)
   output:
-    merge = 
+    merge = enrich_output(option)
   params:
     spacies = spacies,
     GO_ont = GO_ont,
     type = run_type,
-    sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" and seg_filter==False else wildcards.sample,
+    sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" else wildcards.sample,
   shell:
       """
       Rscript {spatialsnake_path}workflow/scripts/enrichment.R.py \

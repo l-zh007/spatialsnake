@@ -1,19 +1,43 @@
+[build-system]
+requires = ["setuptools>=80.9.0,<81", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "spatialsnake"
-version = "0.0.1"
+dynamic = ["version", "dependencies", "optional-dependencies"]
 authors = [
-  { name="l-zh007", email="1714074171@qq.com"},
+  { name = "lzh", email = "1714074171@qq.com" },
 ]
-description = "spatialsnake：a package for spatial transcriptomic"
+description = "A Python package for spatial transcriptomics analysis workflows."
 readme = "README.md"
-requires-python = ">=3.12.11"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent",
-]
+requires-python = ">=3.12,<3.13"
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
+keywords = ["spatial transcriptomics", "bioinformatics", "snakemake", "spatialdata"]
+classifiers = [
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
 
 [project.urls]
 Homepage = "https://github.com/l-zh007/spatialsnake"
 Issues = "https://github.com/l-zh007/spatialsnake/issues"
+
+[project.scripts]
+spatialsnake = "spatialsnake.command_line:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["spatialsnake*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "spatialsnake.command_line.__version__" }
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.dynamic.optional-dependencies]
+extended = { file = ["requirements-extended.txt"] }

@@ -29,10 +29,10 @@ rule pyscenic_grn:
         mem_mb=32000 
     shell:
         """
-        arboreto_with_multiprocessing.py \
+        python {spatialsnake_path}workflow/scripts/pyscenic_numpy_compat.py arboreto \
             --num_workers {params.workers} \
             --output {output.grn} \
-            --method genie3 \
+            --method grnboost2 \
             --sparse \
             --gene_attribute {params.gene_attr} \
             --cell_id_attribute {params.cell_attr} \
@@ -53,7 +53,7 @@ rule pyscenic_ctx:
         cell_attr = config.get("cell_attr", "cell_id")
     shell:
         """
-        pyscenic ctx {input.grn} {input.rankings} \
+        python {spatialsnake_path}workflow/scripts/pyscenic_numpy_compat.py pyscenic ctx {input.grn} {input.rankings} \
             --annotations_fname {input.motifs} \
             --expression_mtx_fname {input.loom} \
             --output {output.regulons} \

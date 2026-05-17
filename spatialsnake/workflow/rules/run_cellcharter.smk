@@ -1,8 +1,13 @@
+def get_cellcharter_output():
+  if channel == "compare_analysis":
+    return directory(os.path.join(results_folder, "merge_data", "cellcharter", f"{cellcharter_sample_id}_cellcharter.zarr"))
+  return directory(os.path.join(results_folder, f"{cellcharter_sample_id}", "cellcharter", f"{cellcharter_sample_id}_cellcharter.zarr"))
+
 rule cellcharter_rule:
   input:
     inputs=lambda wildcards: cellcharter_input
   output:
-    merge=directory(os.path.join(results_folder,"cellcharter",f'{cellcharter_sample_id}_cellcharter.zarr')) 
+    merge=get_cellcharter_output()
   params:
     sample_id = cellcharter_sample_id,
     run_type = run_type,
@@ -17,7 +22,7 @@ rule cellcharter_rule:
     cellcharter_col=cellcharter_col
   shell:
       """
-      python {spatialsnake_path}workflow/scripts/cellcharter.py \
+      python {spatialsnake_path}workflow/scripts/run_cellcharter.py \
         --input_dir {input.inputs} \
         --sample_id {params.sample_id} \
         --output_zarr_path {output.merge} \

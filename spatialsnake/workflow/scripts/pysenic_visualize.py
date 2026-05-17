@@ -7,11 +7,17 @@ import spatialdata as spd
 import scanpy as sc
 import spatialdata_plot as splt
 import pandas as pd
+import numpy as np
 import re, pickle, math
 from functools import partial
 from collections import OrderedDict
 from cytoolz import compose
 import anndata as ad
+from pyscenic_numpy_compat import apply_numpy_compat, apply_pkg_resources_compat
+
+apply_numpy_compat()
+apply_pkg_resources_compat()
+
 from pyscenic.export import add_scenic_metadata
 from pyscenic.utils import load_motifs
 try:
@@ -22,7 +28,6 @@ from pyscenic.transform import df2regulons
 from pyscenic.aucell import aucell
 from pyscenic.rss import regulon_specificity_scores
 from pyscenic.plotting import plot_rss
-import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
 from scipy.sparse import issparse
@@ -72,9 +77,9 @@ else:
 
 
 if load_regulons is not None:
-  regulons = load_regulons("results/pysenic_results/FU_pysenic/breast_cancer2.regulons.csv")
+  regulons = load_regulons(args.regulons)
 else:
-  motifs = load_motifs("results/pysenic_results/FU_pysenic/breast_cancer2.regulons.csv")
+  motifs = load_motifs(args.regulons)
   if isinstance(motifs.columns, pd.MultiIndex):
     motifs.columns = motifs.columns.droplevel(0)
   regulons = list(filter(lambda r: len(r) >= 10, df2regulons(motifs[(motifs['NES'] >= 3.0)])))

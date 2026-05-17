@@ -8,8 +8,8 @@ channel: "single_analysis"          # the channel of analysis style [single_anal
 runpipe: "cellPhoneDB"
 
 # pysenic
-senic_input: "results/Non_Lesional_2/Non_Lesional_2.zarr"
-sample_type: "Non_Lesional_2"
+senic_input: ""
+sample_type: "Colon_Cancer_P2"
 tfs_input: "data/hs_hgnc_tfs.txt"
 feather_input: "data/hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather"
 motifs_input: "data/motifs-v9-nr.hgnc-m0.001-o0.0.tbl"
@@ -21,26 +21,26 @@ cell_attr: "cell_id"
 #motifs_input: "data/motifs-v10nr_clust-nr.mgi-m0.001-o0.0.tbl"
 
 #cellphoneDB
-cellPhoneDB_input: "results/cellcharter/Colon_Cancer_P2_cellcharter.zarr"
+cellPhoneDB_input: ""
 counts_data: "hgnc_symbol"
 threshold: 0.1
 threads: 16
 pvalue: 0.05
+cut_off_pvalue: 0.05
+cut_off_logFC: 1.5
 output_name: "Colon_Cancer_P2"
 iterations: 500
 microenvs_file_path: ""
 active_tf_path: ""
 degs_file_path: ""
-niche_col: "spatial_cluster"
+niche_col: "None"
 is_singlecell: False
 cpdb_method: "statistical"
 cpdb_de_method: "wilcoxon"
 celltype_col: "celltype"
-cell_type1: "Endothelial"
-cell_type2: "Tumor"
+cell_type1: "Tumor_II"
+cell_type2: "Tumor_I"
 gene_family: ""
-microfile:
-DEG_file:
 
 
 #liana 
@@ -51,7 +51,6 @@ liana_min_cells: 5
 liana_use_raw: true
 
 
-
 # cellchat
 celltype_col: "celltype"
 assay: "Spatial"
@@ -60,7 +59,7 @@ min_cells: 10
 workers: 32
 is_single_cell: FALSE
 trim: 0.1
-interaction_length: 150
+interaction_length: 250
 
 
 # cellcharter
@@ -79,6 +78,5 @@ k_geom: 15
 max_m: 1
 nbr_weight_decay: "scaled_gaussian"
 lambda_list: [0.8]
-
 
 

@@ -13,27 +13,31 @@ runpipe: "compare_gene"              # compare_gene 或 cellchat
 compare_algorithm: 'DEseq2'          # 差异分析算法: DEseq2 或 edgeR
 cell_focus: "CAF"                    # 关注的细胞类型名称
 spacies: 'human'                     # 物种: human 或 mouse
+# sample.txt 第三列分组名称会直接用于 contrast、图例、目录名与结果归属展示，建议填写真实生物学分组名
+cut_off_pvalue: 0.05                # adjusted p value threshold for volcano plot and DEG split
+cut_off_logFC: 1.5                  # absolute log2 fold change threshold for volcano plot and DEG split
 
 # compare-cellchat
 # 通路与配受体可从 advance_analysis 的 cellchat 输出文件选择:
 # 1) results/<sample>/cellchat/<sample>_cellchat_lr.csv  (配体-受体与通路)
 # 2) results/<sample>/cellchat/<sample>_cellchat_stats.csv (网络统计)
 cellchat_compare_output_dir: "results/compare_cellchat"   # 输出目录
-cellchat_compare_sample_name1: "group_Non_Lesional"                   # 样本1显示名称
-cellchat_compare_sample_name2: "group_Lesional"                   # 样本2显示名称
-cellchat_compare_pathways: ""                             # 通路名列表, 逗号分隔, 例: "CXCL,CCL"
-cellchat_compare_source_cells: "1,2,3"                         # 发送细胞: 名称或序号, 例: "Tcell,Bcell" 或 "1,2"
-cellchat_compare_target_cells: "1,2,3"                          # 接收细胞: 名称或序号, 例: "Tumor,CAF"
-cellchat_compare_receiver_cells: "1,2,3"                    # netVisual_aggregate 接收端: 名称或序号, 例: "CAF" 或 "3"
+cellchat_compare_sample_name1: ""                   # 样本1显示名称
+cellchat_compare_sample_name2: ""                   # 样本2显示名称
+cellchat_compare_pathways: "MIF"                             # 通路名列表, 逗号分隔, 例: "CXCL,CCL"
+cellchat_compare_source_cells: "Tumor_I,Tumor_II"                         # 发送细胞: 逗号分隔的细胞类型名称, 例: "Tumor_I,Tumor_III"
+cellchat_compare_target_cells: "Tumor_I,Tumor_II"                          # 接收细胞: 逗号分隔的细胞类型名称, 例: "Tumor_II,Tumor_IV"
+cellchat_compare_receiver_cells: "Tumor_I,Tumor_II"                    # netVisual_aggregate 接收端: 逗号分隔的细胞类型名称, 例: "Tumor_III,Tumor_IV"
 cellchat_compare_bubble_angle: 45                         # 比较气泡图 x 轴角度
 cellchat_compare_bubble_remove_isolate: True              # 是否移除孤立节点
 cellchat_compare_do_ranknet: True                         # 是否输出 rankNet 比较图
-cellchat_compare_do_role_heatmap: False                    # 是否输出 signaling role heatmap
+cellchat_compare_do_role_heatmap: True                    # 是否输出 signaling role heatmap
 cellchat_compare_do_pathway_plots: True                   # 是否输出通路汇总图
 cellchat_compare_do_compare_overview: True                # 是否输出两组整体比较图
 cellchat_compare_do_compare_bubble: True                  # 是否输出 compare bubble (需 source/target)
 cellchat_compare_do_single_bubble: True                   # 是否输出单组 bubble (需 source)
-cellchat_compare_do_gene_expression: False                # 是否输出 plotGeneExpression
+cellchat_compare_do_gene_expression: True                # 是否输出 plotGeneExpression
 cellchat_compare_gene_colors: "white,#FEC44F,#D95F0E"      # plotGeneExpression 颜色梯度
 cellchat_compare_gene_plot_type: "dot"                    # plotGeneExpression 类型: dot 或 heatmap
+cellchat_compare_pair_lr_use: "SPP1_CD44"                 # 空间特征图的 pairLR，例: "SPP1_CD44"
 cellchat_compare_save_merged: True                        # 双样本时是否保存合并后的 rds

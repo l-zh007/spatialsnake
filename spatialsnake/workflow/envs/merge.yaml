@@ -8,6 +8,5 @@ annotation_csv: ''
 csv_cell_col: 'Barcode'
 csv_label_col: 'Grouped_Annotation'
 input_cell_col: 'cell_id'
-target_col: 'celltype'
-fallback_col: 'celltype'
-
+target_col: 'sub_celltype'
+original_celltype_col: 'celltype'

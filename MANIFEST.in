@@ -6,3 +6,7 @@ recursive-include spatialsnake *.sh
 recursive-include spatialsnake *.smk
 recursive-include spatialsnake Snakefile
 recursive-include spatialsnake *.yaml
+prune build
+prune dist
+global-exclude __pycache__
+global-exclude *.py[cod]

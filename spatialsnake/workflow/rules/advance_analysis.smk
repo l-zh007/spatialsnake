@@ -1,6 +1,6 @@
 rule advance_analysis_rule:
   input:
-    inputs=nomal_file(run_type,"annotion")
+    inputs=nomal_file(run_type,"annotation")
   output:
     merge=os.path.join(results_folder,"merge_data",'compare_analysis','marker_genes_pval.csv') if compare_algorithm=="DEseq2" else os.path.join(results_folder,"merge_data",'compare_analysis','edgeR_counts.csv')
   params:

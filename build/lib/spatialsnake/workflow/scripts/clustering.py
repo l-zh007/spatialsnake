@@ -15,11 +15,24 @@ import gc
 import geopandas as gpd
 import matplotlib.pyplot as plt
 from PIL import Image
+from spatialdata.models import TableModel
 from spatialdata.transformations import Identity, Scale
 from shapely.geometry import Polygon
 from sklearn.cluster import KMeans
 import argparse
+from spatialsnake.workflow.function.stereoseq_selection import extract_table_spatial_metadata, resolve_stereoseq_table_key
 ############################clustering################################
+STEREOSEQ_TYPES = {"stereoseq", "StereoSeq", "Stereo-seq"}
+
+
+def pick_table_key(sdata, run_type=None, input_spec=None):
+  table_keys = list(getattr(sdata, "tables", {}).keys())
+  if not table_keys:
+    raise RuntimeError("No table found in SpatialData input.")
+  if run_type in STEREOSEQ_TYPES:
+    return resolve_stereoseq_table_key(input_spec, table_keys)
+  return "table" if "table" in table_keys else table_keys[0]
+
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
 parser.add_argument('--input_dir', type=str, required=True, 
                    help='Path to the raw data directory')
@@ -47,6 +60,8 @@ parser.add_argument('--pcs', type=int, required=False,
                    help='Path for the output zarr file')
 parser.add_argument('--NEIGHBORS', type=int, required=False,
                    help='Path for the output zarr file')
+parser.add_argument('--input_spec', type=str, required=False,
+                   help='Stereo-seq input mode passed from sample.txt')
 args = parser.parse_args()
 type=args.type
 
@@ -58,9 +73,8 @@ if type=="slide_seq":
   adata_for_sketch = sc.read_h5ad(args.input_dir)
 else:
   concatenated_sdata = spd.read_zarr(args.input_dir)
-  for table in concatenated_sdata.tables.keys():
-    table=table
-    adata_for_sketch = concatenated_sdata[table]
+  table = pick_table_key(concatenated_sdata, run_type=type, input_spec=args.input_spec)
+  adata_for_sketch = concatenated_sdata[table]
 
 
 
@@ -77,7 +91,7 @@ if args.tsene=="True":
 if args.cluster_algorithm=="leiden":    
   sc.tl.leiden(adata_for_sketch, flavor="igraph",key_added="clusters", resolution=args.RES,random_state=0)
 elif args.cluster_algorithm=="louvain":   
-  sc.tl.louvain(adata_for_sketch, resolution=RES,key_added="clusters")
+  sc.tl.louvain(adata_for_sketch, resolution=args.RES,key_added="clusters")
 elif args.cluster_algorithm=="kmeans":
   kmeans = KMeans(n_clusters=args.n_clusters, random_state=0)
   adata_for_sketch.obs['clusters'] = kmeans.fit_predict(adata_for_sketch.obsm['X_pca'][:, :40])
@@ -153,9 +167,22 @@ plt.close()
 
 
 if type!="slide_seq":
-    adata_query_ingested.obs['cell_id'] = adata_query_ingested.obs['cell_id'].astype(str)
-    adata_query_ingested.obs['region'] = adata_query_ingested.obs['region'].astype('category')
+    table_meta = extract_table_spatial_metadata(adata_query_ingested)
+    region_name = table_meta["region_name"]
+    region_key = table_meta["region_key"]
+    instance_key = table_meta["instance_key"]
+    adata_query_ingested.obs_names = adata_query_ingested.obs_names.astype(str)
+    adata_query_ingested.obs[instance_key] = adata_query_ingested.obs[instance_key].astype(str)
     concatenated_sdata[table]=adata_query_ingested
+    #if region_name is not None:
+      #adata_query_ingested.obs[region_key] = pd.Categorical([region_name] * adata_query_ingested.n_obs)
+    #adata_query_ingested.uns.pop("spatialdata_attrs", None)
+    #concatenated_sdata[table] = TableModel.parse(
+      #adata_query_ingested,
+      #region=region_name,
+      #region_key=region_key,
+      #instance_key=instance_key,
+    #)
     concatenated_sdata.write(
       os.path.join(args.output_zarr_path),
       overwrite=True)

@@ -53,6 +53,7 @@ def ensure_symbol_column(adata):
     if "SYMBOL" not in adata.var.columns:
         adata.var["SYMBOL"] = adata.var_names
 
+
 def load_spatial_input(path):
     if path.endswith(".h5ad"):
         adata = sc.read_h5ad(path)
@@ -80,15 +81,15 @@ parser.add_argument("--N_cells_per_location", type=int, default=30)
 
 
 
-parser.add_argument("--labels_key_reference", default="Subset", required=False)
-parser.add_argument("--batch_key_reference", default="Sample", required=False)
+parser.add_argument("--labels_key_reference", default="celltype", required=False)
+parser.add_argument("--batch_key_reference", default="sample", required=False)
 parser.add_argument("--cell_count_cutoff", default=15, required=False)
 parser.add_argument("--cell_percentage_cutoff2", default=0.05, required=False)
 parser.add_argument("--nonz_mean_cutoff", default=1.12, required=False)
-parser.add_argument("--labels_key_st", default="Subset", required=False)
+parser.add_argument("--labels_key_st", default="celltype", required=False)
 parser.add_argument("--batch_key_st", default="sample", required=False)
 parser.add_argument("--layer_st", default=None, required=False)
-parser.add_argument("--detection_alpha", default=20, required=False)
+parser.add_argument("--detection_alpha", type=float, default=20, required=False)
 parser.add_argument("--device", required=False)
 parser.add_argument("--save_models", type=parse_bool, default=True, required=False)
 args = parser.parse_args()
@@ -99,24 +100,56 @@ if args.device == "cuda":
 else:
     os.environ["THEANO_FLAGS"] = 'device=cpu,floatX=float32'
 
-def cell2loc_plot_history(model,fig_path, iter_start=0, iter_end=-1, ax=None):
+def cell2loc_plot_history(model, fig_path, iter_start=0, iter_end=None, rolling_window=1):
 # Adapted from: https://github.com/BayraktarLab/cell2location/blob/master/cell2location/models/base/_pyro_mixin.py#L407
-    if ax is None:
-        ax = plt.gca()
-    if iter_end == -1:
-        iter_end = len(model.history_["elbo_train"])
+    if not hasattr(model, "history_") or "elbo_train" not in model.history_:
+        raise RuntimeError("Model history is unavailable, please run train() before plotting history.")
 
-    ax.plot(
-        np.array(model.history_["elbo_train"].index[iter_start:iter_end]),
-        np.array(model.history_["elbo_train"].values.flatten())[iter_start:iter_end],
-        label="train",
-    )
-    ax.legend()
-    ax.set_xlim(0, len(model.history_["elbo_train"]))
+    train_history = model.history_["elbo_train"].copy()
+    if iter_end is None:
+        iter_end = len(train_history)
+
+    train_history = train_history.iloc[iter_start:iter_end]
+    if train_history.empty:
+        raise ValueError("Training history is empty after applying iter_start/iter_end.")
+
+    train_x = np.asarray(train_history.index, dtype=float)
+    train_y = np.asarray(train_history.values).flatten().astype(float)
+
+    if rolling_window and rolling_window > 1 and len(train_y) >= rolling_window:
+        train_y = (
+            pd.Series(train_y)
+            .rolling(window=rolling_window, min_periods=1)
+            .mean()
+            .to_numpy()
+        )
+
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    ax.plot(train_x, train_y, color="#1f77b4", linewidth=1.8, label="train")
+
+    if "elbo_validation" in model.history_:
+        validation_history = model.history_["elbo_validation"].copy().iloc[iter_start:iter_end]
+        if not validation_history.empty:
+            valid_x = np.asarray(validation_history.index, dtype=float)
+            valid_y = np.asarray(validation_history.values).flatten().astype(float)
+            if rolling_window and rolling_window > 1 and len(valid_y) >= rolling_window:
+                valid_y = (
+                    pd.Series(valid_y)
+                    .rolling(window=rolling_window, min_periods=1)
+                    .mean()
+                    .to_numpy()
+                )
+            ax.plot(valid_x, valid_y, color="#ff7f0e", linewidth=1.8, label="validation")
+
+    ax.set_xlim(train_x.min(), train_x.max() if train_x.max() > train_x.min() else train_x.min() + 1)
     ax.set_xlabel("Training epochs")
     ax.set_ylabel("-ELBO loss")
-    plt.tight_layout()
-    plt.savefig(fig_path)
+    ax.set_title("Training history")
+    ax.grid(alpha=0.3, linestyle="--", linewidth=0.5)
+    ax.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(fig_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
 def cell2loc_plot_QC_reference(reference_model,fig_path_reconstr, fig_path_expr,
                                summary_name: str = "means",
@@ -184,7 +217,7 @@ os.makedirs(os.path.join(output_dir,"figure"), exist_ok=True)
 adata_vis, concatenated_sdata, table_key = load_spatial_input(args.input_spatial)
 
 adata_vis.var['SYMBOL'] = adata_vis.var_names
-adata_vis.var.set_index('gene_ids', drop=True, inplace=True)
+ensure_var_index(adata_vis, ["gene_ids", "gene_id", "ensembl"])
 
 def ensure_counts(adata, name="adata"):
     if issparse(adata.X):
@@ -221,32 +254,41 @@ adata_ref = sc.read_h5ad(args.input_singlecell)
 ensure_counts(adata_ref, "adata_ref")
 ensure_symbol_column(adata_ref)
 ensure_var_index(adata_ref, ["GeneID-2", "gene_ids", "gene_id", "ensembl"])
-print(adata_ref)
 adata_ref.var['SYMBOL'] = adata_ref.var.index
-
+print(adata_ref)
 from cell2location.utils.filtering import filter_genes
 if args.remove_mt:
+    print("remove_mt")
     symbol_col = adata_vis.var.get("SYMBOL", adata_vis.var_names)
     mt_mask = symbol_col.str.startswith(("MT-", "mt-"))
     if mt_mask.any():
         adata_vis.var["MT_gene"] = mt_mask
         adata_vis = adata_vis[:, ~adata_vis.var["MT_gene"].values]
     shared_features = [f for f in adata_vis.var_names if f in adata_ref.var_names]
-    adata_ref = adata_ref[:, shared_features]
-    adata_vis = adata_vis[:, shared_features]
+    adata_ref = adata_ref[:, shared_features].copy()
+    adata_vis = adata_vis[:, shared_features].copy()
     selected = filter_genes(adata_ref,cell_count_cutoff=float(args.cell_count_cutoff),
     cell_percentage_cutoff2=float(args.cell_percentage_cutoff2),
     nonz_mean_cutoff=float(args.nonz_mean_cutoff))
     adata_ref = adata_ref[:, selected].copy()
     adata_vis = adata_vis[:, selected].copy()
 
-
+print(adata_vis)
+print(adata_ref)
+print(adata_ref.X)
+print(adata_ref.obs)
 
 
 if args.labels_key_reference not in adata_ref.obs:
     raise ValueError(f"labels_key_reference not found in adata_ref.obs: {args.labels_key_reference}")
 if args.batch_key_reference not in adata_ref.obs:
     raise ValueError(f"batch_key_reference not found in adata_ref.obs: {args.batch_key_reference}")
+adata_ref.obs[args.labels_key_reference] = pd.Categorical(
+    adata_ref.obs[args.labels_key_reference].astype(str).str.strip()
+)
+adata_ref.obs[args.batch_key_reference] = pd.Categorical(
+    adata_ref.obs[args.batch_key_reference].astype(str).str.strip()
+)
 categorical_keys = ["Method"] if "Method" in adata_ref.obs else None
 cell2location.models.RegressionModel.setup_anndata(
     adata=adata_ref,
@@ -264,10 +306,9 @@ mod.view_anndata_setup()
 
 
 
-print(args.max_epochs_reference,"###############")
+
 
 mod.train(max_epochs=args.max_epochs_reference)
-mod.plot_history(20)
 cell2loc_plot_history(mod, output_dir + "/figure/ELBO_sc_model.png")
 
 ref_batch_size = min(2500, adata_ref.n_obs)
@@ -275,7 +316,7 @@ adata_ref = mod.export_posterior(
     adata_ref,
     sample_kwargs={
         "num_samples": 1000,
-        "batch_size": 2500
+        "batch_size": ref_batch_size
     }
 )
 
@@ -286,7 +327,10 @@ else:
 inf_aver.columns = adata_ref.uns["mod"]["factor_names"]
 inf_aver.to_csv(output_dir+"/Cell2Loc_inf_aver.csv")
 
-
+print(adata_vis)
+print(adata_ref)
+print(adata_ref.X)
+print(adata_ref.obs)
 
 
 
@@ -304,6 +348,8 @@ inf_aver = inf_aver.loc[intersect, :].copy()
 
 # prepare anndata for cell2location model
 batch_key_st = args.batch_key_st if args.batch_key_st in adata_vis.obs else None
+if batch_key_st is not None:
+    adata_vis.obs[batch_key_st] = pd.Categorical(adata_vis.obs[batch_key_st].astype(str).str.strip())
 cell2location.models.Cell2location.setup_anndata(adata=adata_vis, batch_key=batch_key_st)
 
 
@@ -320,11 +366,8 @@ model_spatial = cell2location.models.Cell2location(
 model_spatial.view_anndata_setup()
 
 
-model_spatial.train(max_epochs=args.max_epochs_st,batch_size=None,train_size=1)
-
+model_spatial.train(max_epochs=args.max_epochs_st, batch_size=None)
 cell2loc_plot_history(model_spatial, output_dir + "/figure/ELBO_spatial_model.png")
-mod.plot_history(1000)    
-plt.legend(labels=['full data training']);
 spatial_batch_size = min(adata_vis.n_obs, model_spatial.adata.n_obs) if adata_vis.n_obs > 0 else 250
 adata_vis = model_spatial.export_posterior(
     adata_vis, sample_kwargs={"num_samples": 1000, "batch_size": spatial_batch_size}
@@ -335,7 +378,8 @@ adata_vis = model_spatial.export_posterior(
 
 cell2loc_plot_QC_reconstr(model_spatial, output_dir + "/figure/QC_spatial_reconstruction_accuracy.png")
 
-model_spatial.save(output_dir +"/Spatial_model", overwrite=True)
+if args.save_models:
+    model_spatial.save(output_dir +"/Spatial_model", overwrite=True)
 
 
 if concatenated_sdata is not None:
@@ -343,4 +387,3 @@ if concatenated_sdata is not None:
     concatenated_sdata.write(args.output_dir_zarr)
 else:
     write_adata(adata_vis, args.output_dir_zarr)
-

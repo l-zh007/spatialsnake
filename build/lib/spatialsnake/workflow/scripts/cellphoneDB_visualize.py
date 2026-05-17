@@ -146,7 +146,7 @@ p3=kpy.plot_cpdb(
 p3.save(os.path.join(output_dir,f"{args.sample_id}_dot_plot.png"),dpi=300,limitsize=False)
 
 # chemokines', 'th1', 'th2', 'th17', 'treg', 'costimulatory', 'coinhibitory
-selected_gene_family = 'costimulatory'
+#selected_gene_family = 'costimulatory'
 print(selected_gene_family)
 print("@@@@")
 p4=kpy.plot_cpdb(

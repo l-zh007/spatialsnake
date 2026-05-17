@@ -22,6 +22,7 @@ rule compare_cellchat:
     do_gene_expression = cellchat_compare_do_gene_expression,
     gene_colors = cellchat_compare_gene_colors,
     gene_plot_type = cellchat_compare_gene_plot_type,
+    pair_lr_use = cellchat_compare_pair_lr_use,
     save_merged = cellchat_compare_save_merged
   shell:
       """
@@ -46,5 +47,6 @@ rule compare_cellchat:
         --do_gene_expression {params.do_gene_expression} \
         --gene_colors "{params.gene_colors}" \
         --gene_plot_type "{params.gene_plot_type}" \
+        --pair_lr_use "{params.pair_lr_use}" \
         --save_merged {params.save_merged}
       """

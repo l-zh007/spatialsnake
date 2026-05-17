@@ -26,6 +26,7 @@ option_list <- list(
   make_option(c("--do_gene_expression"), type="logical", default=FALSE),
   make_option(c("--gene_colors"), type="character", default="white,#FEC44F,#D95F0E"),
   make_option(c("--gene_plot_type"), type="character", default="dot"),
+  make_option(c("--pair_lr_use"), type="character", default=""),
   make_option(c("--save_merged"), type="logical", default=TRUE)
 )
 
@@ -57,9 +58,12 @@ parse_cells <- function(value, levels_vec) {
     return(NULL)
   }
   if (all(grepl("^[0-9]+$", vals))) {
-    return(as.integer(vals))
+    stop("Please provide cell type names instead of numeric indices")
   }
   idx <- match(vals, levels_vec)
+  if (any(is.na(idx))) {
+    idx <- match(tolower(vals), tolower(levels_vec))
+  }
   if (any(is.na(idx))) {
     stop(paste0("Unknown cell types: ", paste(vals[is.na(idx)], collapse = ",")))
   }
@@ -108,7 +112,7 @@ plot_gene_expression <- function(cellchat, pathways, file_prefix, color_vec, plo
   if (is.null(pathways) || length(pathways) == 0) {
     return()
   }
-  pdf(file.path(opt$output_dir, paste0(file_prefix, "_gene_expression.pdf")), width = 10, height = 6)
+  png(file.path(opt$output_dir, paste0(file_prefix, "_gene_expression.png")), width = 10, height = 6, units = "in", res = 300)
   plotGeneExpression(cellchat, signaling = pathways, type = plot_type, col = color_vec)
   dev.off()
 }
@@ -117,16 +121,16 @@ plot_pathway_outputs <- function(cellchat, pathways, receiver_cells, file_prefix
   if (is.null(pathways) || length(pathways) == 0) {
     return()
   }
-  pdf(file.path(opt$output_dir, paste0(file_prefix, "_aggregate_hierarchy.pdf")), width = 10, height = 8)
+  png(file.path(opt$output_dir, paste0(file_prefix, "_aggregate_hierarchy.png")), width = 10, height = 8, units = "in", res = 300)
   netVisual_aggregate(cellchat, signaling = pathways, vertex.receiver = receiver_cells, layout = "hierarchy")
   dev.off()
-  pdf(file.path(opt$output_dir, paste0(file_prefix, "_aggregate_chord.pdf")), width = 10, height = 8)
+  png(file.path(opt$output_dir, paste0(file_prefix, "_aggregate_chord.png")), width = 10, height = 8, units = "in", res = 300)
   netVisual_aggregate(cellchat, signaling = pathways, vertex.receiver = receiver_cells, layout = "chord")
   dev.off()
-  pdf(file.path(opt$output_dir, paste0(file_prefix, "_pathway_heatmap.pdf")), width = 10, height = 8)
+  png(file.path(opt$output_dir, paste0(file_prefix, "_pathway_heatmap.png")), width = 10, height = 8, units = "in", res = 300)
   netVisual_heatmap(cellchat, signaling = pathways, color.heatmap = "Reds")
   dev.off()
-  pdf(file.path(opt$output_dir, paste0(file_prefix, "_pathway_contribution.pdf")), width = 10, height = 8)
+  png(file.path(opt$output_dir, paste0(file_prefix, "_pathway_contribution.png")), width = 10, height = 8, units = "in", res = 300)
   for (pathway in pathways) {
     netAnalysis_contribution(cellchat, signaling = pathway)
   }
@@ -137,7 +141,7 @@ plot_single_bubble <- function(cellchat, source_cells, target_cells, pathways, f
   if (is.null(source_cells)) {
     return()
   }
-  pdf(file.path(opt$output_dir, paste0(file_prefix, "_bubble.pdf")), width = 12, height = 6)
+  png(file.path(opt$output_dir, paste0(file_prefix, "_bubble.png")), width = 12, height = 6, units = "in", res = 300)
   if (is.null(target_cells)) {
     netVisual_bubble(cellchat, sources.use = source_cells, signaling = pathways, remove.isolate = opt$bubble_remove_isolate)
   } else {
@@ -153,7 +157,7 @@ plot_compare_bubble <- function(cellchat_merged, source_cells, target_cells) {
   p1 <- netVisual_bubble(cellchat_merged, sources.use = source_cells, targets.use = target_cells, comparison = c(1, 2), max.dataset = 2, angle.x = opt$bubble_angle, remove.isolate = opt$bubble_remove_isolate)
   p2 <- netVisual_bubble(cellchat_merged, sources.use = source_cells, targets.use = target_cells, comparison = c(1, 2), max.dataset = 1, angle.x = opt$bubble_angle, remove.isolate = opt$bubble_remove_isolate)
   pc <- p1 + p2
-  ggsave(file.path(opt$output_dir, "compare_lr_regulated.pdf"), pc, width = 12, height = 5.5)
+  ggsave(file.path(opt$output_dir, "compare_lr_regulated.png"), pc, width = 12, height = 5.5, dpi = 300)
 }
 
 pathways <- split_vec(opt$pathways)
@@ -189,13 +193,13 @@ if (!is.null(opt$input_rds2) && opt$input_rds2 != "") {
     gg1 <- compareInteractions(cellchat_merged, show.legend = FALSE, group = c(1, 2), measure = "count")
     gg2 <- compareInteractions(cellchat_merged, show.legend = FALSE, group = c(1, 2), measure = "weight")
     p <- gg1 + gg2
-    ggsave(file.path(opt$output_dir, "compare_overview_number_strength.pdf"), p, width = 6, height = 4)
-    pdf(file.path(opt$output_dir, "compare_diff_number_strength_net.pdf"), width = 10, height = 5)
+    ggsave(file.path(opt$output_dir, "compare_overview_number_strength.png"), p, width = 6, height = 4, dpi = 300)
+    png(file.path(opt$output_dir, "compare_diff_number_strength_net.png"), width = 10, height = 5, units = "in", res = 300)
     par(mfrow = c(1, 2))
     netVisual_diffInteraction(cellchat_merged, weight.scale = TRUE)
     netVisual_diffInteraction(cellchat_merged, weight.scale = TRUE, measure = "weight")
     dev.off()
-    pdf(file.path(opt$output_dir, "compare_heatmap_count_weight.pdf"), width = 10, height = 6)
+    png(file.path(opt$output_dir, "compare_heatmap_count_weight.png"), width = 10, height = 6, units = "in", res = 300)
     h1 <- netVisual_heatmap(cellchat_merged)
     h2 <- netVisual_heatmap(cellchat_merged, measure = "weight")
     print(h1 + h2)
@@ -205,7 +209,7 @@ if (!is.null(opt$input_rds2) && opt$input_rds2 != "") {
     gg1 <- rankNet(cellchat_merged, mode = "comparison", stacked = TRUE, do.stat = TRUE)
     gg2 <- rankNet(cellchat_merged, mode = "comparison", stacked = FALSE, do.stat = TRUE)
     p <- gg1 + gg2
-    ggsave(file.path(opt$output_dir, "compare_pathway_strength.pdf"), p, width = 10, height = 6)
+    ggsave(file.path(opt$output_dir, "compare_pathway_strength.png"), p, width = 10, height = 6, dpi = 300)
   }
   if (opt$do_role_heatmap) {
     cco.list[[name1]] <- netAnalysis_computeCentrality(cco.list[[name1]], slot.name = "netP")
@@ -213,7 +217,7 @@ if (!is.null(opt$input_rds2) && opt$input_rds2 != "") {
     for (pattern in c("all", "outgoing", "incoming")) {
       ht1 <- netAnalysis_signalingRole_heatmap(cco.list[[name1]], pattern = pattern, signaling = pathway_union, title = name1, width = 8, height = 10)
       ht2 <- netAnalysis_signalingRole_heatmap(cco.list[[name2]], pattern = pattern, signaling = pathway_union, title = name2, width = 8, height = 10)
-      pdf(file.path(opt$output_dir, paste0("compare_signaling_role_", pattern, ".pdf")), width = 16, height = 10)
+      png(file.path(opt$output_dir, paste0("compare_signaling_role_", pattern, ".png")), width = 16, height = 10, units = "in", res = 300)
       draw(ht1 + ht2, ht_gap = unit(0.5, "cm"))
       dev.off()
     }
@@ -238,13 +242,112 @@ if (!is.null(opt$input_rds2) && opt$input_rds2 != "") {
   target_cells <- parse_cells(opt$target_cells, levels(cellchat@idents))
   lr_pairs_single <- extract_lr_pairs(cellchat)
   print_visualization_options(sample_name, levels(cellchat@idents), cellchat@netP$pathways, lr_pairs_single)
+  selected_signaling <- pathways
+  if (is.null(selected_signaling) || length(selected_signaling) == 0) {
+    selected_signaling <- cellchat@netP$pathways
+  }
+  if (is.null(selected_signaling) || length(selected_signaling) == 0) {
+    selected_signaling <- NULL
+  } else {
+    selected_signaling <- selected_signaling[1]
+  }
+  all_cells <- seq_along(levels(cellchat@idents))
+  bubble_sources <- if (!is.null(source_cells) && length(source_cells) > 0) source_cells else all_cells
+  bubble_targets <- if (!is.null(target_cells) && length(target_cells) > 0) target_cells else all_cells
+  pair_lr_single <- split_vec(opt$pair_lr_use)
+  if (is.null(pair_lr_single) || length(pair_lr_single) == 0) {
+    pair_lr_single <- lr_pairs_single
+  }
+  if (!is.null(pair_lr_single) && length(pair_lr_single) > 0) {
+    pair_lr_single <- pair_lr_single[1]
+  } else {
+    pair_lr_single <- NULL
+  }
   if (opt$do_pathway_plots) {
-    plot_pathway_outputs(cellchat, pathways, receiver_cells, sample_name)
+    if (!is.null(selected_signaling) && length(selected_signaling) > 0) {
+      png(file.path(opt$output_dir, paste0(sample_name, "_aggregate_hierarchy.png")), width = 10, height = 8, units = "in", res = 300)
+      netVisual_aggregate(cellchat, signaling = selected_signaling, vertex.receiver = receiver_cells, layout = "hierarchy")
+      dev.off()
+      png(file.path(opt$output_dir, paste0(sample_name, "_aggregate_chord.png")), width = 10, height = 8, units = "in", res = 300)
+      netVisual_aggregate(cellchat, signaling = selected_signaling, vertex.receiver = receiver_cells, layout = "chord")
+      dev.off()
+      png(file.path(opt$output_dir, paste0(sample_name, "_pathway_heatmap.png")), width = 10, height = 8, units = "in", res = 300)
+      p_heatmap <- netVisual_heatmap(cellchat, signaling = selected_signaling, color.heatmap = "Reds")
+      if (!is.null(p_heatmap)) {
+        print(p_heatmap)
+      }
+      dev.off()
+      png(file.path(opt$output_dir, paste0(sample_name, "_pathway_contribution.png")), width = 10, height = 8, units = "in", res = 300)
+      for (pathway in selected_signaling) {
+        p_contrib <- netAnalysis_contribution(cellchat, signaling = pathway)
+        if (!is.null(p_contrib)) {
+          print(p_contrib)
+        }
+      }
+      dev.off()
+    }
   }
   if (opt$do_single_bubble) {
-    plot_single_bubble(cellchat, source_cells, target_cells, pathways, sample_name)
+    if (!is.null(selected_signaling) && length(selected_signaling) > 0) {
+      png(file.path(opt$output_dir, paste0(sample_name, "_bubble.png")), width = 12, height = 6, units = "in", res = 300)
+      p_bubble <- netVisual_bubble(cellchat, sources.use = bubble_sources, targets.use = bubble_targets, signaling = selected_signaling, remove.isolate = opt$bubble_remove_isolate)
+      if (!is.null(p_bubble)) {
+        print(p_bubble)
+      }
+      dev.off()
+    }
+  }
+  png(file.path(opt$output_dir, paste0(sample_name, "_selected_bubble.png")), width = 12, height = 6, units = "in", res = 300)
+  p_selected_bubble <- netVisual_bubble(cellchat, sources.use = bubble_sources, targets.use = bubble_targets, signaling = selected_signaling, remove.isolate = opt$bubble_remove_isolate)
+  if (!is.null(p_selected_bubble)) {
+    print(p_selected_bubble)
+  }
+  dev.off()
+  cellchat <- netAnalysis_computeCentrality(cellchat, slot.name = "netP")
+  png(file.path(opt$output_dir, paste0(sample_name, "_signaling_role_network.png")), width = 15, height = 6, units = "in", res = 300)
+  p_role_network <- netAnalysis_signalingRole_network(cellchat, signaling = selected_signaling, width = 15, height = 6, font.size = 10)
+  if (!is.null(p_role_network)) {
+    print(p_role_network)
+  }
+  dev.off()
+  png(file.path(opt$output_dir, paste0(sample_name, "_signaling_role_scatter.png")), width = 8, height = 6, units = "in", res = 300)
+  p_role_scatter <- netAnalysis_signalingRole_scatter(cellchat, signaling = selected_signaling)
+  if (!is.null(p_role_scatter)) {
+    print(p_role_scatter)
+  }
+  dev.off()
+  png(file.path(opt$output_dir, paste0(sample_name, "_signaling_role_outgoing.png")), width = 10, height = 8, units = "in", res = 300)
+  p_role_out <- netAnalysis_signalingRole_heatmap(cellchat, signaling = selected_signaling, pattern = "outgoing")
+  if (!is.null(p_role_out)) {
+    print(p_role_out)
+  }
+  dev.off()
+  png(file.path(opt$output_dir, paste0(sample_name, "_signaling_role_incoming.png")), width = 10, height = 8, units = "in", res = 300)
+  p_role_in <- netAnalysis_signalingRole_heatmap(cellchat, signaling = selected_signaling, pattern = "incoming")
+  if (!is.null(p_role_in)) {
+    print(p_role_in)
+  }
+  dev.off()
+  if (!is.null(pair_lr_single) && length(pair_lr_single) > 0) {
+    png(file.path(opt$output_dir, paste0(sample_name, "_spatial_feature_pairlr.png")), width = 8, height = 8, units = "in", res = 300)
+    p_spatial <- tryCatch({
+      spatialFeaturePlot(cellchat, pairLR.use = pair_lr_single, point.size = 1, do.binary = TRUE, cutoff = 0.05, enriched.only = FALSE, direction = 1)
+    }, error = function(e) {
+      NULL
+    })
+    if (!is.null(p_spatial)) {
+      print(p_spatial)
+    }
+    dev.off()
   }
   if (opt$do_gene_expression) {
-    plot_gene_expression(cellchat, pathways, sample_name, gene_colors, opt$gene_plot_type)
+    if (!is.null(selected_signaling) && length(selected_signaling) > 0) {
+      png(file.path(opt$output_dir, paste0(sample_name, "_gene_expression.png")), width = 10, height = 6, units = "in", res = 300)
+      p_gene <- plotGeneExpression(cellchat, signaling = selected_signaling, type = opt$gene_plot_type, col = gene_colors)
+      if (!is.null(p_gene)) {
+        print(p_gene)
+      }
+      dev.off()
+    }
   }
 }

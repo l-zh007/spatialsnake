@@ -1,4 +1,5 @@
 import warnings
+import re
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -14,6 +15,175 @@ from spatialdata.models import Image2DModel, ShapesModel, TableModel, get_table_
 from spatialdata.transformations import Identity, Scale
 
 from anndata import AnnData
+
+
+def _compute_if_needed(obj):
+    return obj.compute() if hasattr(obj, "compute") else obj
+
+
+def _infer_xy_columns(df) -> tuple[str, str]:
+    preferred_pairs = [
+        ("x", "y"),
+        ("center_x", "center_y"),
+        ("coord_x", "coord_y"),
+        ("imagecol", "imagerow"),
+    ]
+    for x_col, y_col in preferred_pairs:
+        if x_col in df.columns and y_col in df.columns:
+            return x_col, y_col
+
+    numeric_columns = list(df.select_dtypes(include=[np.number]).columns)
+    if len(numeric_columns) >= 2:
+        return numeric_columns[0], numeric_columns[1]
+    raise ValueError("Unable to infer spatial coordinate columns from the points element.")
+
+
+def _align_points_to_table(table: AnnData, points_element, instance_key: str) -> np.ndarray:
+    points_df = _compute_if_needed(points_element).copy()
+    if hasattr(points_df.index, "astype"):
+        points_df.index = points_df.index.astype(str)
+
+    x_col, y_col = _infer_xy_columns(points_df)
+    obs = table.obs.copy()
+    obs.index = obs.index.astype(str)
+
+    if instance_key in obs.columns:
+        instance_ids = obs[instance_key].astype(str)
+        if instance_ids.isin(points_df.index).all():
+            aligned = points_df.loc[instance_ids]
+            return aligned[[x_col, y_col]].to_numpy(dtype=np.float32)
+
+        if instance_key in points_df.columns:
+            lookup = points_df.copy()
+            lookup[instance_key] = lookup[instance_key].astype(str)
+            aligned = (
+                obs[[instance_key]]
+                .merge(
+                    lookup[[instance_key, x_col, y_col]],
+                    on=instance_key,
+                    how="left",
+                    sort=False,
+                )
+            )
+            if aligned[[x_col, y_col]].isna().any().any():
+                raise ValueError("Failed to align points coordinates to the table using the instance key.")
+            return aligned[[x_col, y_col]].to_numpy(dtype=np.float32)
+
+    if obs.index.isin(points_df.index).all():
+        aligned = points_df.loc[obs.index]
+        return aligned[[x_col, y_col]].to_numpy(dtype=np.float32)
+
+    raise ValueError("Failed to align points coordinates to the table rows.")
+
+
+def _image_to_hwc(image) -> np.ndarray:
+    data = image.data if hasattr(image, "data") else image
+    data = _compute_if_needed(data)
+    arr = np.asarray(data)
+    dims = tuple(getattr(image, "dims", ()))
+
+    if arr.ndim == 2:
+        return arr[:, :, None]
+    if arr.ndim != 3:
+        raise ValueError(f"Unsupported image array ndim: {arr.ndim}")
+
+    if dims and all(dim in dims for dim in ("y", "x", "c")):
+        axes = [dims.index("y"), dims.index("x"), dims.index("c")]
+        return np.transpose(arr, axes)
+    if dims and all(dim in dims for dim in ("c", "y", "x")):
+        return np.transpose(arr, (1, 2, 0))
+    if arr.shape[0] <= 4 and arr.shape[1] > 4 and arr.shape[2] > 4:
+        return np.transpose(arr, (1, 2, 0))
+    return arr
+
+
+def _downscale_image(arr: np.ndarray, target_max_side: int) -> tuple[np.ndarray, float]:
+    height, width = arr.shape[:2]
+    longest_side = max(height, width)
+    if longest_side <= target_max_side:
+        return arr, 1.0
+
+    scale = target_max_side / float(longest_side)
+    target_height = max(1, int(round(height * scale)))
+    target_width = max(1, int(round(width * scale)))
+    y_idx = np.linspace(0, height - 1, target_height).astype(int)
+    x_idx = np.linspace(0, width - 1, target_width).astype(int)
+    return arr[y_idx][:, x_idx, ...], scale
+
+
+def _infer_spot_diameter(adata: AnnData, coords: np.ndarray) -> float:
+    bin_name = adata.uns.get("bin_name")
+    if isinstance(bin_name, str):
+        match = re.search(r"bin(\d+)", bin_name)
+        if match is not None:
+            return float(match.group(1))
+
+    resolution = adata.uns.get("resolution")
+    if isinstance(resolution, (int, float, np.integer, np.floating)) and float(resolution) > 0:
+        return float(resolution)
+
+    if coords.shape[0] > 1:
+        diffs_x = np.diff(np.unique(coords[:, 0]))
+        diffs_y = np.diff(np.unique(coords[:, 1]))
+        positive_diffs = np.concatenate([diffs_x[diffs_x > 0], diffs_y[diffs_y > 0]])
+        if len(positive_diffs) > 0:
+            return float(np.min(positive_diffs))
+    return 1.0
+
+
+def _legacy_points_table_to_anndata(
+    sdata: SpatialData,
+    table_name: str,
+    region_name: str,
+    instance_key: str,
+    coordinate_system: str,
+    include_images: bool,
+    downscaled_hires_length: int,
+    downscaled_lowres_length: int,
+) -> AnnData:
+    print("[to_legacy_anndata] using points fallback")
+    table = sdata[table_name]
+    points_element = sdata[region_name]
+    adata = table.copy()
+    coords = _align_points_to_table(table, points_element, instance_key)
+    spot_diameter_fullres = _infer_spot_diameter(adata, coords)
+
+    adata.obsm["spatial"] = coords
+
+    if include_images and len(sdata.images) > 0:
+        adata.uns.setdefault("spatial", {})
+        hires_scale_for_coords = None
+        for image_name, image in sdata.images.items():
+            try:
+                arr = _image_to_hwc(image)
+                hires_img, hires_scale = _downscale_image(arr, downscaled_hires_length)
+                lowres_img, lowres_scale = _downscale_image(arr, downscaled_lowres_length)
+                adata.uns["spatial"][image_name] = {
+                    "images": {
+                        "hires": hires_img,
+                        "lowres": lowres_img,
+                    },
+                    "scalefactors": {
+                        "tissue_hires_scalef": hires_scale,
+                        "tissue_lowres_scalef": lowres_scale,
+                        "spot_diameter_fullres": spot_diameter_fullres,
+                    },
+                    "metadata": {
+                        "source_coordinate_system": coordinate_system,
+                        "fallback_from_points": True,
+                    },
+                }
+                if hires_scale_for_coords is None:
+                    hires_scale_for_coords = hires_scale
+            except Exception as e:
+                print(f"[to_legacy_anndata] failed to export image {image_name}: {e}")
+
+        if hires_scale_for_coords is not None:
+            adata.obsm["spatial"] = (coords * hires_scale_for_coords).astype(np.float32)
+
+    print(f"[to_legacy_anndata] fallback obsm['spatial'] shape={adata.obsm['spatial'].shape}")
+    print(f"[to_legacy_anndata] fallback uns['spatial'] keys={list(adata.uns.get('spatial', {}).keys())}")
+    return adata
 
 
 
@@ -274,6 +444,17 @@ def to_legacy_anndata(
     # the table needs to annotate exactly one Shapes element
     if len(region) != 1:
         raise ValueError(f"The table needs to annotate exactly one element. Found {len(region)}.")
+    if region[0] in sdata.points:
+        return _legacy_points_table_to_anndata(
+            sdata=sdata,
+            table_name=table_name,
+            region_name=region[0],
+            instance_key=instance_key,
+            coordinate_system=coordinate_system,
+            include_images=include_images,
+            downscaled_hires_length=DOWNSCALED_HIRES_LENGTH,
+            downscaled_lowres_length=DOWNSCALED_LOWRES_LENGTH,
+        )
     if region[0] not in sdata.shapes and region[0] not in sdata.labels:
         raise ValueError("The table needs to annotate a Shapes or Labels element, not Points.")
     element = sdata[region[0]]
@@ -360,7 +541,6 @@ def to_legacy_anndata(
     print(f"[to_legacy_anndata] uns['spatial'] keys={list(adata.uns.get('spatial', {}).keys())}")
     print("[to_legacy_anndata] done")
     return adata
-
 
 
 
