@@ -1,190 +1,163 @@
-<table border="0" cellspacing="0" cellpadding="0">
-  <tbody>
-    <tr>
-      <td rowspan="3" valign="top" style="padding-right: 20px;">
-        <h1>spatialsnake</h1>
-        <p>A Snakemake workflow for spatial transcriptomics powered by the <code>spatialdata</code> framework.</p>
-      </td>
-      <td>
-        <a href="https://spatialsnake-tutorial.readthedocs.io/en/latest/">
-          <img src="https://img.shields.io/badge/docs-Read%20the%20Documentation-blue" alt="Documentation">
-        </a>
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <a href="https://pypi.org/project/spatialsnake/">
-          <img src="https://img.shields.io/pypi/v/spatialsnake" alt="PyPI">
-        </a>
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <a href="https://snakemake.github.io">
-          <img src="https://img.shields.io/badge/snakemake-%E2%89%A58.0.0-brightgreen.svg" alt="Snakemake">
-        </a>
-      </td>
-    </tr>
-  </tbody>
-</table>
+<h1 align="center">spatialsnake</h1>
 
-`spatialsnake` provides a command-line workflow for single-dataset analysis, multiple-dataset comparison, stepwise execution of core analysis stages, and auxiliary utilities for data splitting, merging, and format transformation.
+<p align="center">
+  A Snakemake workflow for spatial transcriptomics powered by the <code>spatialdata</code> framework.
+</p>
+
+<p align="center">
+  <a href="https://spatialsnake-tutorial.readthedocs.io/en/latest/">
+    <img src="https://img.shields.io/badge/docs-Read%20the%20Documentation-blue" alt="Documentation">
+  </a>
+  <a href="https://pypi.org/project/spatialsnake/">
+    <img src="https://img.shields.io/pypi/v/spatialsnake" alt="PyPI">
+  </a>
+  <a href="https://snakemake.github.io">
+    <img src="https://img.shields.io/badge/snakemake-%E2%89%A58.0.0-brightgreen.svg" alt="Snakemake">
+  </a>
+</p>
+
+`spatialsnake` is an automated pipeline for `spatial transcriptomics` analysis. Implemented in `Python` on top of the `scverse` ecosystem, it uses SpatialData to convert datasets from multiple spatial transcriptomics platforms into a unified `zarr`-based object format. This design supports a consistent workflow spanning data ingestion, preprocessing, clustering, annotation, and downstream analysis through a command-line interface with workflow-based parameter control.
 
 ## Project at a Glance
 
-| Item | Link / Summary |
+| Item | Summary |
 | --- | --- |
-| Documentation | [spatialsnake Documentation](https://spatialsnake-tutorial.readthedocs.io/en/latest/) |
-| Tutorial Article | [spatialsnake Tutorial](https://spatialsnake-tutorial.readthedocs.io/en/latest/) |
-| Repository | [GitHub Project Page](https://github.com/l-zh007/spatialsnake) |
-| Core Commands | `single_analysis`, `compare_analysis`, `useful_tool`, `produce-file`, `install-packages` |
-| Core Analysis Options | `integrate`, `preprocess`, `clustering`, `reclustering`, `annotation_help`, `annotation`, `compare_stage`, `advance_analysis` |
-
-## Quick Installation
-
-```bash
-conda env create -f environment.yml -n spatialsnake_env
-conda activate spatialsnake_env
-git clone https://github.com/l-zh007/spatialsnake.git
-cd spatialsnake
-pip install -e .
-spatialsnake -h
-spatialsnake install-packages
-```
+| Official Documentation | [spatialsnake Documentation](https://spatialsnake-tutorial.readthedocs.io/en/latest/) |
+| Tutorial Article | [Core Analysis Tutorial](https://spatialsnake-tutorial.readthedocs.io/en/latest/core_analysis/index.html) |
+| Workflow Modes | `single_analysis`, `compare_analysis` |
+| Utility Entry Points | `useful_tool`, `produce-file`, `install-packages` |
+| Main Analysis Options | `integrate`, `preprocess`, `clustering`, `reclustering`, `annotation_help`, `annotation`, `advance_analysis`, `compare_stage` |
+| Supported Input Types | `visium`, `visium_segment`, `visium_HD`, `xenium`, `Merfish`, `stereo_seq` |
 
 ## Core Functions
 
-- Process a single spatial transcriptomics dataset with `single_analysis`.
-- Compare multiple spatial transcriptomics datasets with `compare_analysis`.
-- Run analysis stages independently, including integration, preprocessing, clustering, annotation support, annotation, comparative analysis, reclustering, and advanced analysis.
-- Use auxiliary tools for `splitting`, `merge`, and `transform`.
-- Work with the following input types: `visium`, `visium_segment`, `visium_HD`, `xenium`, `Merfish`, `slide_seq`, and `stereoseq`.
+- Standardize raw spatial transcriptomics data into a unified object during `Ingesting`.
+- Run `preprocess` for quality control, filtering, normalization, and dimensionality reduction preparation.
+- Perform `clustering` and visualization, followed by `annotation_help` and `annotation`.
+- Carry out `reclustering` and `reannotation` for clusters of interest.
+- Execute `advance_analysis` for downstream analyses and `compare_stage` for cross-sample comparison.
+- Use auxiliary utilities for `splitting`, `merge`, and `transform`.
+
+## Available Platforms
+
+### Sequencing-based
+
+- `visium`: 10x Genomics spatial transcriptomics data
+- `visium_HD`: high-resolution 10x Genomics spatial transcriptomics data
+- `visium_segment`: cell segmentation outputs from 10x Genomics Space Ranger
+- `stereo_seq`: BGI Stereo-seq spatial transcriptomics data, including different bin sizes, `cellbin`, and adjusted `cellbin` data types
+
+### Imaging-based
+
+- `xenium`: image-based 10x Genomics Xenium spatial transcriptomics data
+- `Merfish`: Vizgen MERFISH spatial transcriptomics data
+
+## Basic Installation
+
+### 1. Create the base conda environment
+
+```bash
+conda config --add channels defaults
+conda config --add channels bioconda
+conda config --add channels conda-forge
+conda create -n spatialsnake_env python=3.12.11 snakemake-minimal=9.8.1 r-base=4.4.0 -y
+conda activate spatialsnake_env
+```
+
+### 2. Install the documented core dependencies
+
+```bash
+conda install -c conda-forge r-optparse r-tidyverse r-future r-jsonlite r-rcolorbrewer r-patchwork r-cowplot r-pheatmap r-seurat r-remotes r-biocmanager r-presto r-nmf r-circlize
+conda install -c bioconda bioconductor-annotationdbi bioconductor-complexheatmap bioconductor-clusterprofiler bioconductor-edger bioconductor-org.hs.eg.db bioconductor-org.mm.eg.db bioconductor-rhdf5 bioconductor-biocneighbors
+conda install -c conda-forge bbknn cython
+```
+
+### 3. Install `spatialsnake`
+
+#### Option 1. Install from PyPI
+
+```bash
+pip install spatialsnake
+spatialsnake --version
+```
+
+#### Option 2. Install from conda
+
+```bash
+conda install spatialsnake -c bioconda -c conda-forge
+spatialsnake --version
+```
+
+#### Option 3. Install from source code
+
+```bash
+git clone https://github.com/zhenghlin/spatialsnake.git
+cd spatialsnake
+python -m pip install .
+python -m pip install ".[extended]"
+spatialsnake --version
+```
+
+### 4. Optional extended package step
+
+```bash
+pip install spatialsnake[extended]
+spatialsnake --install-packages
+```
+
+With the minimal installation, the documented workflow includes `integrate`, `preprocess`, `clustering`, `reclustering`, `annotation_help`, `annotation`, `reannotation`, and utility operations for merge and split. Running `spatialsnake --install-packages` adds documented extended components including `compare_stage`, `transform`, `banksy`, and `cellchat`-related workflows.
 
 ## Working Directory
 
-### Prepare a working directory
+Prepare the working directory before running the main workflow:
 
-```bash
-mkdir project
-cd project
+```text
+project_root/
+├── data/
+├── sample.txt
+├── results/
+└── <analysis_option>.yaml
 ```
 
-Start the analysis with `sample.txt`, spatialdata stored in `data/*`, and the output directory `results`.
+```bash
+mkdir -p project_root/data project_root/results
+touch project_root/sample.txt
+```
 
-Please ensure that each spatialdata folder name under `data/` is consistent with the corresponding `sample_name` recorded in `sample.txt`.
+`sample.txt` is the required sample information table for every module in the main workflow. In the working directory, `data/` stores raw input data, `results/` stores analysis outputs generated by the workflow, and `<analysis_option>.yaml` is an optional configuration file.
 
 ## Minimal Usage
 
-### Run one analysis step
+The command-line interface provides the following documented entry points:
 
 ```bash
-spatialsnake <command> sample.txt <TYPE> --option=<analysis_option> [options]
-```
-
-### Run multiple-sample comparison
-
-```bash
-spatialsnake compare_analysis sample.txt <TYPE> --option=<analysis_option>
-```
-
-### Run all basic steps for a single dataset
-
-```bash
-spatialsnake single_analysis sample.txt <TYPE> --option=all
-```
-
-### Generate a configuration file
-
-```bash
+spatialsnake <command> <INPUT> <TYPE> [--option=<analysis_option>] [options]
+spatialsnake useful_tool [--option=<ways>] <INPUT> [options]
 spatialsnake produce-file [--option=<analysis_option>]
-spatialsnake <command> sample.txt <TYPE> --option=<analysis_option> --configfile <FILE>
+spatialsnake install-packages
+spatialsnake (-h | --help)
+spatialsnake --version
 ```
 
-### Run utility tools
+Main workflow selection:
+
+- `<command>`: choose `single_analysis` or `compare_analysis`
+- `<TYPE>`: choose from `visium`, `visium_segment`, `visium_HD`, `xenium`, `Merfish`, and `stereo_seq`
+- `--option=<analysis_option>`: choose from `integrate`, `preprocess`, `clustering`, `reclustering`, `annotation_help`, `annotation`, `advance_analysis`, and `compare_stage`
+
+Configuration files can be generated with:
 
 ```bash
-spatialsnake useful_tool [--option=<ways>] <INPUT>... [options]
+spatialsnake produce-file --option=<analysis_option>
 ```
 
-## Command Summary
+The generated YAML template can then be applied with `--configfile`. Parameters provided directly on the command line take priority over parameters defined in the YAML file.
 
-### Workflow commands
+## Further Reading
 
-- `single_analysis`: process a single spatial transcriptomics dataset; by default, all basic steps except `advance_analysis` are executed.
-- `compare_analysis`: compare multiple spatial transcriptomics datasets.
-
-### Analysis options
-
-- `integrate`
-- `preprocess`
-- `clustering`
-- `reclustering`
-- `annotation_help`
-- `annotation`
-- `compare_stage`
-- `advance_analysis`
-
-### Utility commands
-
-- `produce-file`: generate a configuration file for a selected analysis option.
-- `install-packages`: install required packages.
-- `useful_tool --option=splitting`: split integrated data.
-- `useful_tool --option=merge`: merge data.
-- `useful_tool --option=transform`: transform data formats.
-
-## Selected Parameters
-
-### Basic configuration
-
-- `--configfile <FILE>`: configuration file in YAML format. Default: `config.yaml`.
-- `-j, --jobs <INT>`: number of CPU cores. Default: `16`.
-- `--results_folder <DIR>`: output directory. Default: `results`.
-
-### Integration
-
-- `--cells_boundaries <BOOL>`
-- `--nucleus_boundaries <BOOL>`
-- `--nucleus_labels <BOOL>`
-- `--morphology_mip <BOOL>`
-- `--bin_size <INT>`
-- `--merscope_z_layers <TEXT>`
-- `--merscope_region_name <TEXT>`
-
-### Preprocessing
-
-- `--min_cells <INT>`
-- `--min_genes <INT>`
-- `--seg_filter <BOOL>`
-- `--filter_list <FILE>`
-- `--batch_method <TEXT>`
-- `--sketch <BOOL>`
-- `--mt_threshold <FLOAT>`
-
-### Clustering and annotation
-
-- `--resolution <FLOAT>`
-- `--cluster_algorithm <TEXT>`
-- `--n_clusters <INT>`
-- `--pcs <INT>`
-- `--markers_algorithm <TEXT>`
-- `--spacies <TEXT>`
-- `--annotation-file <FILE>`
-- `--anno_algorithm <TEXT>`
-
-### Advanced analysis and utilities
-
-- `--runpipe <TEXT>`
-- `--senic_input <DIR>`
-- `--motifs_input <FILE>`
-- `--feather_input <FILE>`
-- `--tfs_input <FILE>`
-- `--count-data <TEXT>`
-- `--threads <INT>`
-- `--output_name <TEXT>`
-- `--split_by=<TEXT>`
-- `--output_dir=<TEXT>`
-
-For detailed parameter descriptions, please consult the [official documentation](https://spatialsnake-tutorial.readthedocs.io/en/latest/).
+- Read the full [official documentation](https://spatialsnake-tutorial.readthedocs.io/en/latest/).
+- Start from the example-based [core analysis tutorial](https://spatialsnake-tutorial.readthedocs.io/en/latest/core_analysis/index.html).
+- If you encounter problems or would like to suggest extensions, please [open an issue on GitHub](https://github.com/l-zh007/spatialsnake/issues).
 
 ## Reference
 
