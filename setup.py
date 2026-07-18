@@ -16,12 +16,12 @@ class CleanCommand(Command):
     def run(self):
         os.system('rm -vrf ./build ./dist ./*.pyc ./*.tgz ./*.egg-info')
 
-with open("README.md", "r", encoding="utf-8") as readme:  # 添加encoding
+with open("README.md", "r", encoding="utf-8") as readme:
     long_description = readme.read()
 
 setup(
     name="spatialsnake",
-    version="0.0.1",
+    version="0.0.2",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
