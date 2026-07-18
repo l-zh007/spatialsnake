@@ -1,24 +1,39 @@
-# total params
-option: "clustering"          # the analysis step for pipeline
-results_folder: "results"           # the results data folder name
-data_fold: "data"                   # the raw mat data folder name
-sample_list: "sample.txt"           # the sample detail information file
-run_type: "visium"                  # the spatial transcription data type
-channel: "compare_analysis"         # the channel of analysis style [single_analysis] or [compare_analysis]
+# Spatialsnake clustering configuration.
+# Edit values only when you need to override the recommended defaults.
 
+# -----------------------------------------------------------------------------
+# Common workflow settings
+# -----------------------------------------------------------------------------
+option: "clustering"  # Workflow step selected by this template. Recommended: clustering.
+results_folder: "results"  # Root directory for all workflow outputs. Recommended: results.
+data_fold: "data"  # Root directory used by rules that resolve raw data paths. Recommended: data.
+sample_list: "sample.txt"  # Sample table path with sample IDs and input paths. Recommended: sample.txt or an explicit sample table.
+run_type: "visium"  # Spatial technology type used to select readers and rules. Recommended: visium unless your platform differs.
+channel: "compare_analysis"  # Analysis mode for single-sample or multi-sample workflows. Recommended: compare_analysis for cohorts.
+threads: 8  # Threads allocated to graph construction and clustering. Override with --threads when needed.
 
-tsene: False                        # Whether to use tsene for dimensionality reduction analysis
-MIN_DIST: 0.3                       # umap params
-SPREAD: 2                           # umap params
-cluster_algorithm: "leiden"         # cluster algorithm [leiden] [Kmeans] or [louvain]
-resolution: 0.5                     # resolution of cluster leiden and louvain analysis
-n_clusters: 15                      # resolution of cluster kmeans analysis
+# -----------------------------------------------------------------------------
+# Embedding and graph construction
+# -----------------------------------------------------------------------------
+tsne: False  # Compute t-SNE in addition to UMAP when supported. Recommended: False; UMAP is the primary visualization.
+MIN_DIST: 0.3  # UMAP minimum distance controlling local compactness. Recommended: 0.3 for balanced cluster separation.
+SPREAD: 2  # UMAP spread controlling global embedding scale. Recommended: 2 for readable spatial cohort embeddings.
+n_comps: 20  # Number of PCA components used in clustering. Recommended: 20 for standard spatial spot data.
+pcs: 25  # Number of principal components used for graph construction. Recommended: 25 when enough cells or spots are available.
+NEIGHBORS: 10  # Number of neighbors used to build the graph. Recommended: 10 for balanced local structure.
 
-n_comps: 20
-k_geom: 15
-max_m: 1
-nbr_weight_decay: "scaled_gaussian"
-lambda_list: 0.2
-sketch: False                       # whether use sketch method to analysis the spatialdata
-pcs: 25
-NEIGHBORS: 10
+# -----------------------------------------------------------------------------
+# Cluster detection
+# -----------------------------------------------------------------------------
+cluster_algorithm: "leiden"  # Clustering method; supported values include leiden, louvain, and Kmeans. Recommended: leiden.
+resolution: 0.5  # Resolution for graph-based clustering. Recommended: 0.5 as a moderate starting point.
+n_clusters: 15  # Number of clusters for KMeans mode. Recommended: tune by expected tissue heterogeneity.
+
+# -----------------------------------------------------------------------------
+# Large-data and spatial-domain options
+# -----------------------------------------------------------------------------
+k_geom: 15  # Spatial neighbor size used by BANKSY-related clustering paths. Recommended: 15 for local tissue neighborhoods.
+max_m: 1  # Maximum harmonic order used by BANKSY-related features. Recommended: 1 for first-order spatial structure.
+nbr_weight_decay: "scaled_gaussian"  # Neighbor weighting scheme for BANKSY-related features. Recommended: scaled_gaussian.
+lambda_list: 0.2  # Spatial weighting value for BANKSY-related clustering. Recommended: tune from low to high spatial influence.
+sketch: False  # Enable sketch-based downsampling for large datasets. Recommended: False unless memory or runtime is limiting.

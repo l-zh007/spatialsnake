@@ -19,6 +19,9 @@ from spatialsnake.workflow.function.merfish_utils import (
 )
 from spatialsnake.workflow.function.stereoseq_spec import parse_stereoseq_input_spec
 from spatialsnake.workflow.function.stereoseq_v8 import stereoseq_v8
+from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
+
+logger = setup_logger("integrate")
 
 def parse_bool(value):
   if isinstance(value, bool):
@@ -44,6 +47,8 @@ parser.add_argument('--sample_id', type=str, required=False,
                    help='Path for the output zarr file')
 parser.add_argument('--channel', type=str, required=False,
                    help='Path for the output zarr file')                   
+parser.add_argument('--threads', type=int, default=4,
+                   help='Threads allocated to this integration job')
 ########## args of visium HD
 parser.add_argument("--bin_size", type=str, required=False, help="bin")
 parser.add_argument("--input_spec", type=str, required=False, help="Stereo-seq input mode")
@@ -60,9 +65,6 @@ parser.add_argument("--image", type=str, required=False, help="bin")
 parser.add_argument("--geojson", type=str, required=False, help="bin")
 
 
-######args of slide seq
-parser.add_argument("--coor_file", type=str, required=False, help="bin")
-
 ####### args of merscope/merfish
 parser.add_argument("--merscope_z_layers", type=int, required=False, help="Optional z layers for spatialdata_io.merscope")
 parser.add_argument("--merscope_region_name", type=str, required=False, help="Optional region name for spatialdata_io.merscope")
@@ -76,6 +78,7 @@ args = parser.parse_args()
 
 count_file= args.count_file
 type=args.type
+log_step(logger, 1, 3, f"preparing {type} input for sample {args.sample_id}")
 _input_norm = os.path.normpath(args.input_dir)
 if type == "visium_HD":
   parts = _input_norm.split(os.path.sep)
@@ -90,11 +93,8 @@ else:
 
 def QC_plot(type,sdata,zarr_name):
   dir_path=os.path.dirname(zarr_name)
-  if type!="slide_seq":
-    for table in sdata.tables.keys():
-      adata = sdata[table]
-  else:
-    adata=sdata
+  for table in sdata.tables.keys():
+    adata = sdata[table]
   adata.var["mt"] = adata.var_names.str.startswith(("MT-", "mt-"))
   sc.pp.calculate_qc_metrics(
     adata, 
@@ -107,8 +107,8 @@ def QC_plot(type,sdata,zarr_name):
     cprobes = (
       adata.obs["control_probe_counts"].sum() / adata.obs["total_counts"].sum() * 100)
     cwords = (adata.obs["control_codeword_counts"].sum() / adata.obs["total_counts"].sum() * 100)
-    print(f"Negative DNA probe count % : {cprobes}")
-    print(f"Negative decoding count % : {cwords}")
+    logger.info(f"Negative DNA probe count percent: {cprobes:.3f}")
+    logger.info(f"Negative decoding count percent: {cwords:.3f}")
 
   if type=='xenium':
     image_num=4
@@ -155,14 +155,14 @@ def QC_plot(type,sdata,zarr_name):
     stripplot=False, 
     inner="box",
     show=False)
-  plt.title("Total UMI by Sample")
-  plt.axhline(y=4, color='r', linestyle='-')
-  plt.axhline(y=8, color='r', linestyle='-')
+  plt.title("Total Counts by Region (log1p)")
+  # Ingestion is descriptive and platform-agnostic. Fixed count thresholds are
+  # therefore not drawn here; filtering thresholds are selected and displayed
+  # during preprocessing.
   plt.savefig(
     os.path.join(dir_path, "total_umi_by_sample.png"),
     dpi=300, 
     bbox_inches='tight')
-  plt.show()
   plt.close()
 
 
@@ -174,12 +174,11 @@ def QC_plot(type,sdata,zarr_name):
     stripplot=False, 
     inner="box",
     show=False)
-  plt.title("Total Genes by Sample")
+  plt.title("Detected Genes by Region (log1p)")
   plt.savefig(
     os.path.join(dir_path, "total_genes_by_sample.png"),
     dpi=300,
     bbox_inches='tight')
-  plt.show()
   plt.close()
 
   sc.pl.violin(
@@ -189,27 +188,28 @@ def QC_plot(type,sdata,zarr_name):
     stripplot=False, 
     inner="box",
     show=False)
-  plt.title("Mitochondrial Genes by Sample")
+  plt.title("Mitochondrial Counts by Region (log1p)")
   plt.savefig(
     os.path.join(dir_path, "genes_by_sample.png"),
     dpi=300,
     bbox_inches='tight')
-  plt.show()
   plt.close()
   
   
-  sc.pl.scatter(adata, "total_counts", "n_genes_by_counts", color="pct_counts_mt")
+  sc.pl.scatter(
+    adata,
+    "total_counts",
+    "n_genes_by_counts",
+    color="pct_counts_mt",
+    show=False,
+  )
   plt.savefig(
     os.path.join(dir_path, "scatter.png"),
     dpi=300,
     bbox_inches='tight')
-  plt.show()
   plt.close()
-  if type!="slide_seq":
-    sdata[table]=adata
-    return sdata
-  else:
-    return adata
+  sdata[table]=adata
+  return sdata
 
 
 def align_shapes_with_table_cell_id(sdata, sample_id=None, table_key="table"):
@@ -252,7 +252,7 @@ def align_shapes_with_table_cell_id(sdata, sample_id=None, table_key="table"):
 
 
 def create_zarr_bin(path_to_inputs,sample_id,zarr_name,filtered_counts_file,bin_size):
-    print(zarr_name)
+    logger.info(f"Reading Visium HD data from {path_to_inputs}")
     sdata = spatialdata_io.visium_hd(path_to_inputs, dataset_id=sample_id, filtered_counts_file=filtered_counts_file, bin_size=bin_size)
     sdata = align_shapes_with_table_cell_id(
         sdata,
@@ -260,9 +260,11 @@ def create_zarr_bin(path_to_inputs,sample_id,zarr_name,filtered_counts_file,bin_
         table_key="table",
     )
     sdata=QC_plot(type,sdata,zarr_name)
+    logger.info(f"Writing Visium HD SpatialData to {zarr_name}")
     sdata.write(zarr_name, overwrite=True)
 
 def creat_zarr_visium(path_to_inputs,sample_id,zarr_name,h5_name):
+    logger.info(f"Reading Visium data from {path_to_inputs}")
     sdata=spatialdata_io.visium(path_to_inputs,dataset_id=sample_id,counts_file=h5_name)
     sdata=QC_plot(type,sdata,zarr_name)
     SHAPES_KEY = sample_id
@@ -281,10 +283,11 @@ def creat_zarr_visium(path_to_inputs,sample_id,zarr_name,h5_name):
                   instance_key='cell_id' # Column in adata.obs with instance IDs (cell_id)
               )
           }
-    print(sdata["table"].obs)
+    logger.info(f"Prepared Visium table with {sdata['table'].n_obs} observations")
     sdata.write(zarr_name, overwrite=True)
 
 def create_zarr(count_matrix_path,image_path,scale_factors_path,geojson_path,sample_name,zarr_name):
+    logger.info(f"Reading segmented Visium count matrix from {count_matrix_path}")
     COUNT_MATRIX_PATH = count_matrix_path
     IMAGE_PATH = image_path
     SCALE_FACTORS_PATH = scale_factors_path
@@ -394,7 +397,8 @@ def create_zarr(count_matrix_path,image_path,scale_factors_path,geojson_path,sam
     sdata.write(zarr_name, overwrite=True)
 
 def create_zarr_xenium(path_to_inputs,zarr_name,cells_boundaries,nucleus_boundaries,nucleus_labels,morphology_mip):
-    sdata = spatialdata_io.xenium(path_to_inputs,cells_boundaries=cells_boundaries, nucleus_boundaries=nucleus_boundaries,nucleus_labels=nucleus_labels,morphology_mip=morphology_mip,n_jobs=4,cells_as_circles=True,morphology_focus = True)
+    logger.info(f"Reading Xenium data from {path_to_inputs}")
+    sdata = spatialdata_io.xenium(path_to_inputs,cells_boundaries=cells_boundaries, nucleus_boundaries=nucleus_boundaries,nucleus_labels=nucleus_labels,morphology_mip=morphology_mip,n_jobs=args.threads,cells_as_circles=True,morphology_focus = True)
     new_images = {}
     for img_name in sdata.images.keys():
         new_name = f"{args.sample_id}_{img_name}"
@@ -426,7 +430,7 @@ def create_zarr_xenium(path_to_inputs,zarr_name,cells_boundaries,nucleus_boundar
         table.obs["sample"] = args.sample_id
         table.obs['region'] = SHAPES_KEY
         table.obs['region'] = table.obs['region'].astype('category')
-        print(table.obs)
+        logger.info(f"Prepared Xenium table with {table.n_obs} observations")
     if SHAPES_KEY in sdata.shapes:
         sdata.shapes[SHAPES_KEY].index = table.obs['cell_id']
     del table.uns['spatialdata_attrs']
@@ -441,21 +445,6 @@ def create_zarr_xenium(path_to_inputs,zarr_name,cells_boundaries,nucleus_boundar
     sdata=QC_plot(type,sdata,zarr_name)
     sdata.write(zarr_name,overwrite=True)
     
-def creat_zarr_slide_seq(zarr_name,count_file,coor_file):
-  counts = pd.read_csv(count_file, sep='\t', index_col=0,comment='#')
-  coor_df = pd.read_csv(coor_file, index_col=0)
-  adata = sc.AnnData(counts.T)
-  adata.var_names_make_unique()
-  coor_df = coor_df.loc[adata.obs_names, ['xcoord', 'ycoord']]
-  adata.obsm["spatial"] = coor_df.to_numpy()
-  adata.obs['region']=args.sample_id
-  adata.obs['cell_id'] = adata.obs.index
-  adata.obs["group"] = args.sample_id
-  adata=QC_plot(type,adata,zarr_name)
-  adata.write(zarr_name)
-
-
-
 def _create_mock_spatialdata(sample_id: str, platform: str):
     """
     Create a tiny SpatialData object for smoke testing imaging platform branches.
@@ -506,6 +495,7 @@ def _create_mock_spatialdata(sample_id: str, platform: str):
 
 def create_zarr_merscope(path_to_inputs, zarr_name):
     """Read Vizgen MERSCOPE / MERFISH output directory via spatialdata-io."""
+    logger.info(f"Reading MERSCOPE/MERFISH data from {path_to_inputs}")
     # Mock mode
     if os.path.exists(os.path.join(path_to_inputs, 'MOCK_DATASET.txt')):
         sdata = _create_mock_spatialdata(args.sample_id, 'merscope')
@@ -525,7 +515,7 @@ def create_zarr_merscope(path_to_inputs, zarr_name):
             table.obs['sample'] = args.sample_id
         else:
             table.obs['sample'] = table.obs['sample'].astype(str)
-    print(sdata)
+    logger.info(f"Loaded MERSCOPE/MERFISH object with {len(sdata.tables)} table(s)")
     transform_csv = find_merfish_transform_csv(path_to_inputs)
     if transform_csv and os.path.isfile(transform_csv):
         sdata = align_merfish_image_to_shape_space(
@@ -535,13 +525,14 @@ def create_zarr_merscope(path_to_inputs, zarr_name):
             register_points=True,
         )
     else:
-        print(f"WARNING: MERFISH transform csv not found, skip alignment: {transform_csv}")
+        logger.warning(f"MERFISH transform csv not found, skip alignment: {transform_csv}")
 
     if args.channel == "single_analysis":
         sdata = QC_plot(type, sdata, zarr_name)
     sdata.write(zarr_name, overwrite=True)
 
 def create_zarr_stereoseq(path_to_inputs, zarr_name, bin_size=None):
+  logger.info(f"Reading Stereo-seq data from {path_to_inputs}")
   input_specs = parse_stereoseq_input_spec(args.input_spec if args.input_spec not in [None, ""] else bin_size)
   sdata = stereoseq_v8(
       path_to_inputs,
@@ -568,10 +559,20 @@ def create_zarr_stereoseq(path_to_inputs, zarr_name, bin_size=None):
   sdata.write(zarr_name, overwrite=True)
 
 if type=='visium_segment':
-        count_file=os.path.join(f'data/{args.sample_id}/segmented_outputs',count_file)
-        image_file=os.path.join(f'data/{args.sample_id}/segmented_outputs/spatial',args.image)
-        scale_factors_file=os.path.join(f'data/{args.sample_id}/segmented_outputs/spatial',args.scale_factors)
-        geojson_file=os.path.join(f'data/{args.sample_id}/segmented_outputs',args.geojson)
+        log_step(logger, 2, 3, "reading segmented Visium files")
+        # ``--input_dir`` is resolved from sample.txt by the Snakemake rule and
+        # may point either to segmented_outputs or directly to the count file.
+        # All companion files must therefore be resolved relative to that user
+        # path rather than to a hard-coded data/{sample_id} directory.
+        segmented_dir = real_dir
+        count_file = _input_norm if os.path.isfile(_input_norm) else os.path.join(segmented_dir, count_file)
+        image_file=os.path.join(segmented_dir, 'spatial', args.image)
+        scale_factors_file=os.path.join(segmented_dir, 'spatial', args.scale_factors)
+        geojson_file=os.path.join(segmented_dir, args.geojson)
+        required_paths = [count_file, image_file, scale_factors_file, geojson_file]
+        missing_paths = [path for path in required_paths if not os.path.exists(path)]
+        if missing_paths:
+          raise FileNotFoundError("Missing segmented Visium input(s): " + ", ".join(missing_paths))
         create_zarr(count_matrix_path=count_file,
                 image_path=image_file,
                 scale_factors_path=scale_factors_file,
@@ -579,6 +580,7 @@ if type=='visium_segment':
                 sample_name=args.sample_id,
                 zarr_name=args.output_zarr_path)
 elif type=='visium_HD':
+      log_step(logger, 2, 3, "reading Visium HD files")
       is_filtered = True if count_file == "filtered_feature_bc_matrix.h5" else False
       create_zarr_bin(path_to_inputs=real_dir,
                 sample_id=args.sample_id,
@@ -586,22 +588,25 @@ elif type=='visium_HD':
                 filtered_counts_file=is_filtered,
                 bin_size=args.bin_size)
 elif type=="visium":
+      log_step(logger, 2, 3, "reading Visium files")
       creat_zarr_visium(
                 path_to_inputs=real_dir,
                 sample_id=args.sample_id,
                 zarr_name=args.output_zarr_path,
                 h5_name=count_file)
-elif type=="slide_seq":
-      coor_file=os.path.join(f'data/{args.sample_id}',args.coor_file)
-      count_file=os.path.join(f'data/{args.sample_id}',args.count_file)
-      creat_zarr_slide_seq(zarr_name=args.output_zarr_path,count_file=count_file,coor_file=coor_file)
 elif type=="xenium":
+      log_step(logger, 2, 3, "reading Xenium files")
       create_zarr_xenium(path_to_inputs=real_dir,zarr_name=args.output_zarr_path,cells_boundaries=args.cells_boundaries,nucleus_boundaries=args.nucleus_boundaries,nucleus_labels=args.nucleus_labels,morphology_mip=args.morphology_mip)
 elif type in ["Merfish", "merscope", "MERFISH"]:
+      log_step(logger, 2, 3, "reading MERSCOPE/MERFISH files")
       create_zarr_merscope(path_to_inputs=real_dir, zarr_name=args.output_zarr_path)
 
 elif type in ["stereoseq", "StereoSeq", "Stereo-seq"]:
+      log_step(logger, 2, 3, "reading Stereo-seq files")
       create_zarr_stereoseq(path_to_inputs=real_dir, zarr_name=args.output_zarr_path, bin_size=args.bin_size)
+
+log_step(logger, 3, 3, f"integrated data saved to {args.output_zarr_path}")
+logger.info("Integrate module completed")
 
 
 

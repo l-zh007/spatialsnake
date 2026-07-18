@@ -5,8 +5,6 @@ def annotation_help_output(run_type,file_name):
     elif run_type in ["visium", "xenium", "visium_segment", "Merfish", "merscope", "cosmx", "stereoseq", "StereoSeq", "Stereo-seq"]:
       print("correct")
       return(os.path.join(results_folder, "{sample}",'clustering', file_name))
-    elif run_type=="slide_seq":
-      return(os.path.join(results_folder, "{sample}", 'clustering',file_name))
   if channel=="compare_analysis":
     return(os.path.join(results_folder,"merge_data",'clustering',file_name))
 
@@ -34,10 +32,11 @@ def get_stereoseq_input_spec_param(wildcards):
 
 rule annotation_help:
   input:
-    inputs=nomal_file(run_type,"clustering")
+    inputs=normal_file(run_type,"clustering")
   output:
     merge=annotation_help_output(run_type,'marker_genes_pval.csv')
     # os.path.join(results_folder,"{sample}",'clustering','marker_genes_pval.csv') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'clustering','marker_genes_pval.csv') 
+  threads: workflow_threads
   params:
     sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" else wildcards.sample,
     run_type = run_type,
@@ -64,6 +63,7 @@ rule annotation_help:
         --markers_algorithm {params.markers_algorithm} \
         --sample_cnt {params.sample_cnt} \
         --shape_type {params.shape_type} \
+        --threads {threads} \
         {params.input_spec} \
         {params.coord}
       """
@@ -77,8 +77,9 @@ rule enrich_rule:
     bp_png = enrich_output_map(run_type)['bp_png'],
     cc_png = enrich_output_map(run_type)['cc_png'],
     mf_png = enrich_output_map(run_type)['mf_png']
+  threads: workflow_threads
   params:
-    spacies = spacies,
+    species = species,
     run_type = run_type,
     sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" else wildcards.sample,
   shell:
@@ -88,12 +89,10 @@ rule enrich_rule:
         --sample_id {params.sample_id} \
         --output_path {output.kegg_csv} \
         --type {params.run_type} \
-        --spacies {spacies}
+        --species {params.species}
       """
 
     
-
-
 
 
 

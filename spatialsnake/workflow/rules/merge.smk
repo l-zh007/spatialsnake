@@ -1,6 +1,4 @@
 def get_output(type):
-    if run_type == "slide_seq":
-        return(os.path.join(results_folder, "merge_data", "integrate", "concatenated_sdata.h5ad"))
     return(os.path.join(results_folder, "merge_data", "integrate", "concatenated_sdata.zarr"))
 
 def get_merge_stereoseq_input_specs():
@@ -22,7 +20,8 @@ rule merge_in:
   input:
     outputs=parameter_output(samples,'integrate')
   output:
-    merge=get_output(type) if run_type == "slide_seq" else directory(get_output(type))
+    merge=directory(get_output(type))
+  threads: workflow_threads
   params:
     main_file = main_file,
     run_type = run_type,

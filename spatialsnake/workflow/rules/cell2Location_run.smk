@@ -1,9 +1,11 @@
 rule cell2Location_rule:
   input:
-    input_spatial=input_spatial,
-    input_singlecell = input_singlecell
+    input_spatial=cell2location_input_spatial if channel=="compare_analysis" else lambda wildcards: cell2location_spatial_by_sample[wildcards.sample],
+    input_singlecell=cell2location_input_singlecell if channel=="compare_analysis" else lambda wildcards: cell2location_reference_by_sample[wildcards.sample]
   output:
-    output_dir_zarr=temp(directory(os.path.join(results_folder, "merge_data", "cell2Location", "concatenated_sdata.zarr"))) if channel=="compare_analysis" else temp(directory(os.path.join(results_folder,"{sample}",'cell2Location','{sample}.zarr')))
+    raw_zarr=temp(directory(os.path.join(results_folder, "merge_data", "cell2Location", "concatenated_sdata_raw.zarr"))) if channel=="compare_analysis" else temp(directory(os.path.join(results_folder,"{sample}",'cell2Location','{sample}_raw.zarr'))),
+    figure_dir=directory(os.path.join(results_folder, "merge_data", "cell2Location", "figure")) if channel=="compare_analysis" else directory(os.path.join(results_folder,"{sample}",'cell2Location','figure'))
+  threads: workflow_threads
   params:
     sample_id = "concatenated_sdata" if channel=="compare_analysis" else "{sample}",
     run_type = run_type,
@@ -22,10 +24,11 @@ rule cell2Location_rule:
     device = device
   shell:
       """
+      OPENBLAS_NUM_THREADS={threads} OMP_NUM_THREADS={threads} MKL_NUM_THREADS={threads} NUMEXPR_NUM_THREADS={threads} \
       python {spatialsnake_path}workflow/scripts/cell2Location.py \
         --input_spatial {input.input_spatial} \
         --sample_id {params.sample_id} \
-        --output_dir_zarr {output.output_dir_zarr} \
+        --output_dir_zarr {output.raw_zarr} \
         --input_singlecell {input.input_singlecell} \
         --type {params.run_type} \
         --max_epochs_reference {params.max_epochs_reference} \
@@ -45,9 +48,13 @@ rule cell2Location_rule:
 
 rule cell2Location_visualize_rule:
   input:
-    inputs=os.path.join(results_folder, "merge_data", "cell2Location", "concatenated_sdata.zarr") if channel=="compare_analysis" else os.path.join(results_folder,"{sample}",'cell2Location','{sample}.zarr')
+    raw_zarr=rules.cell2Location_rule.output.raw_zarr,
+    figure_dir=rules.cell2Location_rule.output.figure_dir
   output:
-    merge = directory(os.path.join(results_folder, "merge_data", "cell2Location", "concatenated_sdata.zarr")) if channel=="compare_analysis" else directory(os.path.join(results_folder,"{sample}",'cell2Location','{sample}.zarr'))
+    zarr=directory(os.path.join(results_folder, "merge_data", "cell2Location", "concatenated_sdata.zarr")) if channel=="compare_analysis" else directory(os.path.join(results_folder,"{sample}",'cell2Location','{sample}.zarr')),
+    coloc_dir=directory(os.path.join(results_folder, "merge_data", "cell2Location", "CoLocatedComb")) if channel=="compare_analysis" else directory(os.path.join(results_folder,"{sample}",'cell2Location','CoLocatedComb')),
+    microenvironment=os.path.join(results_folder, "merge_data", "cell2Location", "cellphonedb_microenvironments.tsv") if channel=="compare_analysis" else os.path.join(results_folder,"{sample}",'cell2Location','cellphonedb_microenvironments.tsv')
+  threads: workflow_threads
   params:
     sample_id = "concatenated_sdata" if channel=="compare_analysis" else "{sample}",
     run_type = run_type,
@@ -55,17 +62,27 @@ rule cell2Location_visualize_rule:
     image_slice = config.get("image_slice", False),
     sample_cnt = len(samples) if channel=="compare_analysis" else 1,
     shape_type=shape_type,
-    celltype_col = config.get("celltype_col", "celltype")
+    celltype_col = config.get("celltype_col", "celltype"),
+    batch_key_st = config.get("batch_key_st", "sample"),
+    microenvironment_threshold = config.get("cell2location_microenvironment_threshold", 0.10),
+    dotplot_max_cell_types = config.get("cell2location_dotplot_max_cell_types", 30),
+    dotplot_enrichment_clip = config.get("cell2location_dotplot_enrichment_clip", 2.5)
   shell:
       """
+      OPENBLAS_NUM_THREADS={threads} OMP_NUM_THREADS={threads} MKL_NUM_THREADS={threads} NUMEXPR_NUM_THREADS={threads} \
       python {spatialsnake_path}workflow/scripts/cell2locate_visualize.py \
-        --input_dir {input.inputs} \
+        --input_dir {input.raw_zarr} \
         --sample_id {params.sample_id} \
-        --output_zarr_path {output.merge} \
+        --output_zarr_path {output.zarr} \
         --type {params.run_type} \
         --image_type {params.image_type} \
         --image_slice {params.image_slice} \
         --sample_cnt {params.sample_cnt} \
         --shape_type {params.shape_type} \
-        --celltype_col {params.celltype_col}
+        --celltype_col "{params.celltype_col}" \
+        --batch_key_st "{params.batch_key_st}" \
+        --microenvironment_output {output.microenvironment} \
+        --microenvironment_threshold {params.microenvironment_threshold} \
+        --dotplot_max_cell_types {params.dotplot_max_cell_types} \
+        --dotplot_enrichment_clip {params.dotplot_enrichment_clip}
       """

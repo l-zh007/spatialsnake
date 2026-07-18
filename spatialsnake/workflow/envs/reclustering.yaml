@@ -1,12 +1,27 @@
-option: "reclustering"
-results_folder: "results"
-sample_list: "sample.txt"
-channel: "single_analysis"
-run_type: "visium"
-recluster_resolution: 0.8
-recluster_n_top_genes: 2000
-recluster_neighbors: 15
-recluster_n_pcs: 30
-recluster_marker_method: "wilcoxon"
-recluster_min_pct: 0.1
-recluster_logfc_threshold: 0.25
+# Spatialsnake reclustering configuration.
+# Edit values only when you need to override the recommended defaults.
+
+# -----------------------------------------------------------------------------
+# Common workflow settings
+# -----------------------------------------------------------------------------
+option: "reclustering"  # Workflow step selected by this template. Recommended: reclustering.
+results_folder: "results"  # Root directory for all workflow outputs. Recommended: results.
+sample_list: "sample.txt"  # Sample table path with sample IDs and input paths. Recommended: sample.txt or an explicit sample table.
+channel: "single_analysis"  # Analysis mode for reclustering. Recommended: single_analysis for focused subsets.
+run_type: "visium"  # Spatial technology type used to select readers and rules. Recommended: visium unless your platform differs.
+threads: 8  # Threads allocated to reclustering. Override with --threads when needed.
+
+# -----------------------------------------------------------------------------
+# Reclustering parameters
+# -----------------------------------------------------------------------------
+recluster_resolution: 0.8  # Leiden resolution for the selected subset. Recommended: 0.8 to refine heterogeneous clusters.
+recluster_n_top_genes: 2000  # Number of highly variable genes used during reclustering. Recommended: 2000 for focused subsets.
+recluster_neighbors: 15  # Number of neighbors used for subset graph construction. Recommended: 15 for stable local structure.
+recluster_n_pcs: 30  # Number of PCA components used during reclustering. Recommended: 30 for medium-sized subsets.
+
+# -----------------------------------------------------------------------------
+# Reclustering marker settings
+# -----------------------------------------------------------------------------
+recluster_marker_method: "wilcoxon"  # Statistical test used for marker detection. Recommended: wilcoxon for robust non-parametric ranking.
+recluster_min_pct: 0.1  # Minimum fraction of cells or spots expressing a marker gene. Recommended: 0.1 to remove rare noise.
+recluster_logfc_threshold: 0.25  # Minimum log fold-change threshold for marker reporting. Recommended: 0.25 for exploratory markers.

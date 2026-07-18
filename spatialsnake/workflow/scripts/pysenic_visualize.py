@@ -32,7 +32,9 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 from scipy.sparse import issparse
 from spatialsnake.workflow.function.plot import plot_auc_heatmap_scanpy
+from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
 import argparse
+logger = setup_logger("pyscenic_visualize")
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
 parser.add_argument('--input_dir', type=str, required=True, 
                    help='Path to the raw data directory')
@@ -48,11 +50,18 @@ parser.add_argument('--types', type=str, required=True,
                    help='Path for the output zarr file')
 parser.add_argument('--regulons', type=str, required=True, 
                    help='Path to the raw data directory')
+parser.add_argument('--top_regulons', type=int, default=20,
+                   help='Number of regulons shown in dotplot and violin plots. Use <=0 to show all regulons.')
+parser.add_argument('--min_regulon_genes', type=int, default=10,
+                   help='Minimum number of target genes required for a regulon to be used in AUCell.')
 args = parser.parse_args()
 output_dir = os.path.dirname(args.outputs)
 os.makedirs(output_dir,exist_ok=True)
+top_regulons = max(0, int(args.top_regulons))
+min_regulon_genes = max(1, int(args.min_regulon_genes))
 
-if args.types=="slide_seq" or os.path.splitext(args.input_dir)[1].lower()==".h5ad":
+log_step(logger, 1, 5, "loading expression data and regulons")
+if os.path.splitext(args.input_dir)[1].lower()==".h5ad":
   adata = sc.read_h5ad(args.input_dir)
 else:
   concatenated_sdata = spd.read_zarr(args.input_dir)
@@ -60,34 +69,39 @@ else:
     table=table
     adata = concatenated_sdata[table]
 
-#adata = sc.read_loom(os.path.join(output_dir,"breast_cancer2.loom"))
-#print(adata.obs_names)
-#import pandas as pd
-#df = pd.read_csv("../spatial_project/FU.csv", index_col=0)
-#adata.obs_names = df.index.astype(str)
-#adata.var_names = df.columns.astype(str)
-#adata.X = df.values
-#print(adata.obs_names)
-#df = pd.read_csv("../spatial_project/celltype_FU.csv")
-#print(df)
-#df = df.set_index("cell_id")
-#adata.obs["celltype"] = df.loc[adata.obs_names, "celltype"].values
-#print(adata)
-
-
-
 if load_regulons is not None:
   regulons = load_regulons(args.regulons)
 else:
   motifs = load_motifs(args.regulons)
   if isinstance(motifs.columns, pd.MultiIndex):
     motifs.columns = motifs.columns.droplevel(0)
-  regulons = list(filter(lambda r: len(r) >= 10, df2regulons(motifs[(motifs['NES'] >= 3.0)])))
+  regulons = list(filter(lambda r: len(r) >= min_regulon_genes, df2regulons(motifs[(motifs['NES'] >= 3.0)])))
   regulons = list(map(lambda r: r.rename(r.transcription_factor), regulons))
+regulons = [reg for reg in regulons if len(reg) >= min_regulon_genes]
+logger.info(f"Loaded {len(regulons)} regulon(s) with at least {min_regulon_genes} target genes")
+if len(regulons) == 0:
+  raise ValueError(
+      f"No regulons passed the minimum target-gene threshold ({min_regulon_genes}). "
+      "Lower pyscenic_min_regulon_genes or check the ctx regulon output."
+  )
 
+log_step(logger, 2, 5, "calculating AUCell matrix")
 exp_matrix = adata.X
 if issparse(exp_matrix):
+  nnz = exp_matrix.nnz
+  dense_bytes = adata.n_obs * adata.n_vars * np.dtype(np.float32).itemsize
+  logger.info(
+      f"Sparse expression matrix detected with shape={exp_matrix.shape}, nnz={nnz}, "
+      f"estimated dense float32 memory={dense_bytes / 1024**3:.2f} GB"
+  )
+  if dense_bytes > 8 * 1024**3:
+    raise MemoryError(
+        "pySCENIC visualization requires dense AUCell ranking input and the current matrix is estimated to exceed 8 GB "
+        "when densified. Please reduce object size before visualization."
+    )
   exp_matrix = exp_matrix.toarray()
+else:
+  logger.info(f"Dense expression matrix detected with shape={exp_matrix.shape}")
 gene_names = adata.var_names
 cell_names = adata.obs_names
 exp_df = pd.DataFrame(exp_matrix,index=cell_names,columns=gene_names)
@@ -102,24 +116,34 @@ aucell_adata.var_names = auc_mtx.columns
 aucell_adata.write(os.path.join(output_dir,f"{args.sample_id}_aucell.h5ad"))
 
 regulon_cols = [c for c in adata.obs.columns if c.startswith("Regulon(")]
+plot_regulon_cols = regulon_cols
+if len(regulon_cols) > 0 and top_regulons > 0 and len(regulon_cols) > top_regulons:
+  regulon_activity_var = adata.obs[regulon_cols].var().sort_values(ascending=False)
+  plot_regulon_cols = regulon_activity_var.head(top_regulons).index.tolist()
+logger.info(
+    f"Using {len(plot_regulon_cols)} regulon(s) for dotplot/violin visualization "
+    f"(pyscenic_top_regulons={top_regulons if top_regulons > 0 else 'all'})"
+)
 celltype_col = args.celltype if args.celltype in adata.obs else None
 if celltype_col is None:
   cat_cols = [c for c in adata.obs.columns if str(adata.obs[c].dtype) == "category"]
   celltype_col = cat_cols[0] if len(cat_cols) > 0 else args.celltype
 
 if len(regulon_cols) > 0:
-  sc.pl.dotplot(adata, regulon_cols, groupby=celltype_col, standard_scale='var', dot_min=0.02, show=False)
+  log_step(logger, 3, 5, "saving regulon activity plots")
+  sc.pl.dotplot(adata, plot_regulon_cols, groupby=celltype_col, standard_scale='var', dot_min=0.02, show=False)
   plt.savefig(os.path.join(output_dir,f"{args.sample_id}_dotplot_regulons.png"), dpi=300, bbox_inches='tight', facecolor='white')
   plt.close()
 
 if len(regulon_cols) > 0:
-  n_show = min(12, len(regulon_cols))
-  sc.pl.violin(adata, keys=regulon_cols[:n_show], groupby=celltype_col, multi_panel=True, show=False)
+  violin_targets = plot_regulon_cols if top_regulons > 0 else regulon_cols
+  sc.pl.violin(adata, keys=violin_targets, groupby=celltype_col, multi_panel=True, show=False)
   plt.savefig(os.path.join(output_dir,f"{args.sample_id}_violin_regulons.png"), dpi=300, bbox_inches='tight', facecolor='white')
   plt.close()
 
 plot_auc_heatmap_scanpy(auc_mtx, adata, groupby=celltype_col, top_genes=30, outputs=os.path.join(output_dir, f"{args.sample_id}_auc_heatmap.png"))
 
+log_step(logger, 4, 5, "saving AUCell and regulon result tables")
 auc_mtx.to_csv(os.path.join(output_dir,f'{args.sample_id}.auc.csv'))
 
 # Save Regulon-Gene relationships for reproducibility
@@ -161,7 +185,7 @@ if celltype_col in adata.obs:
     for i, ct in enumerate(celltypes):
       # Skip if data is invalid (e.g. all NaNs)
       if rss.loc[ct].isna().all():
-        print(f"Warning: RSS data for {ct} contains only NaNs. Skipping plot.")
+        logger.warning(f"RSS data for {ct} contains only NaNs; skip plot")
         continue
         
       # Fill NaNs with 0 to prevent plotting errors
@@ -211,11 +235,16 @@ if len(regulon_cols) > 0:
     plt.close()
   violin_targets = []
   if "df_z" in locals():
-    violin_targets = df_z.abs().mean().sort_values(ascending=False).head(20).index.tolist()
+    if top_regulons > 0:
+      violin_targets = df_z.abs().mean().sort_values(ascending=False).head(top_regulons).index.tolist()
+    else:
+      violin_targets = df_z.abs().mean().sort_values(ascending=False).index.tolist()
   else:
-    violin_targets = regulon_cols[:20]
+    violin_targets = plot_regulon_cols if top_regulons > 0 else regulon_cols
   if len(violin_targets) > 0:
     fig = sc.pl.stacked_violin(adata, violin_targets, groupby=celltype_col, return_fig=True, show=False)
     fig.savefig(os.path.join(output_dir, f"{args.sample_id}_stacked_violin.png"), dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
+log_step(logger, 5, 5, f"writing pySCENIC loom output to {args.outputs}")
 adata.write_loom(args.outputs)
+logger.info("pySCENIC visualization module completed")

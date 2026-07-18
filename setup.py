@@ -36,7 +36,7 @@ setup(
         'console_scripts': ['spatialsnake=spatialsnake.command_line:main'],
     },
     author="lzh",
-    author_email="1714074171@qq.com",
+    author_email="l-zh007@users.noreply.github.com",
     description="spatialsnake",
     keywords="spatial transcription RNA analysis",
     cmdclass={'clean': CleanCommand},

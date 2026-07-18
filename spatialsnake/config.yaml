@@ -11,7 +11,7 @@ filter_list: False
 
 image_slice: False
 markers_algorithm: 'wilcoxon'
-min_genes: 10
+min_counts: 200
 min_cells: 3
 cell_focus: "CAF"
 cells_boundaries: False
@@ -20,9 +20,9 @@ nucleus_labels: False
 morphology_mip: False
 
 
-anno_algorithm: "mannul"
+anno_algorithm: "manual"
 
-tsene: False
+tsne: False
 MIN_DIST: 0.3
 SPREAD: 1
 variable: False
@@ -35,6 +35,9 @@ max_epochs_reference: 100
 remove_mt: True
 N_cells_per_location: 30
 max_epochs_st: 100
+cell2location_microenvironment_threshold: 0.10
+cell2location_dotplot_max_cell_types: 30
+cell2location_dotplot_enrichment_clip: 2.5
 # labels_key: 'cell_type'
 
 runpipe: "pysenic"
@@ -46,10 +49,9 @@ tfs_input: "data/hs_hgnc_tfs.txt"
 feather_input: "data/hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather"
 motifs_input: "data/motifs-v9-nr.hgnc-m0.001-o0.0.tbl"
 cell_attr: "spot_id"
-workers: 8
 
 
-compare_algorithm: 'DEseq2'
+compare_algorithm: 'DESeq2'
 n_clusters: 10
 
 
@@ -57,13 +59,9 @@ n_clusters: 10
 
 counts_data:
 threshold:
-threads:
+threads: 8
 pvalue:
 output_name:
-
-
-
-
 
 
 

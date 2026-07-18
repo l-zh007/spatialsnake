@@ -1,82 +1,127 @@
-# total params
-option: "advance_analysis"          # the analysis step for pipeline
-results_folder: "results"           # the results data folder name
-data_fold: "data"                   # the raw mat data folder name
-sample_list: "sample.txt"           # the sample detail information file
-run_type: "visium_HD"               # the spatial transcription data type
-channel: "single_analysis"          # the channel of analysis style [single_analysis] or [compare_analysis]
-runpipe: "cellPhoneDB"
+# Spatialsnake advanced-analysis configuration.
+# Edit values only when you need to override the recommended defaults.
 
-# pysenic
-senic_input: ""
-sample_type: "Colon_Cancer_P2"
-tfs_input: "data/hs_hgnc_tfs.txt"
-feather_input: "data/hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather"
-motifs_input: "data/motifs-v9-nr.hgnc-m0.001-o0.0.tbl"
-senic_workers: 128
-gene_attr: "var_names"
-cell_attr: "cell_id"
-#tfs_input: "data/allTFs_mm.txt"
-#feather_input: "data/mm10_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather"
-#motifs_input: "data/motifs-v10nr_clust-nr.mgi-m0.001-o0.0.tbl"
+# -----------------------------------------------------------------------------
+# Common workflow settings
+# -----------------------------------------------------------------------------
+option: "advance_analysis"  # Workflow step selected by this template. Recommended: advance_analysis.
+results_folder: "results"  # Root directory for all workflow outputs. Recommended: results.
+data_fold: "data"  # Root directory used by rules that resolve raw data paths. Recommended: data.
+sample_list: "sample.txt"  # Sample table path with sample IDs and downstream input paths. Recommended: sample.txt.
+run_type: "visium_HD"  # Spatial technology type used to select readers and rules. Recommended: match the input platform.
+channel: "single_analysis"  # Analysis mode for advanced modules. Recommended: single_analysis unless comparing integrated data.
+runpipe: "cellPhoneDB"  # Advanced module to run. Recommended: cellPhoneDB, pysenic, liana, cellcharter, banksy, or cellchat.
+threads: 8  # Canonical thread allocation for every advanced-analysis rule. Override with --threads when needed.
 
-#cellphoneDB
-cellPhoneDB_input: ""
-counts_data: "hgnc_symbol"
-threshold: 0.1
-threads: 16
-pvalue: 0.05
-cut_off_pvalue: 0.05
-cut_off_logFC: 1.5
-output_name: "Colon_Cancer_P2"
-iterations: 500
-microenvs_file_path: ""
-active_tf_path: ""
-degs_file_path: ""
-niche_col: "None"
-is_singlecell: False
-cpdb_method: "statistical"
-cpdb_de_method: "wilcoxon"
-celltype_col: "celltype"
-cell_type1: "Tumor_II"
-cell_type2: "Tumor_I"
-gene_family: ""
+# -----------------------------------------------------------------------------
+# pySCENIC options
+# -----------------------------------------------------------------------------
+senic_input: ""  # Optional explicit input path for pySCENIC. Recommended: leave empty to use sample.txt input when available.
+sample_type: "Colon_Cancer_P2"  # Display/sample name used by downstream advanced outputs. Recommended: use a meaningful sample label.
+tfs_input: "data/hs_hgnc_tfs.txt"  # Transcription factor list for pySCENIC GRN inference. Recommended: species-matched TF list.
+feather_input: "data/hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather"  # Motif ranking feather database. Recommended: genome- and species-matched database.
+motifs_input: "data/motifs-v9-nr.hgnc-m0.001-o0.0.tbl"  # Motif annotation table for regulon pruning. Recommended: species-matched motif annotation.
+gene_attr: "var_names"  # Gene attribute name used in loom files. Recommended: var_names for AnnData-derived loom input.
+cell_attr: "cell_id"  # Cell attribute name used in loom files. Recommended: cell_id for stable cell identifiers.
+pyscenic_top_regulons: 20  # Number of regulons shown in pySCENIC dotplot/violin plots. Use 0 to show all.
+pyscenic_min_regulon_genes: 10  # Minimum regulon target genes retained for AUCell. Recommended: 10 for robust regulons.
+# tfs_input: "data/allTFs_mm.txt"  # Mouse TF list example. Recommended: enable only for mouse data.
+# feather_input: "data/mm10_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather"  # Mouse motif ranking example.
+# motifs_input: "data/motifs-v10nr_clust-nr.mgi-m0.001-o0.0.tbl"  # Mouse motif annotation example.
 
+# -----------------------------------------------------------------------------
+# CellPhoneDB options
+# -----------------------------------------------------------------------------
+cellPhoneDB_input: ""  # Optional explicit h5ad/zarr input for CellPhoneDB. Recommended: leave empty to use sample.txt input.
+species: "human"  # CellPhoneDB input species: human or mouse. Mouse genes are projected to one-to-one human orthologs.
+counts_data: "hgnc_symbol"  # Gene identifier type passed to CellPhoneDB. Recommended: hgnc_symbol for human gene symbols.
+threshold: 0.1  # Minimum expressing-cell proportion for CellPhoneDB filtering. Recommended: 0.1 for robust ligand-receptor calls.
+pvalue: 0.05  # P-value cutoff for CellPhoneDB significant interactions. Recommended: 0.05.
+output_name: ""  # Optional CellPhoneDB result suffix. Empty uses the sample ID.
+iterations: 1000  # Number of permutations used by statistical mode. Recommended: 1000 for stable inference.
+microenvs_file_path: ""  # Optional CellPhoneDB microenvironment file path. Recommended: set only when restricting cell neighborhoods.
+active_tf_path: ""  # Optional active transcription factor file path for CellPhoneDB DEG workflows. Recommended: leave empty unless available.
+degs_file_path: ""  # Optional differential-expression file path for CellPhoneDB DEG workflows. Recommended: leave empty unless using DEG mode.
+niche_col: "spatial_cluster"  # Default spatial niche column. If absent, CellPhoneDB runs without spatial restriction.
+is_single_cell: False  # Flag indicating single-cell rather than spatial input for CellPhoneDB. Recommended: False for spatial data.
+cpdb_method: "statistical"  # CellPhoneDB analysis method. Recommended: statistical for permutation-based interaction testing.
+celltype_col: "celltype"  # Shared observation column containing cell type labels for CellPhoneDB, CellChat, LIANA, and CellCharter.
+cell_pairs: "Tumor_I<->Tumor_II"  # Optional multiple directed/bidirectional pairs for plotting, e.g. Tumor|T_cell,Tumor<->Myeloid.
+cell_type1: "Tumor_II"  # Optional sender cell type. Empty selects the strongest directed cell pair automatically.
+cell_type2: "Tumor_I"  # Optional receiver cell type. Empty selects the strongest directed cell pair automatically.
+gene_family: ""  # Optional gene family filter for CellPhoneDB plotting. Recommended: leave empty unless focusing on a ligand family.
+cpdb_pathway: ""  # Optional CellPhoneDB interaction classification/pathway used for the focused plot.
+interaction_pairs: ""  # Optional comma-separated ligand-receptor pairs used by dot and chord plots.
+cpdb_genes: ""  # Optional comma-separated genes used by the expression summary plot.
 
-#liana 
-liana_method: "cellphonedb"
-liana_resource_name: "consensus"
-liana_expr_prop: 0.1
-liana_min_cells: 5
-liana_use_raw: true
+# -----------------------------------------------------------------------------
+# LIANA options
+# -----------------------------------------------------------------------------
+liana_method: "cellphonedb"  # LIANA scoring method used for ligand-receptor inference. Recommended: cellphonedb for familiar CPDB-style scores.
+liana_resource_name: "consensus"  # Ligand-receptor resource used by LIANA. Recommended: consensus for broad coverage.
+liana_expr_prop: 0.1  # Minimum expression proportion used by LIANA filtering. Recommended: 0.1 to remove sparse signals.
+liana_min_cells: 5  # Minimum cells per group required by LIANA. Recommended: 5 as a permissive lower bound.
+liana_use_raw: true  # Use raw expression values when available. Recommended: true for ligand-receptor inference.
+liana_top_n: 6  # Number of top LIANA interactions highlighted in plots. Recommended: 6 for compact summaries.
+liana_pvalue: 0.05  # P-value cutoff used when plotting p-value-based LIANA methods. Recommended: 0.05.
+liana_source_celltypes: ""  # Optional comma-separated sender cell types for focused LIANA plots. Empty selects automatically.
+liana_target_celltypes: ""  # Optional comma-separated receiver cell types for focused LIANA plots. Empty selects automatically.
+liana_cell_pairs: ""  # Optional directed/bidirectional cell pairs, e.g. Tumor_I|Tumor_II,Tumor_III<->Tumor_I.
+liana_pairs: ""  # Optional comma-separated ligand|receptor pairs, e.g. TGFB1|TGFBR2,CXCL12|CXCR4.
 
+# -----------------------------------------------------------------------------
+# CellChat options
+# -----------------------------------------------------------------------------
+cellchat_assay: "Spatial"  # Assay name used when creating CellChat objects. Recommended: Spatial for spatial transcriptomics.
+cellchat_species: "human"  # Species-specific CellChat database. Recommended: human or mouse according to the sample source.
+cellchat_min_cells: 10  # Minimum cells/spots per group required by CellChat. Recommended: 10 to avoid unstable groups.
+cellchat_future_max_size_gb: 64  # Maximum future global size in GB for CellChat parallel computation. Increase for large Visium HD objects; set 0 for unlimited.
+cellchat_is_single_cell: FALSE  # Flag indicating single-cell rather than spatial CellChat mode. Recommended: FALSE for spatial data.
+cellchat_trim: 0.1  # Trim fraction for CellChat truncated mean expression. Recommended: 0.1.
+cellchat_interaction_length: 250  # Spatial interaction distance threshold for CellChat spatial mode. Recommended: tune to platform scale.
+cellchat_spot_size: 65  # Spot or capture-unit size used by CellChat spatial scaling. Recommended: 65 for standard Visium spots.
+cellchat_db_subset: "all_interactions"  # CellChat database subset used for inference. Recommended: all_interactions for broad screening.
+cellchat_focus_cells: ""  # Recommended simple focus: comma-separated cell groups visualized in all directions. Empty enables automatic selection.
+cellchat_cell_pairs: ""  # Optional exact directed/bidirectional cell pairs, e.g. Tumor_I|Macrophage,T_cell<->Tumor_II.
+cellchat_source_cells: ""  # Optional comma-separated sender groups; used only when cellchat_cell_pairs and cellchat_focus_cells are empty.
+cellchat_target_cells: ""  # Optional comma-separated receiver groups; used only when cellchat_cell_pairs and cellchat_focus_cells are empty.
+cellchat_pathways: ""  # Optional comma-separated pathways. Empty selects the strongest pathways within the selected cell scope.
+cellchat_lr_pairs: ""  # Optional comma-separated ligand|receptor pairs. Empty selects the strongest LR interactions within the selected scope.
+cellchat_top_cell_pairs: 3  # Number of strongest directed cell pairs selected automatically when no cell focus is provided.
+cellchat_top_pathways: 3  # Number of strongest pathways selected automatically within the selected cell scope.
+cellchat_bubble_top_lr: 20  # Maximum number of unique LR interactions shown in focused bubble plots; 0 shows all selected LR interactions.
+cellchat_plot_advanced: TRUE  # Generate official pathway aggregate, LR contribution, gene-expression, and signaling-role plots.
+cellchat_pair_lr_use: ""  # Legacy optional LR pair for the spatial LR plot. Prefer cellchat_lr_pairs for new analyses.
 
-# cellchat
-celltype_col: "celltype"
-assay: "Spatial"
-species: "human"
-min_cells: 10
-workers: 32
-is_single_cell: FALSE
-trim: 0.1
-interaction_length: 250
+# -----------------------------------------------------------------------------
+# CellCharter options
+# -----------------------------------------------------------------------------
+image_type: "hires"  # SpatialData image element used for CellCharter visualization. Recommended: hires for Visium-style data.
+shape_type: "cell_boundaries"  # SpatialData shape element used for CellCharter visualization. Recommended: cell_boundaries for segmented data.
+significance: 0.05  # Significance threshold used by CellCharter-related summaries. Recommended: 0.05.
+max_cluster: 10  # Maximum number of spatial domains explored by CellCharter. Recommended: tune around expected tissue regions.
+condition_col: "condition"  # Observation column containing condition labels. Recommended: condition when available.
+sample_col: "region"  # Observation column containing sample/replicate labels. Recommended: region in Spatialsnake merged zarr.
+cellcharter_col: "spatial_cluster"  # Output column name for CellCharter spatial domains. Recommended: spatial_cluster.
 
-
-# cellcharter
-image_type: "hires"
-shape_type: "cell_boundaries"
-significance: 0.05
-max_cluster: 10
-condition_col: "condition"
-sample_col: "region"
-celltype_col: "celltype"
-cellcharter_col: "spatial_cluster"
-
-
-# banksy
-k_geom: 15
-max_m: 1
-nbr_weight_decay: "scaled_gaussian"
-lambda_list: [0.8]
-
-
+# -----------------------------------------------------------------------------
+# BANKSY options
+# -----------------------------------------------------------------------------
+k_geom: 15  # Number of spatial neighbors used by BANKSY. Recommended: 15 for local tissue neighborhoods.
+max_m: 1  # Maximum harmonic order used by BANKSY. Recommended: 1 for first-order spatial structure.
+nbr_weight_decay: "scaled_gaussian"  # Neighbor weighting scheme used by BANKSY. Recommended: scaled_gaussian.
+lambda_list: [0.8]  # Spatial weighting values tested by BANKSY. Recommended: include 0.8 for strong spatial smoothing.
+banksy_n_comps: 20  # PCA dimensions for BANKSY matrices. Recommended: 20 following pyBANKSY defaults.
+banksy_resolution: [0.5]  # Leiden resolution values tested by BANKSY. Recommended: [0.5] for a lightweight first pass.
+banksy_num_nn: 50  # Expression-neighbor count for BANKSY Leiden graph. Recommended: 50 following pyBANKSY defaults.
+banksy_max_features: 2000  # Maximum genes used to build dense BANKSY matrices. Recommended: 2000 for Visium HD-scale data.
+banksy_feature_col: "highly_variable"  # Optional var column used before variance-based feature selection.
+banksy_add_umap: false  # Compute UMAP on BANKSY matrices. Recommended: false for large data.
+banksy_plot_full: false  # Generate pyBANKSY full result figures. Recommended: false for lightweight large-data runs.
+banksy_run_nonspatial: false  # Run non-spatial baseline clustering. Recommended: false unless benchmarking.
+banksy_plot_celltype_enrichment: true  # Plot celltype composition/enrichment when obs['celltype'] exists.
+banksy_plot_max_points: 200000  # Maximum points shown in the lightweight spatial cluster plot.
+banksy_sample_col: "region"  # Sample/slice column used to avoid cross-sample spatial neighbors in merged inputs.
+banksy_selected_lambda: ""  # Optional final lambda to write to spatial_cluster. Empty uses first BANKSY result.
+banksy_selected_resolution: ""  # Optional final resolution to write to spatial_cluster. Empty uses first BANKSY result.
+banksy_seed: 12345  # Random seed for BANKSY Leiden clustering and plotting downsampling.

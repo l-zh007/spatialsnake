@@ -5,8 +5,6 @@ def cluster_input(run_type):
     elif run_type in ["visium", "xenium", "visium_segment", "Merfish", "merscope", "cosmx", "stereoseq", "StereoSeq", "Stereo-seq"]:
       print("correct")
       return(os.path.join(results_folder, "{sample}",'preprocess', "filter_{sample}.zarr"))
-    elif run_type=="slide_seq":
-      return(os.path.join(results_folder, "{sample}", 'preprocess',"filter_{sample}.h5ad"))
   if channel=="compare_analysis":
     return(parameter_output(samples,'preprocess'))
 
@@ -26,11 +24,12 @@ rule cluster_rule:
   input:
     inputs=cluster_input(run_type)
   output:
-    merge=nomal_file(run_type,"clustering") if run_type == "slide_seq" else directory(nomal_file(run_type,"clustering"))
+    merge=directory(normal_file(run_type,"clustering"))
+  threads: workflow_threads
   params:
     sample_id = lambda wildcards: "concatenated_sdata" if channel=="compare_analysis"  else wildcards.sample,
     run_type = run_type,
-    tsene = tsene,
+    tsne = tsne,
     MIN_DIST = MIN_DIST,
     SPREAD = SPREAD,
     RES = RES,
@@ -52,7 +51,7 @@ rule cluster_rule:
               --sample_id {params.sample_id} \
               --output_zarr_path {output.merge} \
               --type {params.run_type} \
-              --tsene {params.tsene} \
+              --tsne {params.tsne} \
               --MIN_DIST {params.MIN_DIST} \
               --SPREAD {params.SPREAD} \
               --RES {params.RES} \
@@ -61,6 +60,7 @@ rule cluster_rule:
               --sketch {params.sketch} \
               --NEIGHBORS {params.NEIGHBORS} \
               --pcs {params.pcs} \
+              --threads {threads} \
               {params.input_spec}
       """
       

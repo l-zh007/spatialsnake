@@ -1,47 +1,65 @@
-# total params
-option: "annotation"          # the analysis step for pipeline
-results_folder: "results"           # the results data folder name
-data_fold: "data"                   # the raw mat data folder name
-sample_list: "sample.txt"           # the sample detail information file
-run_type: "visium"                  # the spatial transcription data type
-channel: "compare_analysis"         # the channel of analysis style [single_analysis] or [compare_analysis]
-annotation_list: "annotation.txt"
+# Spatialsnake annotation configuration.
+# Edit values only when you need to override the recommended defaults.
 
-# cell2Location params
+# -----------------------------------------------------------------------------
+# Common workflow settings
+# -----------------------------------------------------------------------------
+option: "annotation"  # Workflow step selected by this template. Recommended: annotation.
+results_folder: "results"  # Root directory for all workflow outputs. Recommended: results.
+data_fold: "data"  # Root directory used by rules that resolve raw data paths. Recommended: data.
+sample_list: "sample.txt"  # Sample table path with sample IDs and input paths. Recommended: sample.txt or an explicit sample table.
+run_type: "visium"  # Spatial technology type used to select readers and rules. Recommended: visium unless your platform differs.
+channel: "compare_analysis"  # Analysis mode for single-sample or multi-sample workflows. Recommended: compare_analysis for cohorts.
+threads: 8  # Threads allocated to annotation rules. Override with --threads when needed.
+annotation_list: "annotation.txt"  # Manual annotation table used by manual/reannotation workflows. Recommended: annotation.txt.
 
-anno_algorithm: "mannul"
-device: "cuda"
-max_epochs_reference: 250
-remove_mt: True
-N_cells_per_location: 30
-max_epochs_st: 30000
-labels_key_reference: "annotation_1"
-batch_key_reference: "sample"
-batch_key_st: "sample"
-cell_count_cutoff: 15
-cell_percentage_cutoff2: 0.05
-nonz_mean_cutoff: 1.12
-detection_alpha: 20
-save_models: True
-celltype_col: "celltype"
+# -----------------------------------------------------------------------------
+# Annotation method selection
+# -----------------------------------------------------------------------------
+anno_algorithm: "manual"  # Annotation strategy: manual, reannotation, cell2Location, or RCTD. Recommended: manual for curated labels.
+device: "cuda"  # Compute device for model-based annotation. Recommended: cuda when a compatible GPU is available.
 
+# -----------------------------------------------------------------------------
+# cell2Location options
+# -----------------------------------------------------------------------------
+max_epochs_reference: 250  # Maximum training epochs for the reference single-cell model. Recommended: 250 as a stable default.
+remove_mt: True  # Remove mitochondrial genes from model training when supported. Recommended: True for robust cell type mapping.
+N_cells_per_location: 30  # Expected cells per spatial location for cell2Location. Recommended: tune to platform and tissue density.
+max_epochs_st: 20000  # Maximum training epochs for the spatial model. Recommended: 30000 for convergence on complex tissues.
+labels_key_reference: "celltype"  # Cell type label column in the single-cell reference. Recommended: celltype unless your reference uses another name.
+batch_key_reference: "sample"  # Batch/sample column in the single-cell reference. Recommended: sample when multiple references exist.
+batch_key_st: "sample"  # Batch/sample column in the spatial object. Recommended: sample for multi-section analysis.
+cell_count_cutoff: 15  # Gene filter: minimum number of reference cells in which a gene must be detected. Recommended: 15.
+cell_percentage_cutoff2: 0.05  # Minimum reference cell percentage cutoff used by cell2Location filtering. Recommended: 0.05.
+nonz_mean_cutoff: 1.12  # Non-zero mean expression cutoff for reference gene filtering. Recommended: 1.12 per common cell2Location usage.
+detection_alpha: 20  # Detection sensitivity prior for cell2Location. Recommended: 20 unless platform-specific calibration is available.
+save_models: True  # Save fitted cell2Location models for reuse and inspection. Recommended: True for reproducibility.
+celltype_col: "celltype"  # Existing spatial grouping column used for the abundance-correlation dotplot; it is not overwritten by cell2Location.
+cell2location_microenvironment_threshold: 0.10  # Minimum n_fact=12 cell-type fraction written to the CellPhoneDB microenvironment table.
 
-# RCTD params
-threads: 64
-RCTD_mode: "full"
-sc_cell_type_col: "annotation_1"
-spatial_cell_type_col: "celltype"
-group_by: "sample"
-max_cores: 8
-zarr_input: ""
-shape_type: "cell_boundaries"
-image_type: "hires"
-vis_mode: "auto"
-point_size: 2.5
-image_slice: False
-x1: 0
-x2: 0
-y1: 0
-y2: 0
+# -----------------------------------------------------------------------------
+# RCTD options
+# -----------------------------------------------------------------------------
+RCTD_mode: "doublet"  # RCTD inference mode. Recommended: full for comprehensive deconvolution.
+sc_cell_type_col: "celltype"  # Cell type label column in the single-cell reference for RCTD. Recommended: celltype unless your reference uses another name.
+spatial_cell_type_col: "celltype"  # Existing unsupervised spatial-region column used by RCTD regional dotplots.
+group_by: "sample"  # Sample column used to calculate sample-balanced RCTD regional summaries.
+rctd_dotplot_max_cell_types: 30  # Regional PDFs display the top cell types by tissue mean; use 0 to display all.
+rctd_dotplot_enrichment_clip: 2.5  # Symmetric log2-enrichment color limit for RCTD regional dotplots.
 
+# -----------------------------------------------------------------------------
+# Spatial visualization options
+# -----------------------------------------------------------------------------
+shape_type: "cell_boundaries"  # SpatialData shape element used for annotation plots. Recommended: cell_boundaries for segmented data.
+image_type: "hires"  # SpatialData image element used as plot background. Recommended: hires for Visium-style data.
+vis_mode: "auto"  # Visualization mode; auto chooses point or shape rendering when possible. Recommended: auto.
+point_size: 2.5  # Point size for point-based spatial plots. Recommended: 2.5 for Visium-scale figures.
 
+# -----------------------------------------------------------------------------
+# Optional image cropping
+# -----------------------------------------------------------------------------
+image_slice: False  # Crop spatial plots to a coordinate window. Recommended: False unless inspecting a region of interest.
+x1: 0  # Minimum x coordinate for cropping when image_slice is enabled. Recommended: set from tissue coordinates.
+x2: 0  # Maximum x coordinate for cropping when image_slice is enabled. Recommended: set greater than x1.
+y1: 0  # Minimum y coordinate for cropping when image_slice is enabled. Recommended: set from tissue coordinates.
+y2: 0  # Maximum y coordinate for cropping when image_slice is enabled. Recommended: set greater than y1.

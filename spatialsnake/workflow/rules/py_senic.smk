@@ -1,8 +1,16 @@
+def split_pyscenic_rankings():
+    rankings = config.get("feather_input", "")
+    if isinstance(rankings, (list, tuple)):
+        return [str(x).strip() for x in rankings if str(x).strip()]
+    return [x.strip() for x in str(rankings).split(",") if x.strip()]
+
+
 rule convert_to_loom:
     input:
         inputs = input_pysenic
     output:
         loom = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.loom")
+    threads: workflow_threads
     params:
         sample_id = cpdb_sample_id,
         types = run_type
@@ -21,8 +29,8 @@ rule pyscenic_grn:
         tfs = config.get("tfs_input","")
     output:
         grn = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.grn.tsv")
+    threads: workflow_threads
     params:
-        workers = config.get("senic_workers", 8),
         gene_attr = config.get("gene_attr", "var_names"),
         cell_attr = config.get("cell_attr", "cell_id")
     resources:
@@ -30,7 +38,7 @@ rule pyscenic_grn:
     shell:
         """
         python {spatialsnake_path}workflow/scripts/pyscenic_numpy_compat.py arboreto \
-            --num_workers {params.workers} \
+            --num_workers {threads} \
             --output {output.grn} \
             --method grnboost2 \
             --sparse \
@@ -42,13 +50,13 @@ rule pyscenic_grn:
 rule pyscenic_ctx:
     input:
         grn = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.grn.tsv"),
-        rankings = config.get("feather_input",""),
+        rankings = split_pyscenic_rankings(),
         motifs = config.get("motifs_input",""),
         loom = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.loom")
     output:
         regulons = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.regulons.csv")
+    threads: workflow_threads
     params:
-        workers = config.get("senic_workers", 10),
         gene_attr = config.get("gene_attr", "var_names"),
         cell_attr = config.get("cell_attr", "cell_id")
     shell:
@@ -57,7 +65,7 @@ rule pyscenic_ctx:
             --annotations_fname {input.motifs} \
             --expression_mtx_fname {input.loom} \
             --output {output.regulons} \
-            --num_workers {params.workers} \
+            --num_workers {threads} \
             --mask_dropouts \
             --gene_attribute {params.gene_attr} \
             --cell_id_attribute {params.cell_attr}
@@ -68,12 +76,14 @@ rule pyscenic_aucell:
         regulons = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.regulons.csv")
     output:
         aucell = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.aucell.loom")
+    threads: workflow_threads
     params:
         inputs = cellPhoneDB_input if cellPhoneDB_input else config.get("senic_input", ""),
-        num_workers = config.get("senic_workers",8),
         types = run_type,
         celltype = celltype_col,
-        sample_id = cpdb_sample_id
+        sample_id = cpdb_sample_id,
+        top_regulons = config.get("pyscenic_top_regulons", 20),
+        min_regulon_genes = config.get("pyscenic_min_regulon_genes", 10)
     shell:
         """
         python {spatialsnake_path}workflow/scripts/pysenic_visualize.py \
@@ -82,6 +92,8 @@ rule pyscenic_aucell:
             --sample_id {params.sample_id} \
             --celltype {params.celltype} \
             --outputs {output.aucell} \
-            --num_workers {params.num_workers} \
-            --types {params.types}
+            --num_workers {threads} \
+            --types {params.types} \
+            --top_regulons {params.top_regulons} \
+            --min_regulon_genes {params.min_regulon_genes}
         """

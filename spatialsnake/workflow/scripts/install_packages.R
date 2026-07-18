@@ -40,9 +40,19 @@ if (!is_installed("ggsankey")) {
   message("Installing ggsankey from GitHub")
   remotes::install_github("davidsjoberg/ggsankey", upgrade = "never", dependencies = TRUE)
 }
-if (!is_installed("schard")) {
-  message("Installing schard from GitHub")
-  remotes::install_github("cellgeni/schard", upgrade = "never", dependencies = FALSE)
+required_schard <- "1.1.0"
+schard_ref <- "f9c30c25a192175a1e6523e32f0e2047de1e8685"
+if (!is_installed("schard") || packageVersion("schard") != required_schard) {
+  message("Installing tested schard ", required_schard, " from GitHub")
+  remotes::install_github(
+    paste0("cellgeni/schard@", schard_ref),
+    upgrade = "never",
+    dependencies = FALSE,
+    force = TRUE
+  )
+}
+if (packageVersion("schard") != required_schard) {
+  stop("schard ", required_schard, " is required after installation.")
 }
 if (!is_installed("spacexr")) {
   message("Installing spacexr from GitHub")

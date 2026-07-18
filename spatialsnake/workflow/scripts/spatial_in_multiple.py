@@ -1,16 +1,20 @@
 import os
-os.environ["OPENBLAS_NUM_THREADS"] = "64"
-os.environ["OMP_NUM_THREADS"] = "1"
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "4")
+os.environ.setdefault("OMP_NUM_THREADS", "4")
+os.environ.setdefault("MKL_NUM_THREADS", "4")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "4")
 import pandas as pd
 import spatialdata as spd
 import scanpy as sc
 import gc
 from spatialdata.models import TableModel
 import matplotlib.pyplot as plt
-import anndata
 import argparse
 import seaborn as sns
 from spatialsnake.workflow.function.stereoseq_selection import resolve_stereoseq_table_key
+from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
+
+logger = setup_logger("merge_integrate")
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
 parser.add_argument('--input_path', nargs='+', required=True, 
                    help='Path to the raw data directory')
@@ -31,6 +35,7 @@ group=args.group
 sample=args.sample_id
 input_specs=args.input_spec
 
+log_step(logger, 1, 4, f"loading {len(sample)} integrated sample(s)")
 
 def normalize_input_spec_list(input_specs, sample_count):
   if not input_specs:
@@ -45,9 +50,8 @@ def normalize_input_spec_list(input_specs, sample_count):
 
 def QC_plot(type,sdata,zarr_name):
   dir_path=os.path.dirname(zarr_name)
-  if type!="slide_seq":
-    for table in sdata.tables.keys():
-      adata = sdata[table]
+  for table in sdata.tables.keys():
+    adata = sdata[table]
   adata.var["mt"] = adata.var_names.str.startswith(("MT-", "mt-"))
   adata.var["ribo"] = adata.var_names.str.startswith(("RPS", "RPL"))
   adata.var["hb"] = adata.var_names.str.contains("^HB[^(P)]")
@@ -62,8 +66,6 @@ def QC_plot(type,sdata,zarr_name):
     cprobes = (
       adata.obs["control_probe_counts"].sum() / adata.obs["total_counts"].sum() * 100)
     cwords = (adata.obs["control_codeword_counts"].sum() / adata.obs["total_counts"].sum() * 100)
-    # print(f"Negative DNA probe count % : {cprobes}")
-    # print(f"Negative decoding count % : {cwords}")
 
   if type=='xenium':
     image_num=4
@@ -107,9 +109,10 @@ def QC_plot(type,sdata,zarr_name):
     stripplot=False, 
     inner="box",
     show=False)
-  plt.title("Total UMI by Sample")
-  plt.axhline(y=4, color='r', linestyle='-')
-  plt.axhline(y=8, color='r', linestyle='-')
+  plt.title("Total Counts by Sample (log1p)")
+  # Ingestion is descriptive and platform-agnostic. Fixed count thresholds are
+  # therefore not drawn here; filtering thresholds are selected and displayed
+  # during preprocessing.
   plt.savefig(
     os.path.join(dir_path, "total_umi_by_sample.png"),
     dpi=300, 
@@ -125,7 +128,7 @@ def QC_plot(type,sdata,zarr_name):
     stripplot=False, 
     inner="box",
     show=False)
-  plt.title("Total Genes by Sample")
+  plt.title("Detected Genes by Sample (log1p)")
   plt.savefig(
     os.path.join(dir_path, "total_genes_by_sample.png"),
     dpi=300,
@@ -139,7 +142,7 @@ def QC_plot(type,sdata,zarr_name):
     stripplot=False, 
     inner="box",
     show=False)
-  plt.title("Mitochondrial Genes by Sample")
+  plt.title("Mitochondrial Counts by Sample (log1p)")
   plt.savefig(
     os.path.join(dir_path, "genes_by_sample.png"),
     dpi=300,
@@ -147,18 +150,23 @@ def QC_plot(type,sdata,zarr_name):
   plt.close()
   
   
-  sc.pl.scatter(adata, "log1p_total_counts_mt", "log1p_n_genes_by_counts", color="pct_counts_mt")
+  sc.pl.scatter(
+    adata,
+    "log1p_total_counts_mt",
+    "log1p_n_genes_by_counts",
+    color="pct_counts_mt",
+    show=False,
+  )
   plt.savefig(
     os.path.join(dir_path, "scatter.png"),
     dpi=300,
     bbox_inches='tight')
   plt.close()
-  if type!='slide_seq':
-    instance_key = adata.uns["spatialdata_attrs"].get("instance_key")
-    adata.obs[instance_key] = adata.obs[instance_key].astype(str)
-    adata.obs['region'] = adata.obs['region'].astype('category')
-    for table in sdata.tables.keys():
-      sdata[table]=adata
+  instance_key = adata.uns["spatialdata_attrs"].get("instance_key")
+  adata.obs[instance_key] = adata.obs[instance_key].astype(str)
+  adata.obs['region'] = adata.obs['region'].astype('category')
+  for table in sdata.tables.keys():
+    sdata[table]=adata
   return sdata
 
 
@@ -320,20 +328,6 @@ elif type=="visium":
               )
           }
       sdatas.append(sdata)
-elif type=="slide_seq":
-  for i in range(len(sample)):
-    sdata = sc.read_h5ad(args.input_path[i])
-    sdata.obs['cell_id'] = sdata.obs.index
-    sdata.obs['sample'] = sample[i]
-    sdata.obs["group"]=group[i]
-    sdata.var_names_make_unique()
-    sdata.obs_names_make_unique()
-    sdatas.append(sdata)
-  adata = anndata.concat(sdatas, join='inner', index_unique=None)
-  adata.obs_names_make_unique
-  adata=QC_plot(type,adata,args.output_zarr_path)
-  adata.write(args.output_zarr_path)
-  exit()
 elif type=="xenium":
   for i in range(len(sample)):
     sdata=spd.read_zarr(args.input_path[i])
@@ -393,7 +387,7 @@ elif type in ["Merfish", "merscope", "MERFISH"]:
 elif type in ["stereoseq", "StereoSeq", "Stereo-seq"]:
   for i in range(len(sample)):
     sdata = spd.read_zarr(args.input_path[i])
-    print(sdata)
+    logger.info(f"Loaded Stereo-seq sample {sample[i]} with {len(sdata.tables)} table(s)")
     new_images = {}
     for img_name in sdata.images.keys():
         new_name = f"{sample[i]}_{img_name}"
@@ -431,9 +425,13 @@ elif type in ["stereoseq", "StereoSeq", "Stereo-seq"]:
             )
         }
     sdatas.append(sdata)
+log_step(logger, 2, 4, "concatenating SpatialData objects")
 concatenated_sdata = spd.concatenate(sdatas, concatenate_tables=True)
-print(concatenated_sdata)
+logger.info(f"Merged object contains {len(concatenated_sdata.tables)} table(s)")
+log_step(logger, 3, 4, "calculating merged quality-control plots")
 concatenated_sdata=QC_plot(type,concatenated_sdata,args.output_zarr_path)
+log_step(logger, 4, 4, f"saving merged data to {args.output_zarr_path}")
 concatenated_sdata.write(args.output_zarr_path, overwrite=True)
 del concatenated_sdata, sdatas
 gc.collect()
+logger.info("Merge integrate module completed")

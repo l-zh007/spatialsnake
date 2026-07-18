@@ -9,7 +9,7 @@ library(ggsankey)
 library(cowplot)
 # install.packages("cowplot")
 option_list <- list(
-  make_option(c("--spacies")),
+  make_option(c("--species")),
   make_option(c("--input_dir")),
   make_option(c("--output_path")),
   make_option(c("--sample_id")),
@@ -20,16 +20,16 @@ parent_dir <- dirname(opt$input_dir)
 print(parent_dir)
 file_path <- opt$output_path
 output_path<-dirname(file_path)
-spacies=opt$spacies
+species=opt$species
 
-if (spacies == "human") {
+if (species == "human") {
   orgdb <- org.Hs.eg.db
   kegg_organism <- "hsa"
-} else if (spacies == "mouse") {
+} else if (species == "mouse") {
   orgdb <- org.Mm.eg.db
   kegg_organism <- "mmu"
 } else {
-  stop("Unsupported spacies value: ", spacies, ". Expected 'human' or 'mouse'.")
+  stop("Unsupported species value: ", species, ". Expected 'human' or 'mouse'.")
 }
 
 filename<-opt$input_dir
@@ -47,7 +47,7 @@ Gene_ID <- bitr(unique(marker_genes_pval$names), fromType="SYMBOL",
                 OrgDb=orgdb)
 
 if (nrow(Gene_ID) == 0) {
-  stop("No valid SYMBOL keys were found for spacies='", spacies,
+  stop("No valid SYMBOL keys were found for species='", species,
        "'. Please check whether the marker gene symbols match the selected species.")
 }
 
@@ -469,8 +469,8 @@ cluster_kegg_fun(data_kegg=data_kegg, path=parent_dir)
 # file_path <- opt$output_path
 # output_path<-dirname(file_path)
 # 
-# spacies="human"
-# orgdb=ifelse(spacies == "human", "org.Hs.0eg.db", "org.Mm.eg.db")
+# species="human"
+# orgdb=ifelse(species == "human", "org.Hs.0eg.db", "org.Mm.eg.db")
 # filename<-opt$input_dir
 # re_df<-read_csv(filename)
 # 

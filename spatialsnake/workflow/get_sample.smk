@@ -32,10 +32,7 @@ def check_file_exit(type,dir_path):
             'cells.parquet',
             'transcripts.parquet',
             'morphology.ome.tif',
-            'experiment.xenium'],
-        'slide_seq': [
-            'BeadLocationsForR.csv',
-            'MappedDGEForR.csv']}
+            'experiment.xenium']}
     for file_pattern in required_files[type]:
       if os.path.isfile(os.path.join(dir_path,file_pattern)):
         continue
@@ -57,9 +54,6 @@ def check_file_exit(type,dir_path):
       return main_file
     elif os.path.isfile(os.path.join(dir_path,'raw_feature_cell_matrix.h5')):
       main_file="raw_feature_cell_matrix.h5"
-      return main_file
-    elif os.path.isfile(os.path.join(dir_path,"MappedDGEForR.csv")):
-      main_file="MappedDGEForR.csv"
       return main_file
   L.info(f"no illigal {dir_path} {invalid_samples} file or dir")
   return False
@@ -184,4 +178,3 @@ def get_annotation(file_path, samples):
               L.info(f"\nwrong!!!:some anno of clusters are mising or the sample_name wrong with the sample_list.txt")
               sys.exit()
     return sample_annotations
-

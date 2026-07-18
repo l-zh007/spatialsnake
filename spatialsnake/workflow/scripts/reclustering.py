@@ -1,14 +1,55 @@
 import os
+import sys
 import warnings
 import argparse
+
+
+def _thread_count_from_argv(default=8):
+    """Read --threads early so BLAS is configured before NumPy/Scanpy import."""
+    argv = sys.argv[1:]
+    for index, token in enumerate(argv):
+        raw_value = None
+        if token == "--threads" and index + 1 < len(argv):
+            raw_value = argv[index + 1]
+        elif token.startswith("--threads="):
+            raw_value = token.split("=", 1)[1]
+        if raw_value is not None:
+            try:
+                value = int(raw_value)
+            except (TypeError, ValueError):
+                return default
+            return value if value >= 1 else default
+    return default
+
+
+def configure_thread_environment(threads):
+    threads = int(threads)
+    if threads < 1:
+        raise ValueError("threads must be >= 1")
+    value = str(threads)
+    for variable in (
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+        "VECLIB_MAXIMUM_THREADS",
+    ):
+        os.environ[variable] = value
+    return threads
+
+
+configure_thread_environment(_thread_count_from_argv())
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scanpy as sc
 import spatialdata as spd
 from spatialsnake.workflow.function.export_cluster_csv import export_cluster_csv
+from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
 
 warnings.filterwarnings("ignore")
+logger = setup_logger("reclustering")
 
 
 def load_spatialdata(input_path):
@@ -120,22 +161,31 @@ def main():
     parser.add_argument("--marker_method", type=str, default="wilcoxon")
     parser.add_argument("--min_pct", type=float, default=0.1)
     parser.add_argument("--logfc_threshold", type=float, default=0.25)
+    parser.add_argument("--threads", type=int, default=8)
     args = parser.parse_args()
+
+    if args.threads < 1:
+        parser.error("--threads must be >= 1")
+    configure_thread_environment(args.threads)
+    sc.settings.n_jobs = args.threads
 
     os.makedirs(args.output_dir, exist_ok=True)
     cluster_key = "recluster"
+    logger.info(f"Using {args.threads} threads for sample {args.sample_id}")
+    log_step(logger, 1, 5, "loading SpatialData input")
     sdata, table_key, adata = load_spatialdata(args.input)
-    print(adata)
-    print(adata.X)
-    print(adata.X.shape)
+    logger.info(f"Loaded {adata.n_obs} observations and {adata.n_vars} genes")
+    log_step(logger, 2, 5, "running PCA, neighbors, UMAP and Leiden reclustering")
     adata = run_reclustering(adata, args.resolution, args.n_top_genes, args.neighbors, args.n_pcs, cluster_key)
     umap_png = os.path.join(args.output_dir, "umap_recluster.png")
     spatial_png = os.path.join(args.output_dir, "spatial_clusters.png")
     marker_csv = os.path.join(args.output_dir, "marker_genes.csv")
     output_zarr = os.path.join(args.output_dir, f"{args.sample_id}.zarr")
 
+    log_step(logger, 3, 5, "saving UMAP and spatial plots")
     save_umap_plot(adata, cluster_key, umap_png)
     save_spatial_plot(sdata, table_key, adata, cluster_key, spatial_png)
+    log_step(logger, 4, 5, "exporting marker genes and cluster assignments")
     export_marker_genes(adata, cluster_key, args.marker_method, args.min_pct, args.logfc_threshold, marker_csv)
     exported_files = export_cluster_csv(
         adata,
@@ -150,7 +200,9 @@ def main():
         os.replace(exported_files[0], os.path.join(args.output_dir, "cluster_assignments.csv"))
 
     sdata[table_key] = adata
+    log_step(logger, 5, 5, f"saving reclustered data to {output_zarr}")
     sdata.write(output_zarr, overwrite=True)
+    logger.info("Reclustering module completed")
 
 
 if __name__ == "__main__":

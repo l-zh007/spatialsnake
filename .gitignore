@@ -1,12 +1,47 @@
-results/**
-resources/**
-logs/**
-.snakemake
-.snakemake/**
-.test/results/*
-workflow/notebooks/.ipynb_checkpoints/**
+# Python build and test artifacts
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Workflow/runtime output
+.snakemake/
+.snakemake_timestamp
+results/
+logs/
+.test/results/
+workflow/notebooks/.ipynb_checkpoints/
+
+# Local environments and package caches
+.conda_envs/
+.conda_pkgs/
+.venv/
+venv/
+env/
+cache/
+
+# Docker build/export material is kept outside this repository.
+docker/
+
+# R and editor state
 **/.Rhistory
 **/*.Rproj
-**/.Rproj.user/**
+**/.Rproj.user/
 **/.RData
 **/Rplots.pdf
+.idea/
+.vscode/
+.DS_Store
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.yaml

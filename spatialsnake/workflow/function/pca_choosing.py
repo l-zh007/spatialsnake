@@ -1,6 +1,9 @@
 import numpy as np
 import scanpy as sc
 import numpy as np
+from spatialsnake.workflow.function.logging_utils import setup_logger
+
+logger = setup_logger("pca_selection")
 
 def select_pca_dimensions(adata):
     """
@@ -29,7 +32,7 @@ def select_pca_dimensions(adata):
     else:
         co2 = len(pct)
     n_pcs = min(co1, co2)
-    print(f"Cutoff 1 (>90% & PC<5%): PC {co1}")
-    print(f"Cutoff 2 (elbow): PC {co2}")
-    print(f"recommand: {n_pcs}")
+    logger.info(f"Cutoff 1 (>90% and PC<5%): PC {co1}")
+    logger.info(f"Cutoff 2 (elbow): PC {co2}")
+    logger.info(f"Recommended PCs: {n_pcs}")
     return n_pcs

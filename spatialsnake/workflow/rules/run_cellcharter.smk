@@ -8,11 +8,12 @@ rule cellcharter_rule:
     inputs=lambda wildcards: cellcharter_input
   output:
     merge=get_cellcharter_output()
+  threads: workflow_threads
   params:
     sample_id = cellcharter_sample_id,
     run_type = run_type,
     image_type = image_type,
-    channal = channel,
+    channel = channel,
     shape_type=shape_type,
     significance=significance,
     max_cluster=max_cluster,
@@ -28,12 +29,13 @@ rule cellcharter_rule:
         --output_zarr_path {output.merge} \
         --type {params.run_type} \
         --image_type {params.image_type} \
-        --channal {params.channal} \
+        --channel {params.channel} \
         --shape_type {params.shape_type} \
         --significance {params.significance} \
         --max_cluster {params.max_cluster} \
         --condition_col {params.condition_col} \
         --sample_col {params.sample_col} \
         --celltype_col {params.celltype_col} \
-        --cellcharter_col {params.cellcharter_col}
+        --cellcharter_col {params.cellcharter_col} \
+        --threads {threads}
       """

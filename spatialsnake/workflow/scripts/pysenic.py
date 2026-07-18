@@ -6,6 +6,9 @@ import pandas as pd
 import scanpy as sc
 import loompy
 import argparse
+from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
+
+logger = setup_logger("pyscenic_prepare")
 parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
 parser.add_argument('--input_dir', type=str, required=True, 
                    help='Path to the raw data directory')
@@ -18,23 +21,19 @@ parser.add_argument('--types', type=str, required=True,
                    help='Path for the output zarr file')
 args = parser.parse_args()
 output_dir = os.path.dirname(args.loom)
-print(output_dir)
 os.makedirs(output_dir,exist_ok=True)
-if args.types=="slide_seq" or os.path.splitext(args.input_dir)[1].lower()==".h5ad":
+log_step(logger, 1, 3, "loading expression data for pySCENIC")
+if os.path.splitext(args.input_dir)[1].lower()==".h5ad":
   adata = sc.read_h5ad(args.input_dir)
 else:
   concatenated_sdata = spd.read_zarr(args.input_dir)
-  print(concatenated_sdata)
   for table in concatenated_sdata.tables.keys():
     table=table
     adata = concatenated_sdata[table]
+logger.info(f"Loaded {adata.n_obs} observations and {adata.n_vars} genes")
+log_step(logger, 2, 3, f"writing loom file to {args.loom}")
 adata.write_loom(args.loom)
-
-
-# with loompy.connect("./Non_Lession.loom") as ds:
-#     print("Row attributes available:", ds)
-#     print("Column attributes available:", ds.ca)
-
+log_step(logger, 3, 3, "pySCENIC input preparation completed")
 
 # pyscenic aucell \
 # > Non_Lession.loom \

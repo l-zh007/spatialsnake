@@ -1,43 +1,59 @@
-# total params
-option: "compare_stage"           # 固定为 compare_stage
-results_folder: "results"            # 结果输出根目录
-data_fold: "data"                    # 原始数据根目录
-sample_list: "sample.txt"            # 样本列表文件路径
-run_type: "visium"                   # 数据类型: visium/xenium/slide-seq/visium_HD/visium_segment
-channel: "compare_analysis"          # 固定为 compare_analysis
-runpipe: "compare_gene"              # compare_gene 或 cellchat
+# Spatialsnake compare-stage configuration.
+# Edit values only when you need to override the recommended defaults.
 
+# -----------------------------------------------------------------------------
+# Common workflow settings
+# -----------------------------------------------------------------------------
+option: "compare_stage"  # Workflow step selected by this template. Recommended: compare_stage.
+results_folder: "results"  # Root directory for all workflow outputs. Recommended: results.
+data_fold: "data"  # Root directory used by rules that resolve raw data paths. Recommended: data.
+sample_list: "sample.txt"  # Three-column sample table (sample_id input_path group); spaces and tabs are both supported.
+run_type: "visium"  # Spatial technology type used to select readers and rules. Recommended: visium unless your platform differs.
+channel: "compare_analysis"  # Analysis mode for compare-stage workflows. Recommended: compare_analysis.
+runpipe: "compare_gene"  # Compare-stage module to run, such as compare_gene or cellchat. Recommended: compare_gene for DEG analysis.
+threads: 4  # Threads allocated to differential analysis or CellChat comparison. Override with --threads when needed.
 
+# -----------------------------------------------------------------------------
+# compare_gene pseudobulk DEG options
+# -----------------------------------------------------------------------------
+compare_algorithm: 'DESeq2'  # Formal pseudobulk DEG method. Recommended: DESeq2 when each group has enough replicates.
+cell_focus: "all"  # Cell type(s) analyzed independently; accepts one name, comma-separated names, or all. Recommended: all, then narrow to types of interest when needed.
+compare_input_zarr: "results/merge_data/annotation/concatenated_sdata.zarr"  # Optional override; this standard merged annotation zarr is used when the user supplies no CLI value.
+compare_contrasts: []  # Optional for exactly two groups (second group vs first group); required for three or more groups.
+species: 'human'  # Species used for enrichment resources. Recommended: human or mouse according to the sample source.
+cut_off_pvalue: 0.05  # Adjusted p-value cutoff used for DEG plots and enrichment. Recommended: 0.05.
+cut_off_logFC: 0.5  # Absolute log2 fold-change cutoff used for DEG plots and enrichment. Recommended: 0.5.
+compare_celltype_col: "celltype"  # Observation column containing cell type labels. Recommended: celltype.
+compare_sample_col: "sample"  # Observation column containing sample IDs that match sample.txt. Recommended: sample in Spatialsnake merged zarr.
+compare_condition_col: "group"  # Observation column containing condition/group labels. Recommended: group from the final sample.txt column.
+count_layer: "counts"  # Preferred raw-count layer. If absent/invalid, standard counts, raw_counts, aligned .raw, then integer X are checked in order.
+min_replicates: 2  # Minimum biological replicates required per condition for formal DEG testing. Recommended: at least 2.
+min_cells_per_sample: 30  # Minimum cells/spots per sample within each selected cell type. Recommended: 30 for stable pseudobulk counts.
+min_total_counts_per_gene: 10  # Minimum total pseudobulk counts required per gene. Recommended: 10 to remove very low-expression genes.
+de_top_n: 20  # Number of top genes highlighted in DEG plots and summaries. Recommended: 20 for readable figures.
+compare_gene_id_type: "auto"  # Gene identifier type used for enrichment: auto, SYMBOL, ENSEMBL, or ENTREZID. Recommended: auto when identifiers are unambiguous.
+compare_gene_symbol_col: ""  # Optional SpatialData var column containing gene symbols when var_names are not SYMBOL identifiers.
+compare_go_ontology: "BP"  # GO ontology used for enrichment: BP, CC, MF, or ALL. Recommended: BP.
+compare_enrichment_top_n: 10  # Maximum enriched terms displayed per panel. Recommended: 10.
 
-# compare_gene
-compare_algorithm: 'DEseq2'          # 差异分析算法: DEseq2 或 edgeR
-cell_focus: "CAF"                    # 关注的细胞类型名称
-spacies: 'human'                     # 物种: human 或 mouse
-# sample.txt 第三列分组名称会直接用于 contrast、图例、目录名与结果归属展示，建议填写真实生物学分组名
-cut_off_pvalue: 0.05                # adjusted p value threshold for volcano plot and DEG split
-cut_off_logFC: 1.5                  # absolute log2 fold change threshold for volcano plot and DEG split
-
-# compare-cellchat
-# 通路与配受体可从 advance_analysis 的 cellchat 输出文件选择:
-# 1) results/<sample>/cellchat/<sample>_cellchat_lr.csv  (配体-受体与通路)
-# 2) results/<sample>/cellchat/<sample>_cellchat_stats.csv (网络统计)
-cellchat_compare_output_dir: "results/compare_cellchat"   # 输出目录
-cellchat_compare_sample_name1: ""                   # 样本1显示名称
-cellchat_compare_sample_name2: ""                   # 样本2显示名称
-cellchat_compare_pathways: "MIF"                             # 通路名列表, 逗号分隔, 例: "CXCL,CCL"
-cellchat_compare_source_cells: "Tumor_I,Tumor_II"                         # 发送细胞: 逗号分隔的细胞类型名称, 例: "Tumor_I,Tumor_III"
-cellchat_compare_target_cells: "Tumor_I,Tumor_II"                          # 接收细胞: 逗号分隔的细胞类型名称, 例: "Tumor_II,Tumor_IV"
-cellchat_compare_receiver_cells: "Tumor_I,Tumor_II"                    # netVisual_aggregate 接收端: 逗号分隔的细胞类型名称, 例: "Tumor_III,Tumor_IV"
-cellchat_compare_bubble_angle: 45                         # 比较气泡图 x 轴角度
-cellchat_compare_bubble_remove_isolate: True              # 是否移除孤立节点
-cellchat_compare_do_ranknet: True                         # 是否输出 rankNet 比较图
-cellchat_compare_do_role_heatmap: True                    # 是否输出 signaling role heatmap
-cellchat_compare_do_pathway_plots: True                   # 是否输出通路汇总图
-cellchat_compare_do_compare_overview: True                # 是否输出两组整体比较图
-cellchat_compare_do_compare_bubble: True                  # 是否输出 compare bubble (需 source/target)
-cellchat_compare_do_single_bubble: True                   # 是否输出单组 bubble (需 source)
-cellchat_compare_do_gene_expression: True                # 是否输出 plotGeneExpression
-cellchat_compare_gene_colors: "white,#FEC44F,#D95F0E"      # plotGeneExpression 颜色梯度
-cellchat_compare_gene_plot_type: "dot"                    # plotGeneExpression 类型: dot 或 heatmap
-cellchat_compare_pair_lr_use: "SPP1_CD44"                 # 空间特征图的 pairLR，例: "SPP1_CD44"
-cellchat_compare_save_merged: True                        # 双样本时是否保存合并后的 rds
+# -----------------------------------------------------------------------------
+# CellChat comparison options
+# -----------------------------------------------------------------------------
+cellchat_compare_output_dir: "results/compare_cellchat"  # Output directory for CellChat comparison results.
+cellchat_compare_sample_name1: ""  # Optional display name for condition 1; sample.txt sample_id is used when empty.
+cellchat_compare_sample_name2: ""  # Optional display name for condition 2; sample.txt sample_id is used when empty.
+cellchat_compare_focus_cells: ""  # Recommended simple focus: all directions among comma-separated cell groups.
+cellchat_compare_cell_pairs: ""  # Exact directed pairs, e.g. A|B,A<->C; highest-priority cell-scope option.
+cellchat_compare_source_cells: ""  # Optional sender groups used when exact pairs and focus_cells are empty.
+cellchat_compare_target_cells: ""  # Optional receiver groups used when exact pairs and focus_cells are empty.
+cellchat_compare_pathways: ""  # Optional pathways; empty selects pathways with the largest absolute flow difference in the cell scope.
+cellchat_compare_lr_pairs: ""  # Optional ligand|receptor pairs; empty selects the largest absolute probability differences.
+cellchat_compare_top_cell_pairs: 3  # Directed cell pairs selected automatically when no cell scope is provided.
+cellchat_compare_top_pathways: 3  # Pathways selected automatically within the chosen cell scope.
+cellchat_compare_top_lr: 20  # Maximum unique LR interactions included in focused comparison plots.
+cellchat_compare_plot_advanced: True  # Plot one automatically selected pathway, or every valid manually selected pathway.
+cellchat_compare_bubble_angle: 45  # X-axis label angle for CellChat comparison bubble plots. Recommended: 45 for readable labels.
+cellchat_compare_bubble_remove_isolate: True  # Remove isolated interactions from bubble plots. Recommended: True for cleaner figures.
+cellchat_compare_gene_colors: "white,#FEC44F,#D95F0E"  # Color gradient for CellChat gene-expression plots. Recommended: light-to-warm sequential palette.
+cellchat_compare_gene_plot_type: "dot"  # Supported CellChat expression plot: dot, violin, or bar.
+cellchat_compare_save_merged: True  # Save merged CellChat objects during pairwise comparison. Recommended: True for reproducibility.

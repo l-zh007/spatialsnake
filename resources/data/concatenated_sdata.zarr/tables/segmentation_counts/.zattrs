@@ -1,0 +1,15 @@
+{
+    "encoding-type": "anndata",
+    "encoding-version": "0.1.0",
+    "instance_key": "cell_id",
+    "region": [
+        "ST8059048",
+        "ST8059049",
+        "ST8059050",
+        "ST8059051",
+        "ST8059052"
+    ],
+    "region_key": "region",
+    "spatialdata-encoding-type": "ngff:regions_table",
+    "version": "0.1"
+}

@@ -1,6 +1,3 @@
-sample_path_map = {sample: path for sample, path in zip(samples, downstream_file)}
-
-
 def get_stereoseq_input_spec_param(wildcards):
   if run_type not in ["stereoseq", "StereoSeq", "Stereo-seq"]:
     return ""
@@ -15,15 +12,16 @@ def get_stereoseq_input_spec_param(wildcards):
 
 rule reannotation_rule:
   input:
-    inputs=lambda wildcards: sample_path_map[wildcards.sample]
+    inputs=lambda wildcards: subset_task_lookup[(wildcards.sample, wildcards.subset)]["input_path"]
   output:
-    merge=os.path.join(results_folder, "{sample}", "reannotation", "{sample}.h5ad") if run_type == "slide_seq" else directory(os.path.join(results_folder, "{sample}", "reannotation", "{sample}.zarr")),
-    csv=os.path.join(results_folder, "{sample}", "reannotation", "celltype_annotations.csv"),
-    proportion_png=os.path.join(results_folder, "{sample}", "reannotation", "celltype_proportion.png"),
-    umap_png=os.path.join(results_folder, "{sample}", "reannotation", "umap_recluster.png"),
-    spatial_png=os.path.join(results_folder, "{sample}", "reannotation", "spatial_clusters.png")
+    merge=directory(os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "{subset}.zarr")),
+    csv=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "celltype_annotations.csv"),
+    proportion_png=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "celltype_proportion.png"),
+    umap_png=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "umap_recluster.png"),
+    spatial_png=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "spatial_clusters.png")
+  threads: workflow_threads
   params:
-    sample_id=lambda wildcards: wildcards.sample,
+    sample_id=lambda wildcards: wildcards.subset,
     run_type=run_type,
     anno_data=lambda wildcards: f"--anno_data '{json.dumps(anno_data)}'",
     vis_mode=vis_mode,

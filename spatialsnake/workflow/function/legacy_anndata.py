@@ -1,3 +1,7 @@
+'''
+revise from spatialdata-io:legacy_anndata.py
+with some modification to match spatialsnake pipeline
+'''
 import warnings
 import re
 from typing import TYPE_CHECKING
@@ -15,7 +19,9 @@ from spatialdata.models import Image2DModel, ShapesModel, TableModel, get_table_
 from spatialdata.transformations import Identity, Scale
 
 from anndata import AnnData
+from spatialsnake.workflow.function.logging_utils import setup_logger
 
+logger = setup_logger("legacy_anndata")
 
 def _compute_if_needed(obj):
     return obj.compute() if hasattr(obj, "compute") else obj
@@ -141,7 +147,7 @@ def _legacy_points_table_to_anndata(
     downscaled_hires_length: int,
     downscaled_lowres_length: int,
 ) -> AnnData:
-    print("[to_legacy_anndata] using points fallback")
+    logger.info("Using points fallback for legacy AnnData conversion")
     table = sdata[table_name]
     points_element = sdata[region_name]
     adata = table.copy()
@@ -176,13 +182,13 @@ def _legacy_points_table_to_anndata(
                 if hires_scale_for_coords is None:
                     hires_scale_for_coords = hires_scale
             except Exception as e:
-                print(f"[to_legacy_anndata] failed to export image {image_name}: {e}")
+                logger.warning(f"Failed to export image {image_name}: {e}")
 
         if hires_scale_for_coords is not None:
             adata.obsm["spatial"] = (coords * hires_scale_for_coords).astype(np.float32)
 
-    print(f"[to_legacy_anndata] fallback obsm['spatial'] shape={adata.obsm['spatial'].shape}")
-    print(f"[to_legacy_anndata] fallback uns['spatial'] keys={list(adata.uns.get('spatial', {}).keys())}")
+    logger.info(f"Fallback spatial coordinates shape: {adata.obsm['spatial'].shape}")
+    logger.info(f"Fallback spatial image keys: {list(adata.uns.get('spatial', {}).keys())}")
     return adata
 
 
@@ -318,8 +324,7 @@ def to_legacy_anndata(
     table_name: str | None = None,
     include_images: bool = False,
 ) -> AnnData:
-    print("[to_legacy_anndata] start")
-    print(f"[to_legacy_anndata] include_images={include_images}")
+    logger.info(f"Converting SpatialData to legacy AnnData; include_images={include_images}")
     """Convert a SpatialData object to a (legacy) spatial AnnData object.
 
     This is useful for using packages expecting spatial information in AnnData, for example Scanpy and older versions
@@ -409,15 +414,16 @@ def to_legacy_anndata(
     if coordinate_system is None:
         assert len(css) == 1, "The SpatialData object has more than one coordinate system. Please specify one."
         coordinate_system = css[0]
-        print(f"[to_legacy_anndata] coordinate_system={coordinate_system}")
+        logger.info(f"Using coordinate system: {coordinate_system}")
     else:
         assert coordinate_system in css, (
             f"The SpatialData object does not have the coordinate system {coordinate_system}."
         )
     sdata = sdata.filter_by_coordinate_system(coordinate_system)
-    print(f"[to_legacy_anndata] tables={list(sdata.tables.keys())}")
-    print(f"[to_legacy_anndata] shapes={list(sdata.shapes.keys())}")
-    print(f"[to_legacy_anndata] images={list(sdata.images.keys())}")
+    logger.info(
+        f"Filtered SpatialData contains tables={list(sdata.tables.keys())}, "
+        f"shapes={list(sdata.shapes.keys())}, images={list(sdata.images.keys())}"
+    )
 
     if table_name is None:
         assert len(sdata.tables) == 1, (
@@ -428,7 +434,7 @@ def to_legacy_anndata(
         table_name = next(iter(sdata.tables))
     else:
         assert table_name in sdata.tables, f"The table {table_name} is not present in the SpatialData object."
-    print(f"[to_legacy_anndata] table_name={table_name}")
+    logger.info(f"Using table: {table_name}")
 
     table = sdata[table_name]
     (
@@ -438,8 +444,7 @@ def to_legacy_anndata(
     ) = get_table_keys(table)
     if not isinstance(region, list):
         region = [region]
-    print(f"[to_legacy_anndata] region={region}")
-    print(f"[to_legacy_anndata] instance_key={instance_key}")
+    logger.info(f"Region={region}; instance_key={instance_key}")
 
     # the table needs to annotate exactly one Shapes element
     if len(region) != 1:
@@ -459,7 +464,7 @@ def to_legacy_anndata(
         raise ValueError("The table needs to annotate a Shapes or Labels element, not Points.")
     element = sdata[region[0]]
     region_name = region[0]
-    print(f"[to_legacy_anndata] region_name={region_name}")
+    logger.info(f"Using spatial region: {region_name}")
 
     # convert polygons, multipolygons and labels to circles
     shapes = to_circles(element)
@@ -474,7 +479,7 @@ def to_legacy_anndata(
         "The table does not annotate any geometry in the Shapes element. This could also be caused by a mismatch "
         "between the type of the indices of the geometries and the type of the INSTANCE_KEY column of the table."
     )
-    print(f"[to_legacy_anndata] new_table_rows={len(new_table)}")
+    logger.info(f"Joined table rows: {len(new_table)}")
 
     sdata_pre_rasterize = SpatialData(
         tables={table_name: new_table}, shapes={region_name: joined_elements[region_name]}
@@ -488,7 +493,7 @@ def to_legacy_anndata(
         sdata_post_rasterize = sdata_pre_rasterize
     else:
         sdata_images = sdata.subset(element_names=list(sdata.images.keys()))
-        print(f"[to_legacy_anndata] sdata_images={list(sdata_images.images.keys())}")
+        logger.info(f"Preparing images: {list(sdata_images.images.keys())}")
         for image_name, image in sdata_images.images.items():
             sdata_pre_rasterize[image_name] = image
         bb = get_extent(sdata_images, coordinate_system=coordinate_system)
@@ -506,8 +511,8 @@ def to_legacy_anndata(
         for image_name in sdata_images.images.keys():
             downscaled_images_hires[image_name] = downscaled_hires[image_name]
             downscaled_images_lowres[image_name] = downscaled_lowres[image_name]
-        print(f"[to_legacy_anndata] downscaled_images_hires={list(downscaled_images_hires.keys())}")
-        print(f"[to_legacy_anndata] downscaled_images_lowres={list(downscaled_images_lowres.keys())}")
+        logger.info(f"Downscaled hires images: {list(downscaled_images_hires.keys())}")
+        logger.info(f"Downscaled lowres images: {list(downscaled_images_lowres.keys())}")
 
         if sdata_post_rasterize is None:
             sdata_post_rasterize = downscaled_hires
@@ -529,18 +534,17 @@ def to_legacy_anndata(
                     "tissue_lowres_scalef": DOWNSCALED_LOWRES_LENGTH / DOWNSCALED_HIRES_LENGTH,
                     "spot_diameter_fullres": sdata_post_rasterize.shapes[region_name]["radius"].iloc[0] * 2,
                 }
-                print(f"[to_legacy_anndata] scalefactors set for {image_name}")
+                logger.info(f"Scalefactors set for {image_name}")
             except KeyError:
-                print(f"[to_legacy_anndata] scalefactors missing radius for {image_name}")
+                logger.warning(f"Scalefactors missing radius for {image_name}")
                 pass
 
     adata.obsm["spatial"] = (
         get_centroids(sdata_post_rasterize[region_name], coordinate_system=coordinate_system).compute().values
     )
-    print(f"[to_legacy_anndata] obsm['spatial'] shape={adata.obsm['spatial'].shape}")
-    print(f"[to_legacy_anndata] uns['spatial'] keys={list(adata.uns.get('spatial', {}).keys())}")
-    print("[to_legacy_anndata] done")
+    logger.info(f"Legacy AnnData spatial coordinates shape: {adata.obsm['spatial'].shape}")
+    logger.info(f"Legacy AnnData spatial image keys: {list(adata.uns.get('spatial', {}).keys())}")
+    logger.info("Legacy AnnData conversion completed")
     return adata
-
 
 

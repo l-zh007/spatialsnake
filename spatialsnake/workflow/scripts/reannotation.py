@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scanpy as sc
 import spatialdata as spd
-import squidpy as sq
 from spatialdata.models import PointsModel
 from spatialdata.transformations import Identity
 
@@ -17,8 +16,10 @@ from spatialsnake.workflow.function.stereoseq_selection import (
     resolve_stereoseq_table_key,
     resolve_visual_target,
 )
+from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
 
 STEREOSEQ_TYPES = {"stereoseq", "StereoSeq", "Stereo-seq"}
+logger = setup_logger("reannotation")
 
 
 def parse_bool(value):
@@ -94,13 +95,6 @@ def save_umap_plot(adata, cluster_key, output_png):
     sc.pl.umap(adata, color=[cluster_key], show=False)
     plt.savefig(output_png, dpi=300, bbox_inches="tight")
     plt.close()
-def save_slide_seq_spatial_plot(adata, sample_id, output_png):
-    if "spatial" in adata.obsm_keys():
-        sq.pl.spatial_scatter(adata, color="celltype", shape=None, title=sample_id)
-        plt.savefig(output_png, dpi=300, bbox_inches="tight")
-        plt.close()
-        return
-    save_umap_plot(adata, "celltype", output_png)
 
 
 def render_spatial_plots(sdata, table_key, adata, run_type, vis_mode, point_size, image_slice, coord, output_dir, summary_png):
@@ -244,44 +238,28 @@ def main():
     cluster_key = "celltype"
     umap_png = os.path.join(output_dir, "umap_recluster.png")
     spatial_png = os.path.join(output_dir, "spatial_clusters.png")
-    sdata = None
-    table_key = None
 
-    if args.input_dir.endswith(".h5ad"):
-        adata = sc.read_h5ad(args.input_dir)
-        adata = ensure_obs_columns(adata, args.sample_id)
-        adata = annotate_adata(adata, annotation_map)
-        exported_files = export_cluster_csv(
-            adata,
-            args.type,
-            output_dir,
-            cell_id_col="cell_id",
-            info_col="celltype",
-            sample_col="region",
-            sample_id=args.sample_id
-        )
-        adata.write(args.output_zarr_path)
-    else:
-        sdata = spd.read_zarr(args.input_dir)
-        table_key = pick_table_key(sdata, run_type=args.type, input_spec=args.input_spec)
-        adata = sdata[table_key].copy()
-        adata = ensure_obs_columns(adata, args.sample_id)
-        adata = annotate_adata(adata, annotation_map)
-        sdata[table_key] = adata
-        print(adata)
-        print(sdata)
-        print(adata.obs)
-        exported_files = export_cluster_csv(
-            sdata,
-            args.type,
-            output_dir,
-            cell_id_col="cell_id",
-            info_col="celltype",
-            sample_col="region",
-            sample_id=args.sample_id
-        )
-        sdata.write(args.output_zarr_path, overwrite=True)
+    log_step(logger, 1, 5, "loading annotation map and input data")
+    sdata = spd.read_zarr(args.input_dir)
+    table_key = pick_table_key(sdata, run_type=args.type, input_spec=args.input_spec)
+    adata = sdata[table_key].copy()
+    adata = ensure_obs_columns(adata, args.sample_id)
+    adata = annotate_adata(adata, annotation_map)
+    sdata[table_key] = adata
+    logger.info(f"Reannotated {adata.n_obs} observations")
+    log_step(logger, 2, 5, "exporting reannotation table")
+    exported_files = export_cluster_csv(
+        sdata,
+        args.type,
+        output_dir,
+        cell_id_col="cell_id",
+        info_col="celltype",
+        sample_col="region",
+        sample_id=args.sample_id
+    )
+    sdata.write(args.output_zarr_path, overwrite=True)
 
+    log_step(logger, 3, 5, "saving cell type proportion plot")
     cluster_proportion(
         adata,
         sample_col="region",
@@ -294,24 +272,24 @@ def main():
         save_path=os.path.join(output_dir, "celltype_proportion.png"),
         dpi=300,
     )
+    log_step(logger, 4, 5, "saving UMAP and spatial plots")
     save_umap_plot(adata, cluster_key, umap_png)
-    if args.input_dir.endswith(".h5ad"):
-        save_slide_seq_spatial_plot(adata, args.sample_id, spatial_png)
-    else:
-        render_spatial_plots(
-            sdata=sdata,
-            table_key=table_key,
-            adata=adata,
-            run_type=args.type,
-            vis_mode=args.vis_mode,
-            point_size=args.point_size,
-            image_slice=args.image_slice,
-            coord=args.coord,
-            output_dir=output_dir,
-            summary_png=spatial_png,
-        )
+    render_spatial_plots(
+        sdata=sdata,
+        table_key=table_key,
+        adata=adata,
+        run_type=args.type,
+        vis_mode=args.vis_mode,
+        point_size=args.point_size,
+        image_slice=args.image_slice,
+        coord=args.coord,
+        output_dir=output_dir,
+        summary_png=spatial_png,
+    )
     if len(exported_files) > 0:
         os.replace(exported_files[0], args.output_csv)
+    log_step(logger, 5, 5, f"reannotation outputs saved to {output_dir}")
+    logger.info("Reannotation module completed")
 
 
 if __name__ == "__main__":

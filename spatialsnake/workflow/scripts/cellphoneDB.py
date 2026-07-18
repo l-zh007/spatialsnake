@@ -1,189 +1,251 @@
-import pandas as pd
-import glob
+import argparse
 import os
-os.environ["OPENBLAS_NUM_THREADS"] = "64"
-os.environ["OMP_NUM_THREADS"] = "1"
-import spatialdata as spd
-import spatialdata_plot as splt
-import spatialdata_io as so
-import geosketch as sketch
-import numpy as np
+import urllib.request
+
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
 import pandas as pd
 import scanpy as sc
-import scanpy.external as sce
-
-import json
-import gc
-import geopandas as gpd
-from spatialdata.models import Image2DModel, TableModel, ShapesModel
-import matplotlib.pyplot as plt
-
-from pydeseq2.dds import DeseqDataSet
-from pydeseq2.ds import DeseqStats
-from PIL import Image
-from spatialdata.transformations import Identity, Scale
-from shapely.geometry import Polygon
-from IPython.display import HTML, display
-from cellphonedb.utils import db_releases_utils
+import spatialdata as spd
+from cellphonedb.src.core.methods import (
+    cpdb_degs_analysis_method,
+    cpdb_statistical_analysis_method,
+)
 from cellphonedb.utils import db_utils
-from cellphonedb.src.core.methods import cpdb_statistical_analysis_method
 
-import argparse
-parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
-parser.add_argument('--input_dir', type=str, required=True, 
-                   help='Path to the raw data directory')
-parser.add_argument('--output_zarr_path', type=str, required=True,
-                   help='Path for the output zarr file')
-parser.add_argument('--sample_id', type=str, required=True,
-                   help='Path for the output zarr file')
-parser.add_argument('--type', type=str, required=True,
-                   help='Path for the output zarr file')
-parser.add_argument('--counts_data', type=str, required=True,
-                   help='Path for the output zarr file')
-parser.add_argument('--iterations', type=int, required=False,
-                   help='Path for the output zarr file')
-parser.add_argument('--threads', type=int, required=True,
-                   help='Path for the output zarr file')
-parser.add_argument('--pvalue', type=float, required=False,
-                   help='Path for the output zarr file')
-parser.add_argument('--output_name', type=str, required=False,
-                   help='Path for the output zarr file')
-parser.add_argument('--microenvs_file_path', type=str, required=False,
-                   help='Path for the output zarr file')
-parser.add_argument('--active_tf_path', type=str, required=False,
-                   help='Path for the output zarr file')
-parser.add_argument('--threshold', type=float, required=False,
-                   help='Path for the output zarr file')   #0.1                
-parser.add_argument('--degs_file_path', type=str, required=False,
-                   help='Path for the output zarr file')
-parser.add_argument('--celltype_col', type=str, required=True,
-                   help='Path for the output zarr file')
-parser.add_argument('--niche_col', type=str, required=False,
-                   help='Path for the output zarr file')
-parser.add_argument('--is_singlecell', type=str, required=False,
-                   help='Path for the output zarr file')
-parser.add_argument('--method', type=str, required=False,
-                   help='Path for the output zarr file')
-parser.add_argument('--de_method', type=str, required=False,
-                   help='Path for the output zarr file')
+from spatialsnake.workflow.function.logging_utils import log_step, setup_logger
+
+
+logger = setup_logger("cellphonedb")
+parser = argparse.ArgumentParser(description="Run CellPhoneDB on an annotated h5ad or SpatialData zarr object")
+parser.add_argument("--input_dir", required=True, help="Annotated h5ad or SpatialData zarr input")
+parser.add_argument("--output_zarr_path", required=True, help="Intermediate h5ad used by CellPhoneDB")
+parser.add_argument("--sample_id", required=True, help="Sample identifier")
+parser.add_argument("--type", required=False, default="", help="Input technology (kept for workflow compatibility)")
+parser.add_argument("--counts_data", default="hgnc_symbol", help="CellPhoneDB gene identifier type")
+parser.add_argument("--iterations", type=int, default=1000, help="Permutation iterations")
+parser.add_argument("--threads", type=int, default=8, help="CellPhoneDB worker threads")
+parser.add_argument("--pvalue", type=float, default=0.05, help="Statistical significance threshold")
+parser.add_argument("--output_name", default="", help="Suffix for CellPhoneDB result tables")
+parser.add_argument("--microenvs_file_path", default="", help="Optional CellPhoneDB microenvironment file")
+parser.add_argument("--active_tf_path", default="", help="Optional active transcription-factor file")
+parser.add_argument("--threshold", type=float, default=0.1, help="Minimum expressing-cell proportion")
+parser.add_argument("--degs_file_path", default="", help="Optional DEG file for CellPhoneDB DEG mode")
+parser.add_argument("--celltype_col", required=True, help="Cell-type annotation column in obs")
+parser.add_argument("--niche_col", default="spatial_cluster", help="Spatial niche column in obs")
+parser.add_argument("--is_single_cell", default="False", help="Whether the input is single-cell rather than spatial")
+parser.add_argument("--method", default="statistical", choices=["statistical", "degs"], help="CellPhoneDB method")
+parser.add_argument("--species", default="human", choices=["human", "mouse"], help="Input species")
 args = parser.parse_args()
-output_dir=os.path.dirname(args.output_zarr_path)
-display(HTML(db_releases_utils.get_remote_database_versions_html()['db_releases_html_table']))
-cpdb_version ='v5.0.0'
-cpdb_target_dir = os.path.join(output_dir,'cellphonedb_v500_NatProtocol/', cpdb_version)
 
-if not os.path.isdir(cpdb_target_dir):
-  db_utils.download_database(cpdb_target_dir, cpdb_version)
 
 def parse_bool(value):
-  if isinstance(value, bool):
-    return value
-  if value is None:
-    return False
-  value_str = str(value).strip().lower()
-  if value_str in {"true", "1", "yes", "y", "t"}:
-    return True
-  if value_str in {"false", "0", "no", "n", "f", ""}:
-    return False
-  raise ValueError(f"Invalid boolean value: {value}")
+    if isinstance(value, bool):
+        return value
+    value = "" if value is None else str(value).strip().lower()
+    if value in {"true", "1", "yes", "y", "t"}:
+        return True
+    if value in {"false", "0", "no", "n", "f", ""}:
+        return False
+    raise ValueError(f"Invalid boolean value: {value}")
 
-run_type = args.type
-input_path = args.input_dir
-celltype_col = args.celltype_col
-niche_col = args.niche_col
-is_singlecell = parse_bool(args.is_singlecell)
-method = args.method if args.method else "statistical"
-de_method = args.de_method if args.de_method else "wilcoxon"
-iterations = args.iterations if args.iterations is not None else 500
-threads = args.threads if args.threads is not None else 32
-pvalue = args.pvalue if args.pvalue is not None else 0.05
-input_ext = os.path.splitext(input_path)[1].lower()
-print("666666")
-print(input_path)
 
-if input_ext in [".h5ad", ".h5"] or run_type == "slide_seq":
-  adata = sc.read_h5ad(input_path)
-else:
-  concatenated_sdata = spd.read_zarr(input_path)
-  print(concatenated_sdata)
-  for table in concatenated_sdata.tables.keys():
-    table=table
-    adata = concatenated_sdata[table]
-    adata.obs["cell_id"]=adata.obs.index
+def ensure_cell_id_column(adata):
+    if "cell_id" not in adata.obs.columns:
+        adata.obs["cell_id"] = adata.obs_names.astype(str)
+    else:
+        adata.obs["cell_id"] = adata.obs["cell_id"].astype(str)
+    if adata.obs["cell_id"].str.strip().eq("").any() or adata.obs["cell_id"].duplicated().any():
+        raise ValueError("cell_id must contain unique, non-empty values")
+    return adata
 
-if celltype_col not in adata.obs.columns:
-  raise ValueError(f"celltype_col not found in obs: {celltype_col}")
 
+def load_mouse_human_orthologs(cache_dir):
+    """Download and parse the MGI one-to-one mouse-human protein-coding map."""
+    os.makedirs(cache_dir, exist_ok=True)
+    mapping_path = os.path.join(cache_dir, "HOM_ProteinCoding.rpt")
+    if not os.path.isfile(mapping_path):
+        logger.info("Downloading the MGI one-to-one mouse-human ortholog table")
+        temporary_path = f"{mapping_path}.tmp"
+        urllib.request.urlretrieve(
+            "https://www.informatics.jax.org/downloads/reports/HOM_ProteinCoding.rpt",
+            temporary_path,
+        )
+        os.replace(temporary_path, mapping_path)
+
+    mapping = pd.read_csv(mapping_path, sep="\t", dtype=str)
+    mouse_col = next((column for column in mapping.columns if "mouse" in column.lower() and "symbol" in column.lower()), None)
+    human_col = next((column for column in mapping.columns if "human" in column.lower() and "symbol" in column.lower()), None)
+    if mouse_col is None or human_col is None:
+        columns = [
+            "MGI Marker Accession ID",
+            "Mouse Gene Symbol",
+            "Mouse NCBI Gene ID",
+            "HGNC ID",
+            "Human Gene Symbol",
+            "Human NCBI Gene ID",
+        ]
+        mapping = pd.read_csv(mapping_path, sep="\t", dtype=str, header=None, names=columns)
+        mouse_col, human_col = "Mouse Gene Symbol", "Human Gene Symbol"
+
+    mapping = mapping[[mouse_col, human_col]].dropna().drop_duplicates()
+    mapping.columns = ["mouse_symbol", "human_symbol"]
+    mapping = mapping.drop_duplicates("mouse_symbol", keep=False).drop_duplicates("human_symbol", keep=False)
+    return dict(zip(mapping["mouse_symbol"], mapping["human_symbol"]))
+
+
+def convert_mouse_anndata(adata, orthologs):
+    original_symbols = pd.Index(adata.var_names.astype(str))
+    human_symbols = original_symbols.map(orthologs)
+    keep = human_symbols.notna()
+    converted = adata[:, keep].copy()
+    converted.var["mouse_gene_symbol"] = original_symbols[keep].to_numpy()
+    converted.var_names = pd.Index(human_symbols[keep].astype(str), name=adata.var_names.name)
+    if converted.n_vars == 0:
+        raise ValueError("No mouse gene symbols could be mapped to one-to-one human orthologs")
+    logger.info("Mouse-to-human ortholog conversion retained %d of %d genes", converted.n_vars, adata.n_vars)
+    return converted
+
+
+def convert_mouse_gene_file(input_path, orthologs, output_path, label):
+    if not input_path or not os.path.isfile(input_path):
+        return None
+    table = pd.read_csv(input_path, sep=None, engine="python", dtype=str)
+    if table.shape[1] < 2:
+        raise ValueError(f"{label} file must contain at least two columns")
+    gene_column = table.columns[1]
+    table[gene_column] = table[gene_column].map(orthologs)
+    table = table.dropna(subset=[gene_column])
+    table.to_csv(output_path, sep="\t", index=False)
+    logger.info("Converted %d %s records to human orthologs", len(table), label)
+    return output_path
+
+
+output_dir = os.path.dirname(args.output_zarr_path)
 os.makedirs(output_dir, exist_ok=True)
-adata.write(args.output_zarr_path)
-df_extract = adata.obs[['cell_id', celltype_col]].copy()
-df_extract = df_extract.rename(columns={celltype_col: "cell_type"})
-txt_path = os.path.join(output_dir, f"{args.sample_id}_cellid_cell_type.txt")
-df_extract.to_csv(txt_path, sep="\t", index=False)
+output_name = args.output_name.strip() or args.sample_id
+is_single_cell = parse_bool(args.is_single_cell)
+threads = max(1, args.threads)
 
-cpdb_file_path = os.path.expanduser(os.path.join(cpdb_target_dir,"cellphonedb.zip"))
-meta_file_path = txt_path
-counts_file_path = args.output_zarr_path
-out_path = os.path.join(output_dir,f"cellphonedb_output")
-os.makedirs(out_path, exist_ok=True)
+log_step(logger, 1, 5, "preparing CellPhoneDB database")
+cpdb_version = "v5.0.0"
+cpdb_target_dir = os.path.join(output_dir, "cellphonedb_v500_NatProtocol", cpdb_version)
+cpdb_file_path = os.path.join(cpdb_target_dir, "cellphonedb.zip")
+os.makedirs(cpdb_target_dir, exist_ok=True)
+if not os.path.isfile(cpdb_file_path):
+    db_utils.download_database(cpdb_target_dir, cpdb_version)
+
+log_step(logger, 2, 5, "loading expression data")
+input_ext = os.path.splitext(args.input_dir)[1].lower()
+if input_ext in {".h5ad", ".h5"}:
+    adata = sc.read_h5ad(args.input_dir)
+else:
+    spatial_object = spd.read_zarr(args.input_dir)
+    table_names = list(spatial_object.tables)
+    if not table_names:
+        raise ValueError("No table was found in the SpatialData object")
+    adata = spatial_object.tables[table_names[0]]
+
+adata = ensure_cell_id_column(adata)
+if args.celltype_col not in adata.obs.columns:
+    raise ValueError(f"celltype_col not found in obs: {args.celltype_col}")
+
+orthologs = None
+counts_data = args.counts_data
+degs_file_path = args.degs_file_path if args.degs_file_path and os.path.isfile(args.degs_file_path) else None
+active_tf_path = args.active_tf_path if args.active_tf_path and os.path.isfile(args.active_tf_path) else None
+if args.species == "mouse":
+    orthologs = load_mouse_human_orthologs(cpdb_target_dir)
+    adata = convert_mouse_anndata(adata, orthologs)
+    counts_data = "hgnc_symbol"
+    degs_file_path = convert_mouse_gene_file(
+        degs_file_path,
+        orthologs,
+        os.path.join(output_dir, f"{args.sample_id}_degs_human_orthologs.txt"),
+        "DEG",
+    )
+    active_tf_path = convert_mouse_gene_file(
+        active_tf_path,
+        orthologs,
+        os.path.join(output_dir, f"{args.sample_id}_active_tfs_human_orthologs.txt"),
+        "active TF",
+    )
+    logger.info("Running CellPhoneDB with human orthologs projected from mouse genes")
 
 microenvs_file_path = None
-if not is_singlecell:
-  if niche_col in adata.obs.columns:
-    microenvs_df = adata.obs[[celltype_col, niche_col]].copy()
-    microenvs_df = microenvs_df.dropna()
-    microenvs_df[celltype_col] = microenvs_df[celltype_col].astype(str)
-    microenvs_df[niche_col] = microenvs_df[niche_col].astype(str)
-    microenvs_df = microenvs_df.rename(columns={celltype_col: "cell_type", niche_col: "microenvironment"})
-    microenvs_file_path = os.path.join(output_dir, f"{args.sample_id}_microenvs.txt")
-    microenvs_df.to_csv(microenvs_file_path, sep="\t", index=False)
-  elif args.microenvs_file_path and os.path.isfile(args.microenvs_file_path):
-    microenvs_file_path = args.microenvs_file_path
-  else:
-    print("your data with run with no spatial limited since your params setting")
-
-active_tf_path = args.active_tf_path if args.active_tf_path and os.path.isfile(args.active_tf_path) else None
-
-from cellphonedb.src.core.methods import cpdb_degs_analysis_method
-if method == "degs":
-  if not args.degs_file_path or not os.path.isfile(args.degs_file_path):
-    raise ValueError("degs_file_path is required when method is degs")
-  cpdb_results = cpdb_degs_analysis_method.call(
-         cpdb_file_path = cpdb_file_path,
-         meta_file_path = meta_file_path,
-         counts_file_path = counts_file_path,
-         degs_file_path = args.degs_file_path,
-         counts_data = args.counts_data,
-         threshold = args.threshold,
-         output_path = out_path,
-         output_suffix=args.output_name)
+generated_microenvs_path = os.path.join(output_dir, f"{args.sample_id}_microenvs.txt")
+if not is_single_cell:
+    if args.niche_col in adata.obs.columns:
+        microenvs = adata.obs[[args.celltype_col, args.niche_col]].dropna().drop_duplicates().copy()
+        microenvs.columns = ["cell_type", "microenvironment"]
+        microenvs = microenvs.astype(str)
+        microenvs = microenvs[
+            microenvs["cell_type"].str.strip().ne("")
+            & microenvs["microenvironment"].str.strip().ne("")
+        ]
+        microenvs.to_csv(generated_microenvs_path, sep="\t", index=False)
+        microenvs_file_path = generated_microenvs_path
+        logger.info("Using obs[%s] as the spatial microenvironment", args.niche_col)
+    elif args.microenvs_file_path and os.path.isfile(args.microenvs_file_path):
+        microenvs_file_path = os.path.abspath(args.microenvs_file_path)
+        logger.info("Using the user-provided microenvironment file")
+    else:
+        logger.info(
+            "obs[%s] was not found and no microenvironment file was provided; running without spatial restriction",
+            args.niche_col,
+        )
 else:
-  cpdb_kwargs = {
+    logger.info("Single-cell mode selected; running without automatic spatial niche restriction")
+
+adata.uns["cellphonedb"] = {
+    "method": args.method,
+    "output_name": output_name,
+    "species": args.species,
+    "celltype_col": args.celltype_col,
+    "niche_col": args.niche_col,
+    "microenvs_file_path": microenvs_file_path or "",
+    "pvalue": float(args.pvalue),
+}
+
+log_step(logger, 3, 5, "writing CellPhoneDB input files")
+adata.write(args.output_zarr_path)
+metadata = adata.obs[["cell_id", args.celltype_col]].copy()
+metadata.columns = ["cell_id", "cell_type"]
+metadata_path = os.path.join(output_dir, f"{args.sample_id}_cellid_cell_type.txt")
+metadata.to_csv(metadata_path, sep="\t", index=False)
+
+out_path = os.path.join(output_dir, "cellphonedb_output")
+os.makedirs(out_path, exist_ok=True)
+common_kwargs = {
     "cpdb_file_path": cpdb_file_path,
-    "meta_file_path": meta_file_path,
-    "counts_file_path": counts_file_path,
-    "counts_data": args.counts_data,
-    "iterations": iterations,
+    "meta_file_path": metadata_path,
+    "counts_file_path": args.output_zarr_path,
+    "counts_data": counts_data,
     "threshold": args.threshold,
     "threads": threads,
-    "pvalue": pvalue,
     "score_interactions": True,
     "output_path": out_path,
-    "output_suffix": args.output_name,
-  }
-  if active_tf_path is not None:
-    cpdb_kwargs["active_tfs_file_path"] = active_tf_path
-  if microenvs_file_path is not None:
-    cpdb_kwargs["microenvs_file_path"] = microenvs_file_path
-  cpdb_results = cpdb_statistical_analysis_method.call(**cpdb_kwargs)
+    "output_suffix": output_name,
+}
+if active_tf_path:
+    common_kwargs["active_tfs_file_path"] = active_tf_path
+if microenvs_file_path:
+    common_kwargs["microenvs_file_path"] = microenvs_file_path
 
+log_step(logger, 4, 5, f"running CellPhoneDB {args.method} analysis")
+if args.method == "degs":
+    if not degs_file_path:
+        raise ValueError("degs_file_path is required when method is degs")
+    cpdb_results = cpdb_degs_analysis_method.call(degs_file_path=degs_file_path, **common_kwargs)
+else:
+    cpdb_results = cpdb_statistical_analysis_method.call(
+        iterations=args.iterations,
+        pvalue=args.pvalue,
+        **common_kwargs,
+    )
 
-
-
-
-
-
-
-
-
-
+log_step(logger, 5, 5, f"CellPhoneDB outputs saved to {out_path}")
+logger.info("CellPhoneDB module completed")

@@ -85,9 +85,14 @@ spatialsnake --version
 
 #### Option 2. Install from conda
 
+Use this as a fresh conda-native install path instead of the manual dependency
+steps above:
+
 ```bash
-conda install spatialsnake -c bioconda -c conda-forge
+conda create -n spatialsnake_env -c conda-forge -c bioconda spatialsnake -y
+conda activate spatialsnake_env
 spatialsnake --version
+spatialsnake install-packages
 ```
 
 #### Option 3. Install from source code
@@ -102,12 +107,20 @@ spatialsnake --version
 
 ### 4. Optional extended package step
 
+For PyPI or source installs:
+
 ```bash
-pip install spatialsnake[extended]
-spatialsnake --install-packages
+pip install "spatialsnake[extended]"
+spatialsnake install-packages
 ```
 
-With the minimal installation, the documented workflow includes `integrate`, `preprocess`, `clustering`, `reclustering`, `annotation_help`, `annotation`, `reannotation`, and utility operations for merge and split. Running `spatialsnake --install-packages` adds documented extended components including `compare_stage`, `transform`, `banksy`, and `cellchat`-related workflows.
+For conda installs:
+
+```bash
+spatialsnake install-packages --extended
+```
+
+With the minimal installation, the documented workflow includes `integrate`, `preprocess`, `clustering`, `reclustering`, `annotation_help`, `annotation`, `reannotation`, and utility operations for merge and split. For conda installs, `spatialsnake install-packages` completes the minimal pip-only core packages; `spatialsnake install-packages --extended` adds downstream Python packages, `pybanksy`, and R/GitHub packages for documented extended components including `compare_stage`, `transform`, `banksy`, and `cellchat`-related workflows. For PyPI installs, keep using `pip install "spatialsnake[extended]"` before `spatialsnake install-packages`.
 
 ## Working Directory
 
@@ -136,7 +149,7 @@ The command-line interface provides the following documented entry points:
 spatialsnake <command> <INPUT> <TYPE> [--option=<analysis_option>] [options]
 spatialsnake useful_tool [--option=<ways>] <INPUT> [options]
 spatialsnake produce-file [--option=<analysis_option>]
-spatialsnake install-packages
+spatialsnake install-packages [--extended] [--dry-run]
 spatialsnake (-h | --help)
 spatialsnake --version
 ```

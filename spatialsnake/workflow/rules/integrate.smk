@@ -14,7 +14,7 @@ def resolve_input_path(wildcards):
   sample_dir_map = globals().get("sample_input_dir_map", {})
   compare_key = f"{wildcards.group}::{sample_name}" if channel == "compare_analysis" and hasattr(wildcards, "group") else None
   resolved_dir = sample_dir_map.get(compare_key, sample_dir_map.get(sample_name))
-  if run_type in ["visium", "xenium", "slide_seq"]:
+  if run_type in ["visium", "xenium"]:
     base_dir = resolved_dir if resolved_dir else os.path.join(data_fold, sample_name)
     return os.path.join(base_dir, main_file)
   elif run_type in ["Merfish", "merscope", "cosmx"] or run_type in STEREOSEQ_TYPES:
@@ -30,12 +30,9 @@ def resolve_input_path(wildcards):
     )
     return os.path.join(base_dir, main_file)
   elif run_type == "visium_segment":
-    base_dir = resolve_nested_input_dir(
-      resolved_dir,
-      os.path.join(data_fold, sample_name, "segmented_outputs"),
-      "segmented_outputs",
-      "segmented_outputs",
-    )
+    # Keep the raw-data layout deterministic and consistent with the standard
+    # Visium convention: {data_fold}/{sample_id}/segmented_outputs.
+    base_dir = os.path.join(data_fold, sample_name, "segmented_outputs")
     return os.path.join(base_dir, main_file)
 
 def get_bin_size_param(wildcards):
@@ -54,15 +51,11 @@ def get_output(run_type):
       return(directory(os.path.join(results_folder, "{sample}_{bin}um",'integrate', "{sample}.zarr")))
     elif run_type in IMAGING_ZARR_TYPES:
       return(directory(os.path.join(results_folder, "{sample}",'integrate', "{sample}.zarr")))
-    elif run_type=="slide_seq":
-      return(os.path.join(results_folder, "{sample}",'integrate',"{sample}.h5ad"))
   elif channel=="compare_analysis":
     if run_type=="visium_HD":
       return(directory(os.path.join(results_folder, "{group}_{bin}um", "{sample}.zarr")))
     elif run_type in IMAGING_ZARR_TYPES:
       return(directory(os.path.join(results_folder, "{group}", "{sample}.zarr")))
-    elif run_type=="slide_seq":
-      return(os.path.join(results_folder, "{group}", "{sample}.h5ad"))
   
 
 
@@ -71,6 +64,7 @@ rule get_zarr:
         path = resolve_input_path
     output:
         outputs = get_output(run_type)
+    threads: workflow_threads
     params:
         main_file = main_file,
         run_type = run_type,
@@ -83,7 +77,6 @@ rule get_zarr:
         scale_factors=scale_factors,
         image=image,
         geojson=geojson,
-        coor_file=coor_file,
         merscope_z_layers_arg=(
             f"--merscope_z_layers {merscope_z_layers}"
             if run_type == "Merfish" and merscope_z_layers not in [None, "", "None", "null"]
@@ -113,8 +106,8 @@ rule get_zarr:
         --scale_factors {params.scale_factors} \
         --image {params.image} \
         --geojson {params.geojson} \
-        --coor_file {params.coor_file} \
         --channel {params.channel} \
+        --threads {threads} \
         {params.merscope_z_layers_arg} \
         {params.merscope_region_name_arg} \
         --merscope_transcripts {params.merscope_transcripts} \

@@ -1,23 +1,36 @@
-# total params
-option: "preprocess"          # the analysis step for pipeline
-results_folder: "results"           # the results data folder name
-data_fold: "data"                   # the raw mat data folder name
-sample_list: "sample.txt"           # the sample detail information file
-run_type: "visium"                  # the spatial transcription data type
-channel: "compare_analysis"         # the channel of analysis style [single_analysis] or [compare_analysis]
+# Spatialsnake preprocessing configuration.
+# Edit values only when you need to override the recommended defaults.
 
+# -----------------------------------------------------------------------------
+# Common workflow settings
+# -----------------------------------------------------------------------------
+option: "preprocess"  # Workflow step selected by this template. Recommended: preprocess.
+results_folder: "results"  # Root directory for all workflow outputs. Recommended: results.
+data_fold: "data"  # Root directory used by rules that resolve raw data paths. Recommended: data.
+sample_list: "sample.txt"  # Sample table path with sample IDs and input paths. Recommended: sample.txt or an explicit sample table.
+run_type: "visium"  # Spatial technology type used to select readers and rules. Recommended: visium unless your platform differs.
+channel: "compare_analysis"  # Analysis mode for single-sample or multi-sample workflows. Recommended: compare_analysis for cohorts.
+threads: 8  # Threads allocated to preprocessing. Override with --threads when needed.
 
+# -----------------------------------------------------------------------------
+# Quality control and filtering
+# -----------------------------------------------------------------------------
+filter_list: False  # Enable per-sample thresholds for single_analysis. compare_analysis always reads the final three sample.txt columns.
+min_counts: 50  # Minimum total counts required per spot or cell. Recommended: 50 as a permissive spatial QC baseline.
+min_cells: 50  # Minimum number of spots or cells in which a gene must be detected. Recommended: 50 for cohort-level filtering.
+mt_threshold: 80.0  # Maximum mitochondrial percentage allowed per spot or cell. Recommended: inspect data; 80.0 is permissive for spatial data.
 
-filter_list: False                  # bool flag: True means read per-sample min_cells/min_genes/mt_threshold from sample.txt
-min_genes: 3                        # params of minimal genes contain of each spot
-min_cells: 3                        # params of minimal cell contain of each gene
-mt_threshold: 80.0                  # the mt params percent to filter the cell
-variable: False                     # wheather chose the variable to run other analysis
-NEIGHBORS: 10                       # find neighbors params
-batch_method: 'harmony'             # whether remove batch effects between samples with [harmony] or [BBKNN]
-n_top_genes: 3000                   # the num of top variable  genes 
-n_comps: 50                         # pca params
-sketch: False                       # whether use sketch method to analysis the spatialdata
-sample_rate: 0.30                   # downsample rate of sketch method
+# -----------------------------------------------------------------------------
+# Normalization, feature selection, and dimensionality reduction
+# -----------------------------------------------------------------------------
+variable: False  # Use highly variable genes for downstream PCA when supported by the script. Recommended: False for broad spatial signals.
+NEIGHBORS: 10  # Number of neighbors used to construct the neighbor graph. Recommended: 10 for standard spot-level analysis.
+batch_method: 'harmony'  # Batch correction method for multi-sample preprocessing. Recommended: harmony for integrated cohorts.
+n_top_genes: 3000  # Number of highly variable genes selected before PCA. Recommended: 3000 for spatial transcriptomics.
+n_comps: 50  # Number of PCA components computed or retained. Recommended: 50 before neighbor graph construction.
 
-
+# -----------------------------------------------------------------------------
+# Sketch / downsampling options
+# -----------------------------------------------------------------------------
+sketch: False  # Enable sketch-based downsampling for large datasets. Recommended: False unless memory or runtime is limiting.
+sample_rate: 0.30  # Fraction of observations retained when sketching is enabled. Recommended: 0.30 for exploratory large datasets.

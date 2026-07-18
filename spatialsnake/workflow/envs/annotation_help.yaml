@@ -1,20 +1,36 @@
-# total params
-option: "annotation_help"          # the analysis step for pipeline
-results_folder: "results"           # the results data folder name
-data_fold: "data"                   # the raw mat data folder name
-sample_list: "sample.txt"           # the sample detail information file
-run_type: "visium"                  # the spatial transcription data type
-channel: "compare_analysis"         # the channel of analysis style [single_analysis] or [compare_analysis]
+# Spatialsnake annotation-help configuration.
+# Edit values only when you need to override the recommended defaults.
 
+# -----------------------------------------------------------------------------
+# Common workflow settings
+# -----------------------------------------------------------------------------
+option: "annotation_help"  # Workflow step selected by this template. Recommended: annotation_help.
+results_folder: "results"  # Root directory for all workflow outputs. Recommended: results.
+data_fold: "data"  # Root directory used by rules that resolve raw data paths. Recommended: data.
+sample_list: "sample.txt"  # Sample table path with sample IDs and input paths. Recommended: sample.txt or an explicit sample table.
+run_type: "visium"  # Spatial technology type used to select readers and rules. Recommended: visium unless your platform differs.
+channel: "compare_analysis"  # Analysis mode for single-sample or multi-sample workflows. Recommended: compare_analysis for cohorts.
+threads: 4  # Threads allocated to marker analysis and enrichment. Override with --threads when needed.
 
-markers_algorithm: 'wilcoxon'                   # find markers algorithm of each clusters [default: wilcoxon].
-shape_type: False                        # shape data name of spatialdata shapes visualize [cell_boundaries ].
-image_type: False                         # image data name of spatialdata images to visualize [hires] [low]
-vis_mode: "auto"                           # Stereo-seq visualization mode [auto|point|shape]. auto prefers shape when available.
-point_size: 2.8                            # point render size for point-based visualization.
-spacies: "human"                            # GO and kegg analysis params [human] or [mouse]
-image_slice: False                        # whether slice image to depandent size
-x1: 0                                 # system of the sliced image size
-x2: 0
-y1: 0
-y2: 0
+# -----------------------------------------------------------------------------
+# Marker gene and enrichment options
+# -----------------------------------------------------------------------------
+markers_algorithm: 'wilcoxon'  # Statistical method for cluster marker ranking. Recommended: wilcoxon for robust marker discovery.
+species: "human"  # Species used for GO and KEGG enrichment resources. Recommended: human or mouse according to the sample source.
+
+# -----------------------------------------------------------------------------
+# Spatial visualization options
+# -----------------------------------------------------------------------------
+shape_type: "cell_boundaries"  # SpatialData shape element used for visualization. Recommended: False for automatic/default behavior.
+image_type: "hires"  # SpatialData image element used for visualization. Recommended: False for automatic/default behavior.
+vis_mode: "auto"  # Visualization mode; auto chooses point or shape rendering when possible. Recommended: auto.
+point_size: 2.8  # Point size for point-based spatial plots. Recommended: 2.8 for readable Visium-scale plots.
+
+# -----------------------------------------------------------------------------
+# Optional image cropping
+# -----------------------------------------------------------------------------
+image_slice: False  # Crop spatial plots to a coordinate window. Recommended: False unless inspecting a region of interest.
+x1: 0  # Minimum x coordinate for cropping when image_slice is enabled. Recommended: set from tissue coordinates.
+x2: 0  # Maximum x coordinate for cropping when image_slice is enabled. Recommended: set greater than x1.
+y1: 0  # Minimum y coordinate for cropping when image_slice is enabled. Recommended: set from tissue coordinates.
+y2: 0  # Maximum y coordinate for cropping when image_slice is enabled. Recommended: set greater than y1.

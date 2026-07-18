@@ -1,68 +1,39 @@
-# total params
-option: "integrate"          # the analysis step for pipeline
-results_folder: "results"           # the results data folder name
-data_fold: "data"                   # the raw mat data folder name
-sample_list: "sample.txt"           # the sample detail information file
-run_type: "visium"                  # the spatial transcription data type
-channel: "compare_analysis"         # the channel of analysis style [single_analysis] or [compare_analysis]
+# Spatialsnake integration configuration.
+# Edit values only when you need to override the recommended defaults.
 
-# intergrate params
+# -----------------------------------------------------------------------------
+# Common workflow settings
+# -----------------------------------------------------------------------------
+option: "integrate"  # Workflow step selected by this template. Recommended: integrate.
+results_folder: "results"  # Root directory for all workflow outputs. Recommended: results.
+data_fold: "data"  # Raw-data root. Visium Segment is read from {data_fold}/{sample_id}/segmented_outputs.
+sample_list: "sample.txt"  # Sample table path with sample IDs and input paths. Recommended: sample.txt or an explicit sample table.
+run_type: "visium"  # Spatial technology type used to select readers and rules. Recommended: visium unless your platform differs.
+channel: "compare_analysis"  # Analysis mode for single-sample or multi-sample workflows. Recommended: compare_analysis for cohorts.
+threads: 4  # Threads allocated to each integration/merge rule. Override with --threads when needed.
 
-cells_boundaries: False             # wherther load in cell boundaries data of xenium in shape
-nucleus_boundaries: False           # wherther load in nucleus boundaries data of xenium in shape
-nucleus_labels: False               # wherther load in nucleus labels data of xenium in labels
-morphology_mip: False               # wherther load in morphology mip data of xenium in images
+# -----------------------------------------------------------------------------
+# Xenium input options
+# -----------------------------------------------------------------------------
+cells_boundaries: False  # Load Xenium cell boundary polygons into SpatialData shapes. Recommended: False unless boundaries are needed.
+nucleus_boundaries: False  # Load Xenium nucleus boundary polygons into SpatialData shapes. Recommended: False for faster import.
+nucleus_labels: False  # Load Xenium nucleus labels into SpatialData labels. Recommended: False unless label images are required.
+morphology_mip: False  # Load Xenium morphology MIP image. Recommended: False unless morphology overview is needed.
 
+# -----------------------------------------------------------------------------
+# Visium Segment and Stereo-seq input options
+# -----------------------------------------------------------------------------
+geojson: 'cell_segmentations.geojson'  # Visium Segment cell segmentation GeoJSON filename. Recommended: cell_segmentations.geojson.
+image: 'tissue_hires_image.png'  # High-resolution tissue image filename for segmented Visium input. Recommended: tissue_hires_image.png.
+scale_factors: 'scalefactors_json.json'  # Visium scale factor JSON filename used for coordinate mapping. Recommended: scalefactors_json.json.
+bin_size: 50  # Fallback bin size for Stereo-seq tissue GEM aggregation. Recommended: define input_spec in sample.txt when possible.
 
-
-geojson: 'cell_segmentations.geojson'   # name of visium segment data
-image: 'tissue_hires_image.png'         # name of visium segment data 
-scale_factors: 'scalefactors_json.json' # name of visium segment data
-coor_file: "BeadLocationsForR.csv"      # name of slideseq data
-bin_size: 50                           # bin size for Stereo-seq tissue GEM fallback aggregation
-merscope_z_layers: 3                   # optional, e.g. 0 or 0,1,2 ; use "None" for spatialdata_io.merscope default
-merscope_region_name: "None"          # optional; use "None" for spatialdata_io.merscope default
-merscope_transcripts: True             # spatialdata_io.merscope default
-merscope_cells_boundaries: True        # spatialdata_io.merscope default
-merscope_cells_table: True             # spatialdata_io.merscope default
-merscope_mosaic_images: True           # spatialdata_io.merscope default
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# -----------------------------------------------------------------------------
+# MERSCOPE / MERFISH input options
+# -----------------------------------------------------------------------------
+merscope_z_layers: 3  # Optional MERSCOPE z layers passed to spatialdata-io. Recommended: use "None" for package default or specify layers.
+merscope_region_name: "None"  # Optional MERSCOPE region name. Recommended: "None" unless a specific region should be loaded.
+merscope_transcripts: True  # Load transcript coordinates from MERSCOPE input. Recommended: True for transcript-level exploration.
+merscope_cells_boundaries: True  # Load MERSCOPE cell boundary shapes. Recommended: True when segmentation boundaries are available.
+merscope_cells_table: True  # Load MERSCOPE cell-level expression table. Recommended: True for downstream analysis.
+merscope_mosaic_images: True  # Load MERSCOPE mosaic images. Recommended: True when image-backed visualization is needed.

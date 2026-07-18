@@ -1,12 +1,31 @@
+# Spatialsnake useful_tool merge configuration.
+# Inputs are supplied on the command line and execution remains direct Python.
+
+# Output and table selection
 INPUT:
 output_dir: 'results/useful_results'
+output_name: 'concatenated_sdata.zarr'
+table_key: ''
+
+# Core mode: sample or annotation
 merge_by: 'sample'
-reordering: False
-re_sample: False
-cluster_key: 'clusters'
+
+# Independent-sample concatenation
+sample_ids: ''
+sample_col: 'sample'
+feature_join: 'inner'
+label_cols: ''
+label_policy: 'preserve'
+
+# Parent annotation overlay
 annotation_csv: ''
-csv_cell_col: 'Barcode'
-csv_label_col: 'Grouped_Annotation'
-input_cell_col: 'cell_id'
+annotation_col: 'auto'
 target_col: 'sub_celltype'
-original_celltype_col: 'celltype'
+fallback_col: 'celltype'
+csv_cell_col: 'auto'
+csv_region_col: 'auto'
+input_cell_col: 'auto'
+input_region_col: 'auto'
+conflict_policy: 'error'
+existing_policy: 'overwrite_matched'
+min_match_rate: 0.95

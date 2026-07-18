@@ -1,0 +1,2 @@
+sample 0 1 2 3 4 5.........please input anno by order of cluster
+concatenated_sdata,Colorectal,CAF,Vascular,Endothelial Cell,Pericyte,T Cell,Treg,Natural Killer Cell,NK Cell

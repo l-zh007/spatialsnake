@@ -1,3 +1,4 @@
+import copy
 import os
 import spatialdata as spd
 import spatialdata_plot as splt
@@ -28,7 +29,10 @@ from typing import Union, List, Optional, Iterable, Sequence, Dict
 from matplotlib.axes import Axes
 from anndata import AnnData
 import matplotlib
+import rich.pretty
+from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
 
+logger = setup_logger("cell2location")
 
 def parse_bool(value):
     if isinstance(value, bool):
@@ -83,9 +87,9 @@ parser.add_argument("--N_cells_per_location", type=int, default=30)
 
 parser.add_argument("--labels_key_reference", default="celltype", required=False)
 parser.add_argument("--batch_key_reference", default="sample", required=False)
-parser.add_argument("--cell_count_cutoff", default=15, required=False)
-parser.add_argument("--cell_percentage_cutoff2", default=0.05, required=False)
-parser.add_argument("--nonz_mean_cutoff", default=1.12, required=False)
+parser.add_argument("--cell_count_cutoff", type=float, default=15, required=False)
+parser.add_argument("--cell_percentage_cutoff2", type=float, default=0.05, required=False)
+parser.add_argument("--nonz_mean_cutoff", type=float, default=1.12, required=False)
 parser.add_argument("--labels_key_st", default="celltype", required=False)
 parser.add_argument("--batch_key_st", default="sample", required=False)
 parser.add_argument("--layer_st", default=None, required=False)
@@ -94,11 +98,23 @@ parser.add_argument("--device", required=False)
 parser.add_argument("--save_models", type=parse_bool, default=True, required=False)
 args = parser.parse_args()
 if args.save_models:
-    print("@@@@@@@@@@@@@@@@@@@555555")
-if args.device == "cuda":
-    os.environ["THEANO_FLAGS"] = 'device=cuda,floatX=float32,force_device=True'
-else:
-    os.environ["THEANO_FLAGS"] = 'device=cpu,floatX=float32'
+    logger.info("Model checkpoints will be saved")
+
+
+def resolve_device(device):
+    requested = str(device or "cpu").strip().lower()
+    if requested not in {"cpu", "cuda"}:
+        raise ValueError("--device must be either 'cpu' or 'cuda'")
+    if requested == "cuda":
+        import torch
+
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA was requested, but torch.cuda.is_available() is False")
+        return {"accelerator": "gpu", "device": "auto"}
+    return {"accelerator": "cpu", "device": "auto"}
+
+
+train_device_kwargs = resolve_device(args.device)
 
 def cell2loc_plot_history(model, fig_path, iter_start=0, iter_end=None, rolling_window=1):
 # Adapted from: https://github.com/BayraktarLab/cell2location/blob/master/cell2location/models/base/_pyro_mixin.py#L407
@@ -167,15 +183,18 @@ def cell2loc_plot_QC_reference(reference_model,fig_path_reconstr, fig_path_expr,
     aver = reference_model._compute_cluster_averages(key=REGISTRY_KEYS.LABELS_KEY)
     aver = aver[reference_model.factor_names_]
 
-    plt.hist2d(
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.hist2d(
         np.log10(aver.values.flatten() + 1),
         np.log10(inf_aver.flatten() + 1),
         bins=50,
         norm=matplotlib.colors.LogNorm(),
     )
-    plt.xlabel("Mean expression for every gene in every cluster")
-    plt.ylabel("Estimated expression for every gene in every cluster")
-    plt.savefig(fig_path_expr)
+    ax.set_xlabel("Mean expression for every gene in every cluster")
+    ax.set_ylabel("Estimated expression for every gene in every cluster")
+    fig.tight_layout()
+    fig.savefig(fig_path_expr, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
 def cell2loc_plot_QC_reconstr(model, fig_path, summary_name: str = "means", use_n_obs: int = 1000):
 # Adapted from: https://github.com/BayraktarLab/cell2location/blob/master/cell2location/models/base/_pyro_mixin.py#L544
@@ -196,99 +215,142 @@ def cell2loc_plot_QC_reconstr(model, fig_path, summary_name: str = "means", use_
     if issparse(x_data):
         x_data = np.asarray(x_data.toarray())
     mu = model.expected_nb_param["mu"]
-    plt.hist2d(
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.hist2d(
         np.log10(x_data.flatten() + 1),
         np.log10(mu.flatten() + 1),
         bins=50,
         norm=matplotlib.colors.LogNorm(),
     )
-    plt.gca().set_aspect("equal", adjustable="box")
-    plt.xlabel("Data, log10")
-    plt.ylabel("Posterior expected value, log10")
-    plt.title("Reconstruction accuracy")
-    plt.tight_layout()
-    plt.savefig(fig_path)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel("Data, log10")
+    ax.set_ylabel("Posterior expected value, log10")
+    ax.set_title("Reconstruction accuracy")
+    fig.tight_layout()
+    fig.savefig(fig_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
 
 output_dir=os.path.dirname(args.output_dir_zarr)
 
 os.makedirs(os.path.join(output_dir,"figure"), exist_ok=True)
 
+log_step(logger, 1, 8, "loading spatial input")
 adata_vis, concatenated_sdata, table_key = load_spatial_input(args.input_spatial)
-
-adata_vis.var['SYMBOL'] = adata_vis.var_names
-ensure_var_index(adata_vis, ["gene_ids", "gene_id", "ensembl"])
+logger.info(f"Spatial data: {adata_vis.n_obs} observations and {adata_vis.n_vars} genes")
+adata_output = adata_vis.copy()
 
 def ensure_counts(adata, name="adata"):
-    if issparse(adata.X):
-        is_int = np.all(np.mod(adata.X.data, 1) == 0)
-    else:
-        is_int = np.all(np.mod(adata.X, 1) == 0)
-    
-    if not is_int:
-        if "counts" in adata.layers:
-            adata.X = adata.layers["counts"].copy()
-        elif "raw_counts" in adata.layers:
-            adata.X = adata.layers["raw_counts"].copy()
-        elif adata.raw is not None:
-             if adata.raw.shape == adata.shape:
-                 adata.X = adata.raw.X.copy()
-                 print(f"{name}.X  -> using {name}.raw.X")
-    else:
-        print(f"{name}.X  not integer, no need to ensure_counts")
+    def is_nonnegative_integer(matrix):
+        values = matrix.data if issparse(matrix) else np.asarray(matrix)
+        return bool(
+            np.all(np.isfinite(values))
+            and np.all(values >= 0)
+            and np.all(np.equal(values, np.floor(values)))
+        )
+
+    if is_nonnegative_integer(adata.X):
+        logger.info(f"{name}.X already contains non-negative integer counts")
+        return
+
+    candidates = []
+    if "counts" in adata.layers:
+        candidates.append((f"{name}.layers['counts']", adata.layers["counts"]))
+    if "raw_counts" in adata.layers:
+        candidates.append((f"{name}.layers['raw_counts']", adata.layers["raw_counts"]))
+    if adata.raw is not None:
+        raw_var_names = pd.Index(adata.raw.var_names.astype(str))
+        current_var_names = pd.Index(adata.var_names.astype(str))
+        if raw_var_names.is_unique and current_var_names.isin(raw_var_names).all():
+            raw_positions = raw_var_names.get_indexer(current_var_names)
+            candidates.append((f"{name}.raw.X", adata.raw.X[:, raw_positions]))
+
+    for count_source, candidate in candidates:
+        if candidate.shape == adata.shape and is_nonnegative_integer(candidate):
+            adata.X = candidate.copy()
+            logger.info(f"{name}.X uses raw counts from {count_source}")
+            return
+        logger.warning(f"Ignoring invalid raw-count candidate: {count_source}")
+
+    raise ValueError(
+        f"{name}.X must contain non-negative integer raw counts. "
+        "No valid counts were found in X, layers['counts'], layers['raw_counts'], or raw.X."
+    )
+
+
+def validate_unique_axes(adata, name):
+    if not adata.obs_names.is_unique:
+        duplicates = adata.obs_names[adata.obs_names.duplicated()].unique().tolist()[:10]
+        raise ValueError(f"{name}.obs_names contains duplicates: {duplicates}")
+    if not adata.var_names.is_unique:
+        duplicates = adata.var_names[adata.var_names.duplicated()].unique().tolist()[:10]
+        raise ValueError(f"{name}.var_names contains duplicates: {duplicates}")
+
+
+def validate_obs_category(adata, key, name):
+    if key not in adata.obs:
+        raise ValueError(f"{key} not found in {name}.obs")
+    values = adata.obs[key]
+    string_values = values.astype(str)
+    missing = values.isna() | string_values.str.strip().eq("")
+    if missing.any():
+        raise ValueError(f"{name}.obs['{key}'] contains {int(missing.sum())} missing or blank value(s)")
+    adata.obs[key] = pd.Categorical(string_values)
 
 ensure_counts(adata_vis, "adata_vis")
-
-if "sample" not in adata_vis.obs:
-    if "region" in adata_vis.obs:
-        adata_vis.obs["sample"] = adata_vis.obs["region"].astype(str)
-    elif "spatial" in adata_vis.uns and len(adata_vis.uns["spatial"]) > 0:
-        adata_vis.obs["sample"] = list(adata_vis.uns["spatial"].keys())[0]
-    else:
-        adata_vis.obs["sample"] = str(args.sample_id)
-
-ensure_symbol_column(adata_vis)
+adata_vis.var['SYMBOL'] = adata_vis.var_names.astype(str)
 ensure_var_index(adata_vis, ["gene_ids", "gene_id", "ensembl"])
+validate_unique_axes(adata_vis, "adata_vis")
 
+if args.batch_key_st == "sample" and "sample" not in adata_vis.obs:
+    if args.sample_id == "concatenated_sdata":
+        raise ValueError(
+            "The multi-sample spatial table is missing obs['sample']; "
+            "provide that column or configure an existing --batch_key_st column"
+        )
+    adata_vis.obs["sample"] = str(args.sample_id)
+    logger.info(f"Created obs['sample'] for single-sample input: {args.sample_id}")
+
+log_step(logger, 2, 8, "loading single-cell reference")
 adata_ref = sc.read_h5ad(args.input_singlecell)
 ensure_counts(adata_ref, "adata_ref")
 ensure_symbol_column(adata_ref)
 ensure_var_index(adata_ref, ["GeneID-2", "gene_ids", "gene_id", "ensembl"])
 adata_ref.var['SYMBOL'] = adata_ref.var.index
-print(adata_ref)
+validate_unique_axes(adata_ref, "adata_ref")
+logger.info(f"Reference data: {adata_ref.n_obs} cells and {adata_ref.n_vars} genes")
 from cell2location.utils.filtering import filter_genes
+
+log_step(logger, 3, 8, "filtering mitochondrial and shared genes" if args.remove_mt else "filtering shared genes")
 if args.remove_mt:
-    print("remove_mt")
     symbol_col = adata_vis.var.get("SYMBOL", adata_vis.var_names)
     mt_mask = symbol_col.str.startswith(("MT-", "mt-"))
     if mt_mask.any():
         adata_vis.var["MT_gene"] = mt_mask
-        adata_vis = adata_vis[:, ~adata_vis.var["MT_gene"].values]
-    shared_features = [f for f in adata_vis.var_names if f in adata_ref.var_names]
-    adata_ref = adata_ref[:, shared_features].copy()
-    adata_vis = adata_vis[:, shared_features].copy()
-    selected = filter_genes(adata_ref,cell_count_cutoff=float(args.cell_count_cutoff),
-    cell_percentage_cutoff2=float(args.cell_percentage_cutoff2),
-    nonz_mean_cutoff=float(args.nonz_mean_cutoff))
-    adata_ref = adata_ref[:, selected].copy()
-    adata_vis = adata_vis[:, selected].copy()
+        adata_vis = adata_vis[:, ~adata_vis.var["MT_gene"].values].copy()
 
-print(adata_vis)
-print(adata_ref)
-print(adata_ref.X)
-print(adata_ref.obs)
+shared_features = adata_vis.var_names[adata_vis.var_names.isin(adata_ref.var_names)]
+if len(shared_features) == 0:
+    raise ValueError("Spatial and single-cell inputs have no shared genes after identifier alignment")
+adata_ref = adata_ref[:, shared_features].copy()
+adata_vis = adata_vis[:, shared_features].copy()
 
-
-if args.labels_key_reference not in adata_ref.obs:
-    raise ValueError(f"labels_key_reference not found in adata_ref.obs: {args.labels_key_reference}")
-if args.batch_key_reference not in adata_ref.obs:
-    raise ValueError(f"batch_key_reference not found in adata_ref.obs: {args.batch_key_reference}")
-adata_ref.obs[args.labels_key_reference] = pd.Categorical(
-    adata_ref.obs[args.labels_key_reference].astype(str).str.strip()
+selected = filter_genes(
+    adata_ref,
+    cell_count_cutoff=args.cell_count_cutoff,
+    cell_percentage_cutoff2=args.cell_percentage_cutoff2,
+    nonz_mean_cutoff=args.nonz_mean_cutoff,
 )
-adata_ref.obs[args.batch_key_reference] = pd.Categorical(
-    adata_ref.obs[args.batch_key_reference].astype(str).str.strip()
-)
+plt.close()
+adata_ref = adata_ref[:, selected].copy()
+adata_vis = adata_vis[:, selected].copy()
+if adata_ref.n_vars == 0 or adata_vis.n_vars == 0:
+    raise ValueError("Gene filtering removed all shared genes; adjust the cell2location filtering thresholds")
+logger.info(f"Shared filtered data: spatial={adata_vis.shape}, reference={adata_ref.shape}")
+
+validate_obs_category(adata_ref, args.labels_key_reference, "adata_ref")
+validate_obs_category(adata_ref, args.batch_key_reference, "adata_ref")
+validate_obs_category(adata_vis, args.batch_key_st, "adata_vis")
 categorical_keys = ["Method"] if "Method" in adata_ref.obs else None
 cell2location.models.RegressionModel.setup_anndata(
     adata=adata_ref,
@@ -303,12 +365,8 @@ mod = RegressionModel(adata_ref)
 # view anndata_setup as a sanity check
 mod.view_anndata_setup()
 
-
-
-
-
-
-mod.train(max_epochs=args.max_epochs_reference)
+log_step(logger, 4, 8, "training cell2location reference regression model")
+mod.train(max_epochs=args.max_epochs_reference, **train_device_kwargs)
 cell2loc_plot_history(mod, output_dir + "/figure/ELBO_sc_model.png")
 
 ref_batch_size = min(2500, adata_ref.n_obs)
@@ -316,7 +374,8 @@ adata_ref = mod.export_posterior(
     adata_ref,
     sample_kwargs={
         "num_samples": 1000,
-        "batch_size": ref_batch_size
+        "batch_size": ref_batch_size,
+        **train_device_kwargs,
     }
 )
 
@@ -326,13 +385,7 @@ else:
     inf_aver = adata_ref.var[[f"means_per_cluster_mu_fg_{i}" for i in adata_ref.uns["mod"]["factor_names"]]].copy()
 inf_aver.columns = adata_ref.uns["mod"]["factor_names"]
 inf_aver.to_csv(output_dir+"/Cell2Loc_inf_aver.csv")
-
-print(adata_vis)
-print(adata_ref)
-print(adata_ref.X)
-print(adata_ref.obs)
-
-
+logger.info(f"Exported reference signatures for {len(inf_aver.columns)} cell types")
 
 cell2loc_plot_QC_reference(mod, output_dir + "/figure/QC_reference_reconstruction_accuracy.png", output_dir + "/figure/QC_reference_expression signatures_vs_avg_expression.png")
 
@@ -340,16 +393,16 @@ cell2loc_plot_QC_reference(mod, output_dir + "/figure/QC_reference_reconstructio
 if args.save_models:
   mod.save(output_dir +"/Reference_model", overwrite=True)
 
-
+log_step(logger, 5, 8, "preparing spatial model input")
 
 intersect = np.intersect1d(adata_vis.var_names, inf_aver.index)
+if len(intersect) == 0:
+    raise ValueError("No genes remain after matching spatial data to the inferred reference signatures")
 adata_vis = adata_vis[:, intersect].copy()
 inf_aver = inf_aver.loc[intersect, :].copy()
 
 # prepare anndata for cell2location model
-batch_key_st = args.batch_key_st if args.batch_key_st in adata_vis.obs else None
-if batch_key_st is not None:
-    adata_vis.obs[batch_key_st] = pd.Categorical(adata_vis.obs[batch_key_st].astype(str).str.strip())
+batch_key_st = args.batch_key_st
 cell2location.models.Cell2location.setup_anndata(adata=adata_vis, batch_key=batch_key_st)
 
 
@@ -365,12 +418,17 @@ model_spatial = cell2location.models.Cell2location(
 )
 model_spatial.view_anndata_setup()
 
-
-model_spatial.train(max_epochs=args.max_epochs_st, batch_size=None)
+log_step(logger, 6, 8, "training spatial cell abundance model")
+model_spatial.train(max_epochs=args.max_epochs_st, batch_size=None, **train_device_kwargs)
 cell2loc_plot_history(model_spatial, output_dir + "/figure/ELBO_spatial_model.png")
 spatial_batch_size = min(adata_vis.n_obs, model_spatial.adata.n_obs) if adata_vis.n_obs > 0 else 250
 adata_vis = model_spatial.export_posterior(
-    adata_vis, sample_kwargs={"num_samples": 1000, "batch_size": spatial_batch_size}
+    adata_vis,
+    sample_kwargs={
+        "num_samples": 1000,
+        "batch_size": spatial_batch_size,
+        **train_device_kwargs,
+    },
 )
 
 
@@ -382,8 +440,57 @@ if args.save_models:
     model_spatial.save(output_dir +"/Spatial_model", overwrite=True)
 
 
+def transfer_spatial_results(source, target):
+    source_names = pd.Index(source.obs_names.astype(str))
+    target_names = pd.Index(target.obs_names.astype(str))
+    if not source_names.is_unique or not target_names.is_unique:
+        raise ValueError("Cannot transfer cell2location results with duplicated observation IDs")
+    if set(source_names) != set(target_names):
+        missing = target_names[~target_names.isin(source_names)].tolist()[:10]
+        extra = source_names[~source_names.isin(target_names)].tolist()[:10]
+        raise ValueError(
+            "Cell2location result observations do not match the original spatial table. "
+            f"Missing examples: {missing}; extra examples: {extra}"
+        )
+
+    source_positions = source_names.get_indexer(target_names)
+    posterior_keys = (
+        "q05_cell_abundance_w_sf",
+        "means_cell_abundance_w_sf",
+        "q95_cell_abundance_w_sf",
+        "stds_cell_abundance_w_sf",
+    )
+    for key in posterior_keys:
+        if key not in source.obsm:
+            raise KeyError(f"Expected cell2location posterior matrix missing from obsm: {key}")
+        value = source.obsm[key]
+        if isinstance(value, pd.DataFrame):
+            aligned = value.copy()
+            aligned.index = source_names
+            target.obsm[key] = aligned.loc[target_names].copy()
+        else:
+            target.obsm[key] = value[source_positions].copy()
+
+    if "mod" not in source.uns:
+        raise KeyError("Expected cell2location model metadata missing from uns['mod']")
+    target.uns["mod"] = copy.deepcopy(source.uns["mod"])
+
+    for obs_key in dict.fromkeys((args.batch_key_st, "sample")):
+        if obs_key in source.obs and obs_key not in target.obs:
+            values = pd.Series(
+                source.obs[obs_key].astype(str).to_numpy(),
+                index=source_names,
+            )
+            target.obs[obs_key] = pd.Categorical(values.loc[target_names].to_numpy())
+    return target
+
+
+log_step(logger, 7, 8, "saving cell2location posterior results")
+adata_output = transfer_spatial_results(adata_vis, adata_output)
 if concatenated_sdata is not None:
-    concatenated_sdata[table_key] = adata_vis
+    concatenated_sdata[table_key] = adata_output
     concatenated_sdata.write(args.output_dir_zarr)
 else:
-    write_adata(adata_vis, args.output_dir_zarr)
+    write_adata(adata_output, args.output_dir_zarr)
+log_step(logger, 8, 8, f"cell2location output saved to {args.output_dir_zarr}")
+logger.info("Cell2location module completed")

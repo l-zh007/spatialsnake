@@ -1,0 +1,157 @@
+{
+    "multiscales": [
+        {
+            "axes": [
+                {
+                    "name": "c",
+                    "type": "channel"
+                },
+                {
+                    "name": "y",
+                    "type": "space"
+                },
+                {
+                    "name": "x",
+                    "type": "space"
+                }
+            ],
+            "coordinateTransformations": [
+                {
+                    "input": {
+                        "axes": [
+                            {
+                                "name": "c",
+                                "type": "channel"
+                            },
+                            {
+                                "name": "y",
+                                "type": "space",
+                                "unit": "unit"
+                            },
+                            {
+                                "name": "x",
+                                "type": "space",
+                                "unit": "unit"
+                            }
+                        ],
+                        "name": "cyx"
+                    },
+                    "output": {
+                        "axes": [
+                            {
+                                "name": "c",
+                                "type": "channel"
+                            },
+                            {
+                                "name": "y",
+                                "type": "space",
+                                "unit": "unit"
+                            },
+                            {
+                                "name": "x",
+                                "type": "space",
+                                "unit": "unit"
+                            }
+                        ],
+                        "name": "ST8059049_downscaled_lowres"
+                    },
+                    "type": "identity"
+                },
+                {
+                    "input": {
+                        "axes": [
+                            {
+                                "name": "c",
+                                "type": "channel"
+                            },
+                            {
+                                "name": "y",
+                                "type": "space",
+                                "unit": "unit"
+                            },
+                            {
+                                "name": "x",
+                                "type": "space",
+                                "unit": "unit"
+                            }
+                        ],
+                        "name": "cyx"
+                    },
+                    "output": {
+                        "axes": [
+                            {
+                                "name": "c",
+                                "type": "channel"
+                            },
+                            {
+                                "name": "y",
+                                "type": "space",
+                                "unit": "unit"
+                            },
+                            {
+                                "name": "x",
+                                "type": "space",
+                                "unit": "unit"
+                            }
+                        ],
+                        "name": "ST8059049"
+                    },
+                    "scale": [
+                        1.0,
+                        28.740000994404035,
+                        28.740000994404035
+                    ],
+                    "type": "scale"
+                }
+            ],
+            "datasets": [
+                {
+                    "coordinateTransformations": [
+                        {
+                            "scale": [
+                                1.0,
+                                1.0,
+                                1.0
+                            ],
+                            "type": "scale"
+                        }
+                    ],
+                    "path": "0"
+                }
+            ],
+            "metadata": {
+                "omero": {
+                    "channels": [
+                        {
+                            "label": "r"
+                        },
+                        {
+                            "label": "g"
+                        },
+                        {
+                            "label": "b"
+                        }
+                    ]
+                }
+            },
+            "name": "/images/ST8059049_lowres_image",
+            "version": "0.4-dev-spatialdata"
+        }
+    ],
+    "omero": {
+        "channels": [
+            {
+                "label": "r"
+            },
+            {
+                "label": "g"
+            },
+            {
+                "label": "b"
+            }
+        ]
+    },
+    "spatialdata_attrs": {
+        "version": "0.2"
+    }
+}

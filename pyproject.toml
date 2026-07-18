@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "spatialsnake"
 dynamic = ["version", "dependencies", "optional-dependencies"]
 authors = [
-  { name = "lzh", email = "1714074171@qq.com" },
+  { name = "lzh", email = "l-zh007@users.noreply.github.com" },
 ]
 description = "A Python package for spatial transcriptomics analysis workflows."
 readme = "README.md"

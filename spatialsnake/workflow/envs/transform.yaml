@@ -1,12 +1,29 @@
+# Spatialsnake useful_tool transform configuration.
+# Input paths are supplied positionally on the command line.
+
 INPUT:
-output_dir: 'results/useful_results'
-save_image: True
-transform_from: "h5ad"
-transform_to: 'h5ad'
+output_dir: "results/useful_results"
 
+# Supported directions: zarr -> h5ad/seurat and h5ad -> zarr/seurat.
+transform_from: "zarr"
+transform_to: "h5ad"
 
+# auto detects spatial coordinates; st and sc force the expected data type.
+type: "auto"
 
+# Seurat export only: auto prefers valid raw counts, raw requires .raw.X,
+# and X explicitly uses adata.X. Integer matrices become counts; normalized
+# matrices become a data-only assay.
+seurat_matrix: "auto"
 
+# Empty is valid only when the SpatialData object contains exactly one table.
+table_key: ""
 
+# Preserve downsampled legacy images where conversion supports them.
+save_image: true
 
+# 0 uses 80% of currently available cgroup/system memory as the safety limit.
+memory_limit_gb: 0
 
+# Keep the complete intermediate H5AD produced during zarr -> seurat.
+keep_intermediate: false
