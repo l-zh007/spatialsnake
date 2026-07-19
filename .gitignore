@@ -24,19 +24,8 @@ venv/
 env/
 cache/
 
-# Docker build files are tracked; packed environment artifacts stay out.
-docker/*
-!docker/test3/
-!docker/test3/*.md
-!docker/test3/*.py
-!docker/test3/*.sh
-!docker/test3/Dockerfile
-!docker/test3/Dockerfile.dockerignore
-!docker/test3/artifacts/
-docker/test3/artifacts/*
-!docker/test3/artifacts/.gitignore
-!docker/test3/locks/
-!docker/test3/locks/**
+# Docker build/export material is kept outside this repository.
+docker/
 
 # R and editor state
 **/.Rhistory
