@@ -1,5 +1,13 @@
-<p align="center">
+<p align="center"> 
   <img src="spatialsnake-logo.png" alt="spatialsnake logo" width="760">
+</p>
+
+<p align="center">
+  <img
+    width="820"
+    src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=500&size=16&duration=3200&pause=1100&color=4C78A8&center=true&vCenter=true&width=820&lines=Unified+SpatialData-based+workflows+across+spatial+platforms;Decision-guided+modules+from+data+ingestion+to+annotation;Reproducible+single-sample+and+cross-sample+analysis;Modular+tools+for+integration%2C+transformation%2C+and+comparison"
+    alt="Spatialsnake workflow features"
+  />
 </p>
 
 <p align="center">
