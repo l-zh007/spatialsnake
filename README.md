@@ -17,16 +17,25 @@
   <a href="https://pypi.org/project/spatialsnake/">
     <img src="https://img.shields.io/pypi/v/spatialsnake" alt="PyPI">
   </a>
-  <a href="https://snakemake.github.io">
-    <img src="https://img.shields.io/badge/snakemake-%E2%89%A58.0.0-brightgreen.svg" alt="Snakemake">
+  <a href="https://anaconda.org/bioconda/spatialsnake">
+    <img src="https://anaconda.org/bioconda/spatialsnake/badges/version.svg" alt="Bioconda version">
+  </a>
+  <a href="https://anaconda.org/bioconda/spatialsnake">
+    <img src="https://anaconda.org/bioconda/spatialsnake/badges/platforms.svg" alt="Supported platforms">
+  </a>
+  <a href="https://anaconda.org/bioconda/spatialsnake">
+    <img src="https://anaconda.org/bioconda/spatialsnake/badges/license.svg" alt="License">
+  </a>
+  <a href="https://anaconda.org/bioconda/spatialsnake">
+    <img src="https://anaconda.org/bioconda/spatialsnake/badges/downloads.svg" alt="Bioconda downloads">
   </a>
 </p>
 
 <p align="center">
-  A Snakemake workflow for spatial transcriptomics powered by the <code>spatialdata</code> framework.
+  A user-friendly command-line application for spatial transcriptomics powered by <code>SpatialData</code> and Snakemake.
 </p>
 
-`spatialsnake` is an automated pipeline for `spatial transcriptomics` analysis. Implemented in `Python` on top of the `scverse` ecosystem, it uses SpatialData to convert datasets from multiple spatial transcriptomics platforms into a unified `zarr`-based object format. This design supports a consistent workflow spanning data ingestion, preprocessing, clustering, annotation, and downstream analysis through a command-line interface with workflow-based parameter control.
+`spatialsnake` is a command-line application for automated `spatial transcriptomics` analysis. Implemented in `Python` on top of the `scverse` ecosystem, it uses SpatialData to convert datasets from multiple spatial transcriptomics platforms into a unified `zarr`-based object format. This design supports a consistent workflow spanning data ingestion, preprocessing, clustering, annotation, and downstream analysis through a command-line interface with workflow-based parameter control.
 
 ## Project at a Glance
 
@@ -84,17 +93,17 @@ conda install -c conda-forge bbknn cython
 
 ### 3. Install `spatialsnake`
 
-#### Option 1. Install from PyPI
+#### Option 1. Install from PyPI (recommended)
 
 ```bash
 pip install spatialsnake
 spatialsnake --version
 ```
 
-#### Option 2. Install from conda
+#### Option 2. Install from Bioconda
 
-Use this as a fresh conda-native install path instead of the manual dependency
-steps above:
+The official Bioconda package provides an alternative Conda-based installation
+in a fresh environment:
 
 ```bash
 conda create -n spatialsnake_env -c conda-forge -c bioconda spatialsnake -y
@@ -102,6 +111,8 @@ conda activate spatialsnake_env
 spatialsnake --version
 spatialsnake install-packages
 ```
+
+See package details and release files on [Bioconda](https://anaconda.org/bioconda/spatialsnake).
 
 #### Option 3. Install from source code
 

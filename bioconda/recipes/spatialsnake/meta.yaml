@@ -1,5 +1,5 @@
 {% set name = "spatialsnake" %}
-{% set version = "0.0.1" %}
+{% set version = "0.0.2" %}
 
 package:
   name: {{ name|lower }}
@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://pypi.io/packages/source/s/spatialsnake/spatialsnake-{{ version }}.tar.gz
-  sha256: 14362e3e1684f18b4f664b8c87ae3b3697509d7af5a49f6fa16883485c9f6153
+  sha256: 50f7493303a91f4404397da2f5bf1525f99b5bef3f0b5e858c6a7819923e0cee
 
 build:
   noarch: python
@@ -15,6 +15,8 @@ build:
   script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
   entry_points:
     - spatialsnake = spatialsnake.command_line:main
+  run_exports:
+    - {{ pin_subpackage(name, max_pin="x.x") }}
 
 requirements:
   host:
@@ -61,7 +63,6 @@ requirements:
     - pydeseq2 ==0.5.2
     - harmonypy ==0.0.10
     - bbknn ==1.6.0
-    - cython ==3.2.5
     - r-optparse ==1.8.2
     - r-tidyverse ==2.0.0
     - r-future ==1.70.0
@@ -87,8 +88,8 @@ test:
     - spatialsnake
   commands:
     - spatialsnake --version
-    - mkdir -p numba-cache mpl-cache
-    - NUMBA_CACHE_DIR=$PWD/numba-cache MPLCONFIGDIR=$PWD/mpl-cache python -c "import spatialsnake, scanpy, anndata, numpy, pandas, scipy, sklearn, numba, shapely, matplotlib, seaborn, plotnine, zarr, h5py, tifffile, imageio, ome_zarr, statsmodels, pint, dask, pooch, pims, xarray, click, typer, yaml, geosketch, pydeseq2, harmonypy, bbknn"
+    - mkdir -p /tmp/spatialsnake-numba-cache /tmp/spatialsnake-mpl-cache
+    - NUMBA_CACHE_DIR=/tmp/spatialsnake-numba-cache MPLCONFIGDIR=/tmp/spatialsnake-mpl-cache python -c "import spatialsnake, scanpy, anndata, numpy, pandas, scipy, sklearn, numba, shapely, matplotlib, seaborn, plotnine, zarr, h5py, tifffile, imageio, ome_zarr, statsmodels, pint, dask, pooch, pims, xarray, click, typer, yaml, geosketch, pydeseq2, harmonypy, bbknn"
     - Rscript -e "library(optparse); library(edgeR); library(clusterProfiler)"
 
 about:

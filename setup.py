@@ -21,7 +21,7 @@ with open("README.md", "r", encoding="utf-8") as readme:
 
 setup(
     name="spatialsnake",
-    version="0.0.2",
+    version="0.0.4",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
@@ -29,7 +29,7 @@ setup(
     extras_require={
         "extended": requirements_extended,
     },
-    python_requires=">=3.12,<3.13",
+    python_requires=">=3.12",
     include_package_data=True,
     zip_safe=False,
     entry_points={
