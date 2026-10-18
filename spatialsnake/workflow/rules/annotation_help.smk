@@ -22,9 +22,9 @@ def get_stereoseq_input_spec_param(wildcards):
     return ""
   sample_name = wildcards.sample if hasattr(wildcards, "sample") else None
   if channel == "compare_analysis":
-    requested = next(iter(globals().get("sample_stereoseq_input_spec_map", {}).values()), config.get("bin_size"))
+    requested = next(iter(globals().get("sample_stereoseq_input_spec_map", {}).values()), None)
   else:
-    requested = globals().get("sample_stereoseq_input_spec_map", {}).get(sample_name, config.get("bin_size"))
+    requested = globals().get("sample_stereoseq_input_spec_map", {}).get(sample_name)
   if requested in [None, "", False, "None", "False", "false", "NULL", "null"]:
     return ""
   return f"--input_spec '{requested}'"
@@ -34,7 +34,9 @@ rule annotation_help:
   input:
     inputs=normal_file(run_type,"clustering")
   output:
-    merge=annotation_help_output(run_type,'marker_genes_pval.csv')
+    merge=annotation_help_output(run_type,'marker_genes_pval.csv'),
+    proportion_png=annotation_help_output(run_type,'Clusters_proportion.png'),
+    proportion_tsv=annotation_help_output(run_type,'Clusters_proportion.composition.tsv')
     # os.path.join(results_folder,"{sample}",'clustering','marker_genes_pval.csv') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'clustering','marker_genes_pval.csv') 
   threads: workflow_threads
   params:
@@ -70,7 +72,8 @@ rule annotation_help:
 
 rule enrich_rule:
   input:
-    inputs = annotation_help_output(run_type,'marker_genes_pval.csv')
+    inputs = annotation_help_output(run_type,'marker_genes_pval.csv'),
+    zarr = normal_file(run_type,"clustering")
   output:
     kegg_csv = enrich_output_map(run_type)['kegg_csv'],
     go_csv = enrich_output_map(run_type)['go_csv'],
@@ -82,6 +85,7 @@ rule enrich_rule:
     species = species,
     run_type = run_type,
     sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" else wildcards.sample,
+    input_spec=get_stereoseq_input_spec_param
   shell:
       """
       Rscript {spatialsnake_path}workflow/scripts/enrichment.R \
@@ -89,13 +93,12 @@ rule enrich_rule:
         --sample_id {params.sample_id} \
         --output_path {output.kegg_csv} \
         --type {params.run_type} \
-        --species {params.species}
+        --species {params.species} \
+        --input_zarr {input.zarr:q} \
+        {params.input_spec}
       """
 
     
-
-
-
 
 
 

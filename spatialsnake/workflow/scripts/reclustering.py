@@ -45,6 +45,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scanpy as sc
 import spatialdata as spd
+import spatialdata_plot
+from spatialdata.transformations import get_transformation
 from spatialsnake.workflow.function.export_cluster_csv import export_cluster_csv
 from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
 
@@ -79,16 +81,9 @@ def run_reclustering(adata, resolution, n_top_genes, neighbors, n_pcs, cluster_k
 
 
 def export_marker_genes(adata, cluster_key, method, min_pct, logfc_threshold, output_csv):
-    try:
-        sc.tl.rank_genes_groups(
-            adata,
-            groupby=cluster_key,
-            method=method,
-            min_in_group_fraction=float(min_pct),
-            log2fc_min=float(logfc_threshold)
-        )
-    except TypeError:
-        sc.tl.rank_genes_groups(adata, groupby=cluster_key, method=method)
+    sc.tl.rank_genes_groups(
+        adata, groupby=cluster_key, method=method, use_raw=False, pts=True
+    )
     groups = adata.obs[cluster_key].astype(str).unique().tolist()
     frames = []
     for group_name in groups:
@@ -124,17 +119,66 @@ def save_umap_plot(adata, cluster_key, output_png):
 def save_spatial_plot(sdata, table_key, adata, cluster_key, output_png):
     sdata[table_key] = adata
     try:
-        coord_systems = sorted(list(sdata.coordinate_systems))
-        coord = coord_systems[0] if len(coord_systems) > 0 else None
-        images = list(sdata.images.keys())
-        if len(images) > 0 and coord is not None:
-            ax = plt.subplots(1, 1, figsize=(8, 8))[1]
-            sdata.pl.render_images().pl.render_shapes(color=cluster_key).pl.show(ax=ax, coordinate_systems=coord)
+        attrs = adata.uns.get("spatialdata_attrs", {})
+        regions = attrs.get("region", [])
+        regions = [regions] if isinstance(regions, str) else list(regions or [])
+        regions = [region for region in regions if region in sdata.shapes or region in sdata.points]
+        images = [name for name in sdata.images if "hires" in name.lower()] or list(sdata.images)
+        systems = sorted(sdata.coordinate_systems)
+        panels = []
+        for region in regions:
+            element = sdata.shapes[region] if region in sdata.shapes else sdata.points[region]
+            candidates = [system for system in systems if system in get_transformation(element, get_all=True)]
+            if not candidates:
+                continue
+            system = next((system for system in candidates if "hires" in system.lower()), candidates[0])
+            image = next(
+                (name for name in images if system in get_transformation(sdata.images[name], get_all=True)),
+                None,
+            )
+            panels.append((region, system, image))
+
+        if panels:
+            rows = 2 if any(image for _, _, image in panels) else 1
+            _, axes = plt.subplots(rows, len(panels), figsize=(10 * len(panels), 13 if rows == 2 else 8), squeeze=False)
+            groups = adata.obs[cluster_key].astype("category").cat.categories.tolist()
+            instance_key = attrs.get("instance_key")
+            region_key = attrs.get("region_key")
+            for i, (region, system, image) in enumerate(panels):
+                ax = axes[-1, i]
+                if image:
+                    sdata.pl.render_images(image).pl.show(ax=axes[0, i], coordinate_systems=system, title="image")
+                if region in sdata.shapes:
+                    sdata.pl.render_shapes(
+                        region, color="#9E9E9E", fill_alpha=1, outline_alpha=0,
+                    ).pl.render_shapes(
+                        region, color=cluster_key, groups=groups, table_name=table_key,
+                        na_color=None, fill_alpha=1, outline_alpha=0,
+                    ).pl.show(ax=ax, coordinate_systems=system, title=str(region))
+                else:
+                    sdata.pl.render_points(region, color="#9E9E9E", size=2, alpha=1).pl.show(
+                        ax=ax, coordinate_systems=system, title=str(region),
+                    )
+                    region_obs = adata.obs
+                    if region_key in region_obs:
+                        region_obs = region_obs[region_obs[region_key].astype(str) == str(region)]
+                    label_ids = region_obs[instance_key].astype(str) if instance_key in region_obs else region_obs.index.astype(str)
+                    labels_by_id = pd.Series(region_obs[cluster_key].to_numpy(), index=label_ids)
+                    points = spd.transform(sdata.points[region], to_coordinate_system=system).compute()
+                    points.index = points.index.astype(str)
+                    labels = labels_by_id.reindex(points.index).astype("category").cat.remove_unused_categories()
+                    colors = plt.get_cmap("tab20", max(1, len(labels.cat.categories)))
+                    for j, label in enumerate(labels.cat.categories):
+                        selected = labels == label
+                        ax.scatter(points.loc[selected, "x"], points.loc[selected, "y"], s=3, color=colors(j), label=label)
+                    if len(labels.cat.categories):
+                        ax.legend(loc="center left", bbox_to_anchor=(1, 0.5), frameon=False)
+            plt.tight_layout()
             plt.savefig(output_png, dpi=300, bbox_inches="tight")
             plt.close()
             return
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Spatial context plotting failed; using coordinate fallback: %s", exc)
     if "spatial" in adata.obsm_keys():
         coords = adata.obsm["spatial"]
         codes = adata.obs[cluster_key].astype("category").cat.codes

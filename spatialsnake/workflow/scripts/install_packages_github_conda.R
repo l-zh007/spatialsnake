@@ -66,24 +66,13 @@ install_cran_version <- function(pkg, version) {
 }
 
 if (!is_installed("remotes")) install.packages("remotes", dependencies = NA)
-if (!is_installed("BiocManager")) install.packages("BiocManager", dependencies = NA)
-
-try({
-  BiocManager::install(version = "3.20", ask = FALSE, update = FALSE)
-}, silent = TRUE)
-options(repos = BiocManager::repositories())
-
 if (!is_installed("rhdf5")) {
+  if (!is_installed("BiocManager")) install.packages("BiocManager", dependencies = NA)
+  BiocManager::install(version = "3.20", ask = FALSE, update = FALSE)
+  options(repos = BiocManager::repositories())
   BiocManager::install("rhdf5", ask = FALSE, update = FALSE)
 }
 assert_loadable("rhdf5")
-
-install_github_pinned(
-  pkg = "ggsankey",
-  repo = "davidsjoberg/ggsankey",
-  version = "0.0.99999",
-  sha = "b675d0d5144b1b5758d3b2b41e86ceee66a1e071"
-)
 
 install_github_pinned(
   pkg = "schard",
@@ -108,6 +97,8 @@ if (!is_installed("presto")) {
 }
 assert_loadable("presto")
 
+install_cran_version("Deriv", "4.2.0")
+
 install_github_pinned(
   pkg = "CellChat",
   repo = "jinworks/CellChat",
@@ -115,7 +106,7 @@ install_github_pinned(
   sha = "75253cd0c9e68410e6e721a6d3a0419a1d7e358f"
 )
 
-required <- c("ggsankey", "schard", "spacexr", "CellChat", "NMF", "circlize")
+required <- c("schard", "spacexr", "CellChat", "NMF", "circlize")
 miss <- required[!vapply(required, is_installed, logical(1))]
 if (length(miss) > 0) {
   stop("Missing packages after install: ", paste(miss, collapse = ", "))

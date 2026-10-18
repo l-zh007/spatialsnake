@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings("ignore")
 from spatialdata.models import PointsModel
-from spatialdata.transformations import Identity
+from spatialdata.transformations import get_transformation
 from spatialsnake.workflow.function.plot import cluster_proportion
 from spatialsnake.workflow.function.export_cluster_csv import export_cluster_csv
 from spatialsnake.workflow.function.stereoseq_selection import (
@@ -96,7 +96,7 @@ def crop0(x,crs,x1,x2,y1,y2):
         axes=("x", "y"),
         target_coordinate_system=crs)
 
-#args.input_dir="results/useful_results/ROI_Selection_1_cells_stats.zarr"
+#args.input_dir="results/useful_results/data_splitting/ROI_Selection_1_cells_stats.zarr"
 log_step(logger, 1, 5, "loading clustered SpatialData")
 concatenated_sdata = spd.read_zarr(args.input_dir)
 table = pick_table_key(concatenated_sdata, run_type=type, input_spec=args.input_spec)
@@ -152,67 +152,85 @@ else:
   if not point_visual_elements:
     point_visual_elements = [visual_region_name] if visual_region_name in getattr(concatenated_sdata, "points", {}) else point_elements
   visual_elements = list(point_visual_elements)
-  keep_ids = adata.obs_names.astype(str)
-  point_transformations = {coord_system: Identity() for coord_system in valid_coord_systems} if valid_coord_systems else {"global": Identity()}
   for current_visual_region in point_visual_elements:
     source_points = concatenated_sdata.points[current_visual_region]
     points_df = source_points.compute() if hasattr(source_points, "compute") else source_points.copy()
     points_df = points_df.copy()
-    points_df.index = points_df.index.astype(str)
-    points_df = points_df.reindex(keep_ids).copy()
-    points_df["clusters"] = adata.obs["clusters"].astype(str).reindex(points_df.index).fillna("unassigned").astype("category")
+    region_key = adata.uns["spatialdata_attrs"].get("region_key")
+    local_obs = adata.obs.loc[adata.obs[region_key].astype(str).eq(current_visual_region)] if region_key in adata.obs else adata.obs
+    point_ids = points_df[instance_key].astype(str) if instance_key in points_df.columns else pd.Series(points_df.index.astype(str), index=points_df.index)
+    labels = pd.Series(local_obs["clusters"].astype(str).to_numpy(), index=local_obs[instance_key].astype(str))
+    points_df["clusters"] = point_ids.map(labels).fillna("unassigned").astype("category")
     points_df = points_df.dropna(subset=["x", "y"])
     concatenated_sdata.points[current_visual_region] = PointsModel.parse(
       points_df.sort_index(),
       coordinates={"x": "x", "y": "y"},
-      transformations=point_transformations,
+      transformations=get_transformation(source_points, get_all=True),
     )
 total = min(len(visual_elements)*sample_cnt, len(images), max(1, len(systems)))
 log_step(logger, 2, 5, f"rendering spatial cluster plots for {sample_cnt} sample(s)")
-for i in range(sample_cnt):
-  sys = systems[0] if sample_cnt < 2 else systems[i]
-  title = images[i].replace("_hires_image", "")
+if not images:
+  sys = systems[0] if systems else "global"
   current_visual_region = visual_region_name
-  if active_vis_mode == "point" and len(point_visual_elements) > 0:
-    current_visual_region = point_visual_elements[0] if len(point_visual_elements) < 2 else point_visual_elements[min(i, len(point_visual_elements) - 1)]
-  current_sdata = concatenated_sdata
-  if str(args.image_slice).lower() == "true" and args.coord is not None:
-    current_sdata = crop0(current_sdata, sys, args.coord[0], args.coord[1], args.coord[2], args.coord[3])
-  fig, axes = plt.subplots(2, 1, figsize=(20, 13))
-  axes = np.ravel(axes)
-  current_sdata.pl.render_images(images[i]).pl.show(
-    ax=axes[0],
-    title="image",
-    coordinate_systems=sys,
-  )
+  if active_vis_mode == "point" and point_visual_elements:
+    current_visual_region = point_visual_elements[0]
+  fig, ax = plt.subplots(figsize=(10, 10))
   if active_vis_mode == "shape":
-    current_sdata.pl.render_shapes(
-      shapes[i],
-      color="clusters",
-      table_name=table,
-      outline_alpha=0,
-      fill_alpha=1,
-    ).pl.show(
-      ax=axes[1],
-      coordinate_systems=sys,
-      title=title,
-    )
+    concatenated_sdata.pl.render_shapes(
+      visual_region_name, color="clusters", table_name=table,
+      outline_alpha=0, fill_alpha=1,
+    ).pl.show(ax=ax, coordinate_systems=sys, title=str(args.sample_id))
   else:
-    current_sdata.pl.render_images(images[i]).pl.render_points(
-      current_visual_region,
-      color="clusters",
-      size=args.point_size,
-      alpha=0.8,
-    ).pl.show(
-      ax=axes[1],
-      coordinate_systems=sys,
-      title=title,
-    )
-  plt.savefig(
-    os.path.join(dir_path, f"{images[i]}_Clusters.png"),
-    dpi=300,
-    bbox_inches='tight')
+    concatenated_sdata.pl.render_points(
+      current_visual_region, color="clusters", size=args.point_size, alpha=0.8,
+    ).pl.show(ax=ax, coordinate_systems=sys, title=str(args.sample_id))
+  plt.savefig(os.path.join(dir_path, f"{args.sample_id}_Clusters.png"), dpi=300, bbox_inches='tight')
   plt.close()
+else:
+  for i in range(sample_cnt):
+    sys = systems[0] if sample_cnt < 2 else systems[i]
+    title = images[i].replace("_hires_image", "")
+    current_visual_region = visual_region_name
+    if active_vis_mode == "point" and len(point_visual_elements) > 0:
+      current_visual_region = point_visual_elements[0] if len(point_visual_elements) < 2 else point_visual_elements[min(i, len(point_visual_elements) - 1)]
+    current_sdata = concatenated_sdata
+    if str(args.image_slice).lower() == "true" and args.coord is not None:
+      current_sdata = crop0(current_sdata, sys, args.coord[0], args.coord[1], args.coord[2], args.coord[3])
+    fig, axes = plt.subplots(2, 1, figsize=(20, 13))
+    axes = np.ravel(axes)
+    current_sdata.pl.render_images(images[i]).pl.show(
+      ax=axes[0],
+      title="image",
+      coordinate_systems=sys,
+    )
+    if active_vis_mode == "shape":
+      current_sdata.pl.render_shapes(
+        shapes[i],
+        color="clusters",
+        table_name=table,
+        outline_alpha=0,
+        fill_alpha=1,
+      ).pl.show(
+        ax=axes[1],
+        coordinate_systems=sys,
+        title=title,
+      )
+    else:
+      current_sdata.pl.render_images(images[i]).pl.render_points(
+        current_visual_region,
+        color="clusters",
+        size=args.point_size,
+        alpha=0.8,
+      ).pl.show(
+        ax=axes[1],
+        coordinate_systems=sys,
+        title=title,
+      )
+    plt.savefig(
+      os.path.join(dir_path, f"{images[i]}_Clusters.png"),
+      dpi=300,
+      bbox_inches='tight')
+    plt.close()
     
     
     

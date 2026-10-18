@@ -97,6 +97,14 @@ def cluster_proportion(adata, sample_col='region',
     if save_path is not None:
         plt.savefig(save_path, dpi=dpi, bbox_inches='tight')
         logger.info(f"Plot saved to {save_path}")
+
+        counts = cluster_counts.reset_index().melt(
+            id_vars=sample_col, var_name=cluster_col, value_name='count')
+        counts['total'] = counts.groupby(sample_col, observed=True)['count'].transform('sum')
+        counts = counts.loc[counts['total'] > 0].copy()
+        counts['proportion_pct'] = counts['count'] / counts['total'] * 100
+        counts = counts.sort_values(sample_col, kind='stable')
+        counts.to_csv(os.path.splitext(save_path)[0] + '.composition.tsv', sep='\t', index=False)
     
     return fig, ax
   

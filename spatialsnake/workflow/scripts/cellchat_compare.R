@@ -28,10 +28,12 @@ option_list <- list(
   make_option("--save_merged", type = "logical", default = TRUE),
   make_option("--receiver_cells", type = "character", default = ""),
   make_option("--do_single_bubble", type = "logical", default = FALSE),
-  make_option("--pair_lr_use", type = "character", default = "")
+  make_option("--pair_lr_use", type = "character", default = ""),
+  make_option("--stage", type = "character", default = "all")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
+if (!opt$stage %in% c("all", "compute", "plot")) stop("stage must be all, compute, or plot")
 
 required <- c("input_rds1", "input_rds2", "output_dir")
 missing_args <- required[vapply(required, function(x) is.null(opt[[x]]) || !nzchar(opt[[x]]), logical(1))]
@@ -226,6 +228,14 @@ if (name1 == name2) {
   stop("The two condition names must be different")
 }
 
+cache_list <- file.path(opt$output_dir, "cellchat_object.list.rds")
+cache_merged <- file.path(opt$output_dir, "cellchat_merged.rds")
+if (opt$stage == "plot" && opt$save_merged && file.exists(cache_list) && file.exists(cache_merged)) {
+  cached <- readRDS(cache_list)
+  cellchat1 <- cached[[name1]]
+  cellchat2 <- cached[[name2]]
+  cellchat_merged <- readRDS(cache_merged)
+} else {
 cellchat1 <- validate_cellchat(readRDS(opt$input_rds1), name1)
 cellchat2 <- validate_cellchat(readRDS(opt$input_rds2), name2)
 
@@ -254,6 +264,9 @@ joint_levels <- levels(cellchat_merged@idents$joint)
 if (!setequal(joint_levels, cell_levels)) {
   stop("Merged CellChat identities do not match the aligned identity union")
 }
+}
+joint_levels <- levels(cellchat_merged@idents$joint)
+datatype1 <- as.character(cellchat1@options$datatype)
 
 message("CellChat comparison: ", name2, " - ", name1)
 message("Cell identities: ", paste(joint_levels, collapse = ", "))
@@ -264,22 +277,30 @@ global_summary <- data.frame(
   interaction_count = c(sum(cellchat1@net$count), sum(cellchat2@net$count)),
   interaction_weight = c(sum(cellchat1@net$weight), sum(cellchat2@net$weight))
 )
-write_table(global_summary, "compare_global_summary.csv")
+if (opt$stage != "plot") write_table(global_summary, "compare_global_summary.csv")
 
 count_table <- matrix_table(cellchat1@net$count, cellchat2@net$count, "count", name1, name2)
 weight_table <- matrix_table(cellchat1@net$weight, cellchat2@net$weight, "weight", name1, name2)
 cell_pair_table <- merge(count_table, weight_table, by = c("source", "target"))
 cell_pair_table$direction <- condition_direction(cell_pair_table$weight_diff, name1, name2)
 cell_pair_table <- cell_pair_table[order(-abs(cell_pair_table$weight_diff), -abs(cell_pair_table$count_diff)), ]
-write_table(cell_pair_table, "compare_cell_pair.csv")
+if (opt$stage != "plot") write_table(cell_pair_table, "compare_cell_pair.csv")
 
 pathway_table <- pathway_summary(cellchat1, cellchat2, name1, name2)
-write_table(pathway_table, "compare_pathway.csv")
+if (opt$stage != "plot") write_table(pathway_table, "compare_pathway.csv")
 
 lr1 <- standardize_lr(cellchat1, name1)
 lr2 <- standardize_lr(cellchat2, name2)
 lr_table <- merge_lr_tables(lr1, lr2, name1, name2)
-write_table(lr_table, "compare_lr.csv")
+if (opt$stage != "plot") write_table(lr_table, "compare_lr.csv")
+
+if (opt$stage == "compute") {
+  if (opt$save_merged) {
+    saveRDS(setNames(list(cellchat1, cellchat2), c(name1, name2)), cache_list)
+    saveRDS(cellchat_merged, cache_merged)
+  }
+  quit(save = "no")
+}
 
 manual_pairs <- parse_cell_pairs(opt$cell_pairs, joint_levels)
 focus_cells <- resolve_labels(opt$focus_cells, joint_levels, "focus_cells")
@@ -555,7 +576,7 @@ if (nzchar(opt$receiver_cells) || opt$do_single_bubble || nzchar(opt$pair_lr_use
   warning("receiver_cells, do_single_bubble, and pair_lr_use are deprecated in compare-stage and were ignored")
 }
 
-if (opt$save_merged) {
+if (opt$save_merged && opt$stage == "all") {
   saveRDS(setNames(list(cellchat1, cellchat2), c(name1, name2)),
           file.path(opt$output_dir, "cellchat_object.list.rds"))
   saveRDS(cellchat_merged, file.path(opt$output_dir, "cellchat_merged.rds"))

@@ -20,7 +20,8 @@ rule cellcharter_rule:
     condition_col=condition_col,
     sample_col=sample_col,
     celltype_col=celltype_col,
-    cellcharter_col=cellcharter_col
+    cellcharter_col=cellcharter_col,
+    device=device
   shell:
       """
       python {spatialsnake_path}workflow/scripts/run_cellcharter.py \
@@ -37,5 +38,6 @@ rule cellcharter_rule:
         --sample_col {params.sample_col} \
         --celltype_col {params.celltype_col} \
         --cellcharter_col {params.cellcharter_col} \
+        --device {params.device} \
         --threads {threads}
       """

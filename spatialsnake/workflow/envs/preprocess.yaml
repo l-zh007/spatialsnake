@@ -15,7 +15,7 @@ threads: 8  # Threads allocated to preprocessing. Override with --threads when n
 # -----------------------------------------------------------------------------
 # Quality control and filtering
 # -----------------------------------------------------------------------------
-filter_list: False  # Enable per-sample thresholds for single_analysis. compare_analysis always reads the final three sample.txt columns.
+filter_list: False  # Enable YAML per-sample overrides. Optional sample.txt min_cells/min_counts[/mt_threshold] columns take priority.
 min_counts: 50  # Minimum total counts required per spot or cell. Recommended: 50 as a permissive spatial QC baseline.
 min_cells: 50  # Minimum number of spots or cells in which a gene must be detected. Recommended: 50 for cohort-level filtering.
 mt_threshold: 80.0  # Maximum mitochondrial percentage allowed per spot or cell. Recommended: inspect data; 80.0 is permissive for spatial data.

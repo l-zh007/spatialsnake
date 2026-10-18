@@ -7,6 +7,9 @@ from spatialsnake.workflow.function.logging_utils import setup_logger
 
 logger = setup_logger("sample_parser")
 
+CORE_SAMPLE_OPTIONS = {"integrate", "preprocess", "clustering", "annotation_help", "annotation"}
+CORE_FILTER_COLUMNS = ["min_cells", "min_counts", "mt_threshold"]
+
 def build_compare_sample_key(sample_id, group_id):
   return f"{group_id}::{sample_id}"
 
@@ -106,6 +109,141 @@ def read_compare_sample_table(sample_list_file):
     if duplicated:
         raise RuntimeError("Duplicate sample_id values in sample.txt: " + ", ".join(sorted(duplicated)))
     return rows
+
+
+def _normalize_platform_name(platform):
+    return re.sub(r"[\s_-]+", "", str(platform).strip().lower())
+
+
+def _core_sample_columns(platform, channel):
+    if channel not in {"single_analysis", "compare_analysis"}:
+        raise RuntimeError(f"Unsupported analysis channel: {channel}")
+
+    columns = ["sample_id", "input_path"]
+    if channel == "compare_analysis":
+        columns.append("group")
+
+    normalized_platform = _normalize_platform_name(platform)
+    if normalized_platform == "visiumhd":
+        columns.append("bin_size")
+    elif normalized_platform == "stereoseq":
+        columns.append("input_spec")
+    return columns
+
+
+def read_core_sample_table(sample_list_file, platform, channel):
+    """Read raw-data sample sheets used by the core analysis options.
+
+    Platform selectors and optional per-sample QC values are declared by the
+    header. This keeps each selector attached to the sample it describes.
+    """
+    if not os.path.isfile(sample_list_file):
+        raise FileNotFoundError(f"sample table not found: {sample_list_file}")
+
+    base_columns = _core_sample_columns(platform, channel)
+    allowed_headers = [
+        base_columns,
+        base_columns + CORE_FILTER_COLUMNS[:2],
+        base_columns + CORE_FILTER_COLUMNS,
+    ]
+    rows = []
+    header = None
+    with open(sample_list_file, "r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            fields = re.split(r"\s+", stripped)
+            if header is None:
+                header = fields
+                if header not in allowed_headers:
+                    expected = " or ".join(" ".join(columns) for columns in allowed_headers)
+                    raise RuntimeError(
+                        f"Invalid sample.txt header for {channel}/{platform}. Expected: {expected}"
+                    )
+                continue
+            if len(fields) != len(header):
+                raise RuntimeError(
+                    f"sample.txt line {line_number} contains {len(fields)} fields; "
+                    f"the header defines {len(header)}"
+                )
+
+            row = dict(zip(header, fields))
+            if "bin_size" in row:
+                try:
+                    parsed_bin = int(row["bin_size"])
+                except ValueError as exc:
+                    raise RuntimeError(
+                        f"sample.txt line {line_number} has invalid bin_size={row['bin_size']!r}"
+                    ) from exc
+                if parsed_bin < 1:
+                    raise RuntimeError(f"sample.txt line {line_number} bin_size must be >= 1")
+                row["bin_size"] = str(parsed_bin)
+
+            if "input_spec" in row:
+                try:
+                    parse_stereoseq_input_spec(row["input_spec"])
+                except ValueError as exc:
+                    raise RuntimeError(
+                        f"Invalid Stereo-seq input_spec at line {line_number}: {exc}"
+                    ) from exc
+
+            for field in CORE_FILTER_COLUMNS[:2]:
+                if field not in row:
+                    continue
+                try:
+                    parsed_value = int(row[field])
+                except ValueError as exc:
+                    raise RuntimeError(
+                        f"sample.txt line {line_number} has invalid {field}={row[field]!r}"
+                    ) from exc
+                if parsed_value < 1:
+                    raise RuntimeError(f"sample.txt line {line_number} {field} must be >= 1")
+                row[field] = parsed_value
+
+            if "mt_threshold" in row:
+                try:
+                    parsed_threshold = float(row["mt_threshold"])
+                except ValueError as exc:
+                    raise RuntimeError(
+                        f"sample.txt line {line_number} has invalid "
+                        f"mt_threshold={row['mt_threshold']!r}"
+                    ) from exc
+                if not 0 <= parsed_threshold <= 100:
+                    raise RuntimeError(
+                        f"sample.txt line {line_number} mt_threshold must be between 0 and 100"
+                    )
+                row["mt_threshold"] = parsed_threshold
+            rows.append(row)
+
+    if header is None:
+        raise RuntimeError("sample.txt is empty")
+    if not rows:
+        raise RuntimeError("sample.txt contains no sample rows")
+
+    seen = set()
+    duplicated = set()
+    for row in rows:
+        sample_id = row["sample_id"]
+        if sample_id in seen:
+            duplicated.add(sample_id)
+        seen.add(sample_id)
+    if duplicated:
+        raise RuntimeError("Duplicate sample_id values in sample.txt: " + ", ".join(sorted(duplicated)))
+    return rows
+
+
+def get_core_sample_filter_map(sample_list_file, platform, channel):
+    filter_map = {}
+    for row in read_core_sample_table(sample_list_file, platform, channel):
+        overrides = {
+            field: row[field]
+            for field in CORE_FILTER_COLUMNS
+            if field in row
+        }
+        if overrides:
+            filter_map[row["sample_id"]] = overrides
+    return filter_map
 
 def check_file_exit(type,dir_path):
   invalid_samples=[]
@@ -207,9 +345,18 @@ def get_stereoseq_input_spec_map(
     channel,
     sample_parameters=None,
     default_input_spec=None,
+    core_sample_table=False,
 ):
     input_spec_map = {}
     if not os.path.isfile(sample_list_file):
+        return input_spec_map
+    if core_sample_table:
+        for row in read_core_sample_table(sample_list_file, "stereoseq", channel):
+            sample_id = row["sample_id"]
+            input_spec = row["input_spec"]
+            if channel == "compare_analysis":
+                input_spec_map[build_compare_sample_key(sample_id, row["group"])] = input_spec
+            input_spec_map[sample_id] = input_spec
         return input_spec_map
     if channel == "compare_analysis":
         sample_parameters = sample_parameters or {}
@@ -283,6 +430,47 @@ def get_sample_paths(
                 "\n未提供必要样本信息，请提供 sample.txt 或通过命令指定样本表路径"
                 f"；当前样本表路径不可用: {sample_list_file}"
             )
+    if option in CORE_SAMPLE_OPTIONS:
+        rows = read_core_sample_table(sample_list_file, type, channel)
+        normalized_platform = _normalize_platform_name(type)
+        for row in rows:
+            sample = row["sample_id"]
+            dir_path = row["input_path"]
+            valid_samples.append(sample)
+            if channel == "compare_analysis":
+                group.append(row["group"])
+
+            if normalized_platform == "visiumhd":
+                bins = f"{int(row['bin_size']):03d}"
+                bin_size.append(bins)
+                dir_path = os.path.join(dir_path, "binned_outputs", f"square_{bins}um")
+            elif normalized_platform == "stereoseq":
+                if channel == "compare_analysis":
+                    bin_size.append(row["input_spec"])
+            elif normalized_platform == "visiumsegment":
+                segment_root = data_fold if data_fold else dir_path
+                dir_path = os.path.join(segment_root, sample, "segmented_outputs")
+
+            check_type = "stereoseq" if normalized_platform == "stereoseq" else type
+            detected_main = check_file_exit(check_type, dir_path)
+            if not detected_main:
+                sys.exit(
+                    f"\nExiting: dependent input for sample '{sample}' was not found under {dir_path}"
+                )
+            if channel == "single_analysis" and main_file and detected_main != main_file[0]:
+                sys.exit(
+                    f"\nExiting: sample '{sample}' uses a different matrix filename "
+                    f"({detected_main!r} instead of {main_file[0]!r})"
+                )
+            main_file.append(detected_main)
+
+        if channel == "compare_analysis":
+            if normalized_platform in {"visiumhd", "stereoseq"}:
+                return valid_samples, main_file, bin_size, group
+            return valid_samples, main_file, group
+        if normalized_platform == "visiumhd":
+            return valid_samples, main_file, bin_size
+        return valid_samples, main_file
     if channel == "compare_analysis":
         sample_parameters = sample_parameters or {}
         rows = read_compare_sample_table(sample_list_file)
@@ -460,7 +648,7 @@ def seg_filter_sample(sample_list_file, required_samples=None):
 
     For standard compare_analysis sample sheets the complete layout is:
       sample_id input_dir group min_cells min_counts mt_threshold
-    Visium HD and Stereo-seq keep their bin/input_spec column before group.
+    Visium HD and Stereo-seq keep their bin/input_spec column after group.
     """
     sample_dict = {}
     try:

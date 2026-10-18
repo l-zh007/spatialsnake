@@ -9,6 +9,7 @@ warnings.filterwarnings("ignore")
 import logging
 from spatialsnake.workflow.function.get_sample import (
     build_subset_analysis_tasks,
+    get_core_sample_filter_map,
     get_sample_paths as _get_sample_paths,
     get_annotation,
     get_stereoseq_input_spec_map as _get_stereoseq_input_spec_map,
@@ -143,7 +144,7 @@ elif compare_algorithm_key == "edger":
 else:
     raise ValueError("compare_algorithm must be DESeq2 or edgeR")
 cell_focus = config.get("cell_focus", "all")
-device = config.get("device", "cpu")
+device = config.get("device", "auto")
 runpipe = config.get("runpipe", "pysenic")
 counts_data = config.get("counts_data", "hgnc_symbol")
 iterations = config.get("iterations", 1000)
@@ -199,12 +200,17 @@ if not isinstance(sample_parameters, dict):
 
 def get_sample_paths(*args, **kwargs):
     kwargs.setdefault("sample_parameters", sample_parameters)
-    kwargs.setdefault("default_bin_size", config.get("bin_size"))
-    kwargs.setdefault("default_input_spec", config.get("input_spec", config.get("bin_size")))
     return _get_sample_paths(*args, **kwargs)
 
 
 def get_stereoseq_input_spec_map(sample_list_file, channel):
+    core_sample_table = option in consistent_option and anno_algorithm == "manual"
+    if core_sample_table:
+        return _get_stereoseq_input_spec_map(
+            sample_list_file,
+            channel,
+            core_sample_table=True,
+        )
     return _get_stereoseq_input_spec_map(
         sample_list_file,
         channel,
@@ -215,7 +221,7 @@ liana_method = config.get("liana_method", "cellphonedb")
 liana_resource_name = config.get("liana_resource_name", "consensus")
 liana_expr_prop = config.get("liana_expr_prop", 0.1)
 liana_min_cells = config.get("liana_min_cells", 5)
-liana_use_raw = config.get("liana_use_raw", True)
+liana_use_raw = config.get("liana_use_raw", False)
 liana_pvalue = config.get("liana_pvalue", 0.05)
 liana_source_celltypes = config.get("liana_source_celltypes", "")
 liana_target_celltypes = config.get("liana_target_celltypes", "")
@@ -693,13 +699,21 @@ def parameter_output(samples, option):
             outs.append(os.path.join(results_folder, "merge_data", 'preprocess', "filter_concatenated_sdata.zarr"))
         return outs
     if option == "annotation_help":
+        filenames = ("kegg_data.csv", "Clusters_proportion.png", "Clusters_proportion.composition.tsv")
         if channel == 'single_analysis':
           if run_type == "visium_HD":
-            return(expand(os.path.join(results_folder, "{sample}_{bin}um", 'clustering', 'kegg_data.csv'), zip, sample=samples, bin=bin_size))
+            return [
+                path for name in filenames
+                for path in expand(os.path.join(results_folder, "{sample}_{bin}um", 'clustering', name),
+                                   zip, sample=samples, bin=bin_size)
+            ]
           else:
-            return(expand(os.path.join(results_folder, "{sample}", 'clustering', 'kegg_data.csv'), sample=samples))
+            return [
+                path for name in filenames
+                for path in expand(os.path.join(results_folder, "{sample}", 'clustering', name), sample=samples)
+            ]
         if channel == 'compare_analysis':
-            return(os.path.join(results_folder, "merge_data", 'clustering', 'kegg_data.csv'))
+            return [os.path.join(results_folder, "merge_data", 'clustering', name) for name in filenames]
     if option == "clustering" or (option == "annotation" and anno_algorithm == "manual"):
         if channel == 'single_analysis':
             if run_type in runtype:
@@ -708,6 +722,15 @@ def parameter_output(samples, option):
                 outs += expand(os.path.join(results_folder, "{sample}_{bin}um", option, "{sample}.zarr"), zip, sample=samples, bin=bin_size)
         if channel == "compare_analysis":
             outs.append(os.path.join(results_folder, "merge_data", option, "concatenated_sdata.zarr"))
+        if option == "annotation":
+            for name in ("celltype_proportion.png", "celltype_proportion.composition.tsv"):
+                if channel == 'single_analysis':
+                    if run_type in runtype:
+                        outs += expand(os.path.join(results_folder, "{sample}", 'annotation', name), sample=samples)
+                    if run_type == "visium_HD":
+                        outs += expand(os.path.join(results_folder, "{sample}_{bin}um", 'annotation', name), zip, sample=samples, bin=bin_size)
+                if channel == "compare_analysis":
+                    outs.append(os.path.join(results_folder, "merge_data", 'annotation', name))
         return outs
     if option == "reclustering":
         outs += [
@@ -732,6 +755,11 @@ def parameter_output(samples, option):
             )
             for task in subset_analysis_tasks
         ]
+        outs += [
+            os.path.join(results_folder, task["parent_sample"], "reannotation", task["subset_name"], name)
+            for task in subset_analysis_tasks
+            for name in ("celltype_proportion.png", "celltype_proportion.composition.tsv")
+        ]
         return outs
     if anno_algorithm != "manual" and option == "annotation":
         if anno_algorithm == "RCTD":
@@ -753,7 +781,12 @@ def parameter_output(samples, option):
         return outs
     if option == "compare_stage":
         if runpipe == "cellchat":
-            return(cellchat_compare_output_dir)
+            return [os.path.join(cellchat_compare_output_dir, name) for name in (
+                "compare_global_summary.csv", "compare_cell_pair.csv", "compare_pathway.csv", "compare_lr.csv",
+                "selected_interactions.csv", "compare_parameters.csv", "compare_overview_number_strength.png",
+                "compare_diff_number_strength_net.png", "compare_heatmap_count_weight.png",
+                "compare_pathway_strength.png", "compare_lr_regulated.png"
+            )]
         return compare_output_paths
     if option == "advance_analysis":
         if runpipe == "cellPhoneDB":
@@ -764,7 +797,12 @@ def parameter_output(samples, option):
         elif runpipe == "pysenic":
             outs.append(os.path.join(results_folder, "pysenic_results", f"{cpdb_sample_id}.aucell.loom"))
         elif runpipe == "liana":
-            outs.append(os.path.join(results_folder,f"{cpdb_sample_id}","liana_output",f"{cpdb_sample_id}.zarr"))
+            liana_output_dir = os.path.join(results_folder, f"{cpdb_sample_id}", "liana_output")
+            outs += [os.path.join(liana_output_dir, name) for name in (
+                f"{cpdb_sample_id}.zarr", "liana_results.csv", "liana_top_interactions.csv",
+                "liana_plot_data.csv", "liana_pair_summary.csv", "dotplot.png", "tileplot.png",
+                "communication_heatmap.png", "gene_expression.png"
+            )]
         elif runpipe == "cellcharter":
             if channel == "compare_analysis":
                 outs.append(os.path.join(results_folder, "merge_data", "cellcharter", f"{cellcharter_sample_id}_cellcharter.zarr"))
@@ -783,6 +821,10 @@ def parameter_output(samples, option):
             outs += expand(os.path.join(results_folder, "{sample}", "cellchat", "{sample}_cellchat_network.pdf"), sample=cellchat_samples)
             outs += expand(os.path.join(results_folder, "{sample}", "cellchat", "{sample}_cellchat_stats.csv"), sample=cellchat_samples)
             outs += expand(os.path.join(results_folder, "{sample}", "cellchat", "{sample}_cellchat_lr.csv"), sample=cellchat_samples)
+            outs += expand(os.path.join(results_folder, "{sample}", "cellchat", "cellchat.rds"), sample=cellchat_samples)
+            for name in ("{sample}_cellchat_heatmap.png", "{sample}_cellchat_infoflow_bar.png",
+                         "{sample}_cellchat_selected_lr.csv", "{sample}_cellchat_selected_pathway_summary.csv"):
+                outs += expand(os.path.join(results_folder, "{sample}", "cellchat", name), sample=cellchat_samples)
         return outs
 
 def input_file(run_type):
@@ -816,7 +858,12 @@ def normal_file(run_type, segs):
     if channel == "compare_analysis":
         return((parameter_output(samples, segs)))
 
-use_sample_filters = filter_list or (
+sample_table_filters = (
+    get_core_sample_filter_map(sample_list, run_type, channel)
+    if option == "preprocess" and anno_algorithm == "manual"
+    else {}
+)
+use_sample_filters = bool(sample_table_filters) or filter_list or (
     channel == "compare_analysis" and option in {"preprocess", "all"}
 )
 
@@ -825,20 +872,21 @@ if not use_sample_filters:
     min_cells = config.get('min_cells', 50)
     L.info(f"{min_counts},{min_cells}")
 else:
-    L.info("Per-sample filtering is enabled; resolving thresholds from YAML sample_parameters")
+    L.info("Per-sample filtering is enabled; resolving sample.txt values and YAML defaults")
     default_min_counts = int(config.get("min_counts", 200))
     default_min_cells = int(config.get("min_cells", 50))
     default_mt_threshold = float(config.get("mt_threshold", 50.0))
     filter_dict = {}
     for current_sample in samples:
-        overrides = sample_parameters.get(str(current_sample), {}) or {}
+        overrides = dict(sample_parameters.get(str(current_sample), {}) or {})
+        overrides.update(sample_table_filters.get(str(current_sample), {}))
         sample_min_cells = int(overrides.get("min_cells", default_min_cells))
         sample_min_counts = int(overrides.get("min_counts", default_min_counts))
         sample_mt_threshold = float(overrides.get("mt_threshold", default_mt_threshold))
         if sample_min_cells < 1 or sample_min_counts < 1:
-            raise ValueError(f"YAML filtering thresholds for {current_sample!r} must be >= 1")
+            raise ValueError(f"Filtering thresholds for {current_sample!r} must be >= 1")
         if not 0 <= sample_mt_threshold <= 100:
-            raise ValueError(f"YAML mt_threshold for {current_sample!r} must be between 0 and 100")
+            raise ValueError(f"mt_threshold for {current_sample!r} must be between 0 and 100")
         filter_dict[str(current_sample)] = [sample_min_cells, sample_min_counts, sample_mt_threshold]
 
 

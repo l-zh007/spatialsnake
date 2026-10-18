@@ -11,6 +11,8 @@ options(timeout = 600000)
 
 .libPaths(unique(c(.Library, .libPaths())))
 
+r_dependencies <- c("Depends", "Imports", "LinkingTo")
+
 is_installed <- function(pkg) {
   pkg %in% rownames(installed.packages(lib.loc = .libPaths()))
 }
@@ -36,10 +38,6 @@ try({
 options(repos = BiocManager::repositories())
 BiocManager::install(c("rhdf5"), ask = FALSE, update = FALSE)
 
-if (!is_installed("ggsankey")) {
-  message("Installing ggsankey from GitHub")
-  remotes::install_github("davidsjoberg/ggsankey", upgrade = "never", dependencies = TRUE)
-}
 required_schard <- "1.1.0"
 schard_ref <- "f9c30c25a192175a1e6523e32f0e2047de1e8685"
 if (!is_installed("schard") || packageVersion("schard") != required_schard) {
@@ -56,7 +54,7 @@ if (packageVersion("schard") != required_schard) {
 }
 if (!is_installed("spacexr")) {
   message("Installing spacexr from GitHub")
-  remotes::install_github("dmcable/spacexr", upgrade = "never", dependencies = TRUE, build_vignettes = FALSE)
+  remotes::install_github("dmcable/spacexr", upgrade = "never", dependencies = r_dependencies, build_vignettes = FALSE)
 }
 
 required_nmf <- "0.26"
@@ -65,30 +63,38 @@ required_circlize <- "0.4.15"
 if (is_installed("NMF")) {
   if (packageVersion("NMF") != required_nmf) {
     message("Downgrading NMF to ", required_nmf)
-    remotes::install_version("NMF", version = required_nmf, upgrade = "never", dependencies = TRUE)
+    remotes::install_version("NMF", version = required_nmf, upgrade = "never", dependencies = r_dependencies)
   }
 } else {
-  remotes::install_version("NMF", version = required_nmf, upgrade = "never", dependencies = TRUE)
+  remotes::install_version("NMF", version = required_nmf, upgrade = "never", dependencies = r_dependencies)
 }
 
 if (is_installed("circlize")) {
   if (packageVersion("circlize") != required_circlize) {
     message("Downgrading circlize to ", required_circlize)
-    remotes::install_version("circlize", version = required_circlize, upgrade = "never", dependencies = TRUE)
+    remotes::install_version("circlize", version = required_circlize, upgrade = "never", dependencies = r_dependencies)
   }
 } else {
-  remotes::install_version("circlize", version = required_circlize, upgrade = "never", dependencies = TRUE)
+  remotes::install_version("circlize", version = required_circlize, upgrade = "never", dependencies = r_dependencies)
 }
+
+if (!is_installed("ggpubr")) {
+  stop(
+    "CellChat requires ggpubr. Install the tested Conda package first with: ",
+    "conda install --override-channels -c conda-forge -c bioconda r-ggpubr -y"
+  )
+}
+assert_loadable("ggpubr")
 
 if (!is_installed("CellChat")) {
   message("Installing CellChat from GitHub")
   if (!is_installed("presto")) {
-    remotes::install_github("immunogenomics/presto", upgrade = "never", dependencies = TRUE)
+    remotes::install_github("immunogenomics/presto", upgrade = "never", dependencies = r_dependencies)
   }
-  remotes::install_github("jinworks/CellChat", upgrade = "never", dependencies = TRUE)
+  remotes::install_github("jinworks/CellChat", upgrade = "never", dependencies = r_dependencies)
 }
 
-required <- c("ggsankey", "schard", "spacexr", "CellChat", "NMF", "circlize")
+required <- c("schard", "spacexr", "CellChat", "ggpubr", "NMF", "circlize")
 miss <- required[!vapply(required, is_installed, logical(1))]
 if (length(miss) > 0) {
   stop("Missing packages after install: ", paste(miss, collapse = ", "))

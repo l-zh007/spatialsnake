@@ -17,6 +17,7 @@ rule reannotation_rule:
     merge=directory(os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "{subset}.zarr")),
     csv=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "celltype_annotations.csv"),
     proportion_png=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "celltype_proportion.png"),
+    proportion_tsv=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "celltype_proportion.composition.tsv"),
     umap_png=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "umap_recluster.png"),
     spatial_png=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "spatial_clusters.png")
   threads: workflow_threads

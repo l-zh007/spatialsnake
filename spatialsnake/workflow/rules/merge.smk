@@ -8,7 +8,7 @@ def get_merge_stereoseq_input_specs():
     sample_spec_map = globals().get("sample_stereoseq_input_spec_map", {})
     for sample_name, group_name in zip(samples, group):
         compare_key = f"{group_name}::{sample_name}"
-        requested = sample_spec_map.get(compare_key, sample_spec_map.get(sample_name, config.get("bin_size")))
+        requested = sample_spec_map.get(compare_key, sample_spec_map.get(sample_name))
         if requested in [None, "", False, "None", "False", "false", "NULL", "null"]:
             continue
         requested_specs.append(str(requested))

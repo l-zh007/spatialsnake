@@ -28,7 +28,7 @@ parser.add_argument("--resource_name", type=str, required=False, default="consen
 parser.add_argument("--celltype", type=str, required=False, default="celltype")
 parser.add_argument("--expr_prop", type=float, required=False, default=0.1)
 parser.add_argument("--min_cells", type=int, required=False, default=5)
-parser.add_argument("--use_raw", type=str, required=False, default="true")
+parser.add_argument("--use_raw", type=str, required=False, default="false")
 parser.add_argument("--sp_cellchat", type=str, required=False)
 parser.add_argument("--top_n", type=int, required=False, default=6)
 parser.add_argument("--pvalue", type=float, required=False, default=0.05)
@@ -40,6 +40,7 @@ parser.add_argument("--results_csv", type=str, required=False, default="")
 parser.add_argument("--top_csv", type=str, required=False, default="")
 parser.add_argument("--plot_data_csv", type=str, required=False, default="")
 parser.add_argument("--pair_summary_csv", type=str, required=False, default="")
+parser.add_argument("--stage", choices=["all", "compute", "plot"], default="all")
 args = parser.parse_args()
 output_dir = os.path.dirname(args.output_zarr_path)
 if output_dir == "":
@@ -169,7 +170,6 @@ def save_placeholder_plot(path, message):
 
 def write_empty_outputs(message):
     empty = pd.DataFrame()
-    empty.to_csv(results_csv, index=False)
     empty.to_csv(top_csv, index=False)
     empty.to_csv(plot_data_csv, index=False)
     empty.to_csv(pair_summary_csv, index=False)
@@ -488,7 +488,6 @@ def plot_results(adata, method_name, uns_key, output_dir):
     magnitude, specificity = get_method_config(method_name, res_df)
     if magnitude is None:
         logger.warning("Skip LIANA plotting: no compatible LIANA score column was found.")
-        res_df.to_csv(results_csv, index=False)
         res_df.to_csv(top_csv, index=False)
         res_df.to_csv(plot_data_csv, index=False)
         pd.DataFrame().to_csv(pair_summary_csv, index=False)
@@ -503,7 +502,6 @@ def plot_results(adata, method_name, uns_key, output_dir):
         return
     plot_uns_key = uns_key
 
-    res_df.to_csv(results_csv, index=False)
     if "source" in res_df.columns and "target" in res_df.columns:
         valid_cells = set(celltypes)
         res_df = res_df.copy()
@@ -700,8 +698,19 @@ else:
 logger.info(f"Loaded {adata.n_obs} observations and {adata.n_vars} genes")
 validate_adata(adata)
 
-log_step(logger, 2, 4, f"running LIANA method={method_name}")
-run_method(adata, method_name, uns_key)
+if args.stage == "plot":
+    try:
+        adata.uns[uns_key] = pd.read_csv(results_csv)
+    except pd.errors.EmptyDataError:
+        adata.uns[uns_key] = pd.DataFrame()
+else:
+    log_step(logger, 2, 4, f"running LIANA method={method_name}")
+    run_method(adata, method_name, uns_key)
+    result = adata.uns.get(uns_key)
+    (result if isinstance(result, pd.DataFrame) else pd.DataFrame()).to_csv(results_csv, index=False)
+    if args.stage == "compute":
+        logger.info("LIANA inference completed")
+        sys.exit(0)
 log_step(logger, 3, 4, "saving LIANA plots")
 plot_results(adata, method_name, uns_key, output_dir)
 

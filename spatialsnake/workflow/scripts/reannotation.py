@@ -3,16 +3,13 @@ import json
 import os
 import spatialdata_plot
 import matplotlib.pyplot as plt
-import numpy as np
 import scanpy as sc
 import spatialdata as spd
-from spatialdata.models import PointsModel
-from spatialdata.transformations import Identity
+from spatialdata.transformations import get_transformation
 
 from spatialsnake.workflow.function.export_cluster_csv import export_cluster_csv
 from spatialsnake.workflow.function.plot import cluster_proportion
 from spatialsnake.workflow.function.stereoseq_selection import (
-    extract_table_spatial_metadata,
     resolve_stereoseq_table_key,
     resolve_visual_target,
 )
@@ -80,6 +77,16 @@ def ensure_obs_columns(adata, sample_id):
     return adata
 
 
+def sanitize_obs_index_name(adata):
+    instance_key = adata.uns.get("spatialdata_attrs", {}).get("instance_key")
+    if instance_key and instance_key in adata.obs and adata.obs_names.name == instance_key:
+        safe_name = "__obs_index__"
+        while safe_name in adata.obs:
+            safe_name = f"_{safe_name}"
+        adata.obs_names.name = safe_name
+    return adata
+
+
 def crop0(x, crs, x1, x2, y1, y2):
     return spd.bounding_box_query(
         x,
@@ -98,116 +105,77 @@ def save_umap_plot(adata, cluster_key, output_png):
 
 
 def render_spatial_plots(sdata, table_key, adata, run_type, vis_mode, point_size, image_slice, coord, output_dir, summary_png):
-    table_meta = extract_table_spatial_metadata(adata)
-    region_name = table_meta["region_name"]
-    if isinstance(region_name, (list, tuple)):
-        region_name = region_name[0] if region_name else None
     adata.obs_names = adata.obs_names.astype(str)
-    sample_cnt = adata.obs["sample"].astype(str).nunique() if "sample" in adata.obs else 1
-    image_elements = list(getattr(sdata, "images", {}).keys())
-    shape_elements = list(getattr(sdata, "shapes", {}).keys())
-    point_elements = list(getattr(sdata, "points", {}).keys())
-    valid_coord_systems = sorted(getattr(sdata, "coordinate_systems", []))
+    attrs = adata.uns.get("spatialdata_attrs", {})
+    regions = attrs.get("region", [])
+    regions = [regions] if isinstance(regions, str) else list(regions or [])
+    images = select_elements(list(sdata.images), "hires", run_type)
+    systems = sorted(sdata.coordinate_systems)
+    panels = []
+    for region in regions:
+        try:
+            mode, element_name = resolve_visual_target(sdata, region, vis_mode)
+        except ValueError:
+            continue
+        element = sdata.shapes[element_name] if mode == "shape" else sdata.points[element_name]
+        candidates = [system for system in systems if system in get_transformation(element, get_all=True)]
+        if not candidates:
+            continue
+        system = next((system for system in candidates if "hires" in system.lower()), candidates[0])
+        image = next(
+            (name for name in images if system in get_transformation(sdata.images[name], get_all=True)),
+            None,
+        )
+        panels.append((region, mode, element_name, system, image))
 
-    try:
-        active_vis_mode, visual_region_name = resolve_visual_target(sdata, region_name, vis_mode)
-    except Exception:
-        active_vis_mode = "shape" if region_name in shape_elements else "point"
-        visual_region_name = region_name
-
-    point_visual_elements = []
-    if active_vis_mode == "shape":
-        visual_elements = [visual_region_name] if visual_region_name in shape_elements else []
-    else:
-        point_visual_elements = select_elements(point_elements, region_name, run_type)
-        if not point_visual_elements:
-            point_visual_elements = [visual_region_name] if visual_region_name in point_elements else point_elements
-        visual_elements = list(point_visual_elements)
-        keep_ids = adata.obs_names.astype(str)
-        point_transformations = {coord_system: Identity() for coord_system in valid_coord_systems} if valid_coord_systems else {"global": Identity()}
-        for current_visual_region in point_visual_elements:
-            source_points = sdata.points[current_visual_region]
-            points_df = source_points.compute() if hasattr(source_points, "compute") else source_points.copy()
-            points_df = points_df.copy()
-            points_df.index = points_df.index.astype(str)
-            points_df = points_df.reindex(keep_ids).copy()
-            points_df["celltype"] = (
-                adata.obs["celltype"].astype(str).reindex(points_df.index).fillna("Unknown").astype("category")
-            )
-            points_df = points_df.dropna(subset=["x", "y"])
-            sdata.points[current_visual_region] = PointsModel.parse(
-                points_df.sort_index(),
-                coordinates={"x": "x", "y": "y"},
-                transformations=point_transformations,
-            )
-
-    images = select_elements(image_elements, "hires", run_type)
-    systems = select_elements(valid_coord_systems, "hires", run_type)
-
-    if len(images) == 0 or len(systems) == 0:
-        if "spatial" in adata.obsm_keys():
-            coords = adata.obsm["spatial"]
-            codes = adata.obs["celltype"].astype("category").cat.codes
-            plt.figure(figsize=(8, 8))
-            plt.scatter(coords[:, 0], coords[:, 1], c=codes, s=5, cmap="tab20", linewidths=0)
-            plt.gca().invert_yaxis()
-            plt.savefig(summary_png, dpi=300, bbox_inches="tight")
-            plt.close()
-            return
-        save_umap_plot(adata, "celltype", summary_png)
+    if panels:
+        rows = 2 if any(image for _, _, _, _, image in panels) else 1
+        _, axes = plt.subplots(rows, len(panels), figsize=(10 * len(panels), 13 if rows == 2 else 8), squeeze=False)
+        groups = adata.obs["celltype"].astype("category").cat.categories.tolist()
+        instance_key = attrs.get("instance_key")
+        region_key = attrs.get("region_key")
+        for i, (region, mode, element_name, system, image) in enumerate(panels):
+            current_sdata = crop0(sdata, system, *coord) if image_slice and coord is not None else sdata
+            barcode_ax = axes[-1, i]
+            if image:
+                current_sdata.pl.render_images(image).pl.show(
+                    ax=axes[0, i], title="image", coordinate_systems=system,
+                )
+            if mode == "shape":
+                current_sdata.pl.render_shapes(
+                    element_name, color="#9E9E9E", fill_alpha=1, outline_alpha=0,
+                ).pl.render_shapes(
+                    element_name, color="celltype", groups=groups, table_name=table_key,
+                    na_color=None, fill_alpha=1, outline_alpha=0,
+                ).pl.show(ax=barcode_ax, coordinate_systems=system, title=str(region))
+            else:
+                current_sdata.pl.render_points(
+                    element_name, color="#9E9E9E", size=point_size, alpha=1,
+                ).pl.show(ax=barcode_ax, coordinate_systems=system, title=str(region))
+                region_obs = adata.obs
+                if region_key in region_obs:
+                    region_obs = region_obs[region_obs[region_key].astype(str) == str(region)]
+                label_ids = region_obs[instance_key].astype(str) if instance_key in region_obs else region_obs.index.astype(str)
+                labels_by_id = region_obs["celltype"].copy()
+                labels_by_id.index = label_ids
+                points = spd.transform(current_sdata.points[element_name], to_coordinate_system=system).compute()
+                points.index = points.index.astype(str)
+                labels = labels_by_id.reindex(points.index).astype("category").cat.remove_unused_categories()
+                colors = plt.get_cmap("tab20", max(1, len(labels.cat.categories)))
+                for j, label in enumerate(labels.cat.categories):
+                    selected = labels == label
+                    barcode_ax.scatter(
+                        points.loc[selected, "x"], points.loc[selected, "y"],
+                        s=point_size, color=colors(j), label=label,
+                    )
+                if len(labels.cat.categories):
+                    barcode_ax.legend(loc="center left", bbox_to_anchor=(1, 0.5), frameon=False)
+        plt.tight_layout()
+        plt.savefig(summary_png, dpi=300, bbox_inches="tight")
+        plt.close()
         return
 
-    total = min(max(1, len(visual_elements) * sample_cnt), len(images), max(1, len(systems)))
-    saved_summary = False
-    for i in range(total):
-        sys = systems[0] if len(systems) < 2 else systems[i]
-        image_name = images[min(i, len(images) - 1)]
-        title = image_name.replace("_hires_image", "")
-        current_visual_region = visual_region_name
-        if active_vis_mode == "point" and len(point_visual_elements) > 0:
-            current_visual_region = point_visual_elements[0] if len(point_visual_elements) < 2 else point_visual_elements[min(i, len(point_visual_elements) - 1)]
-        current_sdata = sdata
-        if image_slice and coord is not None:
-            current_sdata = crop0(current_sdata, sys, coord[0], coord[1], coord[2], coord[3])
-
-        _, axes = plt.subplots(2, 1, figsize=(20, 13))
-        axes = np.ravel(axes)
-        current_sdata.pl.render_images(image_name).pl.show(
-            ax=axes[0],
-            title="image",
-            coordinate_systems=sys,
-        )
-        if active_vis_mode == "shape":
-            current_sdata.pl.render_shapes(
-                current_visual_region,
-                color="celltype",
-                table_name=table_key,
-                outline_alpha=0,
-                fill_alpha=1,
-            ).pl.show(
-                ax=axes[1],
-                coordinate_systems=sys,
-                title=title,
-            )
-        else:
-            current_sdata.pl.render_images(image_name).pl.render_points(
-                current_visual_region,
-                color="celltype",
-                size=point_size,
-                alpha=0.8,
-            ).pl.show(
-                ax=axes[1],
-                coordinate_systems=sys,
-                title=title,
-            )
-        per_image_png = os.path.join(output_dir, f"{image_name}_Clusters.png")
-        plt.savefig(per_image_png, dpi=300, bbox_inches="tight")
-        if not saved_summary:
-            plt.savefig(summary_png, dpi=300, bbox_inches="tight")
-            saved_summary = True
-        plt.close()
-
-    if not saved_summary and "spatial" in adata.obsm_keys():
+    if "spatial" in adata.obsm_keys():
         coords = adata.obsm["spatial"]
         codes = adata.obs["celltype"].astype("category").cat.codes
         plt.figure(figsize=(8, 8))
@@ -215,6 +183,8 @@ def render_spatial_plots(sdata, table_key, adata, run_type, vis_mode, point_size
         plt.gca().invert_yaxis()
         plt.savefig(summary_png, dpi=300, bbox_inches="tight")
         plt.close()
+    else:
+        save_umap_plot(adata, "celltype", summary_png)
 
 def main():
     parser = argparse.ArgumentParser(description="reannotation")
@@ -243,7 +213,7 @@ def main():
     sdata = spd.read_zarr(args.input_dir)
     table_key = pick_table_key(sdata, run_type=args.type, input_spec=args.input_spec)
     adata = sdata[table_key].copy()
-    adata = ensure_obs_columns(adata, args.sample_id)
+    adata = sanitize_obs_index_name(ensure_obs_columns(adata, args.sample_id))
     adata = annotate_adata(adata, annotation_map)
     sdata[table_key] = adata
     logger.info(f"Reannotated {adata.n_obs} observations")

@@ -5,15 +5,14 @@ library(org.Hs.eg.db)
 library(org.Mm.eg.db)
 library(optparse)
 library(ggplot2)
-library(ggsankey)
-library(cowplot)
-# install.packages("cowplot")
 option_list <- list(
   make_option(c("--species")),
   make_option(c("--input_dir")),
   make_option(c("--output_path")),
   make_option(c("--sample_id")),
-  make_option(c("--type")))
+  make_option(c("--type")),
+  make_option(c("--input_zarr")),
+  make_option(c("--input_spec"), default=""))
 opt <- parse_args(OptionParser(option_list=option_list))
 options(timeout = 6000000)
 parent_dir <- dirname(opt$input_dir)
@@ -34,6 +33,21 @@ if (species == "human") {
 
 filename<-opt$input_dir
 marker_genes_pval <- read.csv(opt$input_dir, header = T)
+marker_genes_pval <- marker_genes_pval[is.finite(marker_genes_pval$logfoldchanges) & marker_genes_pval$logfoldchanges > 0, ]
+# Read only the tested gene index, without loading the expression matrix.
+python_code <- paste(
+  "import sys,zarr",
+  "from spatialsnake.workflow.function.stereoseq_selection import resolve_stereoseq_table_key",
+  "tables=zarr.open_group(sys.argv[1],mode='r')['tables']",
+  "keys=list(tables.group_keys())",
+  "key=resolve_stereoseq_table_key(sys.argv[3],keys) if sys.argv[2] in ['stereoseq','StereoSeq','Stereo-seq'] else ('table' if 'table' in keys else keys[0])",
+  "var=tables[key]['var']",
+  "print('\\n'.join(map(str,var[var.attrs['_index']][:])))",
+  sep=";"
+)
+tested_genes <- system2("python", c("-c", shQuote(python_code), shQuote(opt$input_zarr), shQuote(opt$type), shQuote(opt$input_spec)), stdout=TRUE)
+if (!is.null(attr(tested_genes, "status"))) stop("Could not read the tested gene universe")
+universe <- bitr(unique(tested_genes), fromType="SYMBOL", toType="ENTREZID", OrgDb=orgdb)$ENTREZID
 # gene_list<-marker_genes_pval["gene_name"]
 # gene_symbols <- gene_list$gene_name
 
@@ -61,7 +75,8 @@ if (nrow(markers_data) == 0) {
 data_GO <- compareCluster(
   ENTREZID~group, 
   data=markers_data, 
-  fun="enrichGO", 
+  fun="enrichGO",
+  universe=unique(universe), 
   OrgDb=orgdb,
   ont = "ALL",
   pAdjustMethod = "BH",
@@ -73,166 +88,123 @@ data_kegg <- compareCluster(
   ENTREZID~group, 
   data=markers_data, 
   fun="enrichKEGG",
+  universe=unique(universe),
   organism = kegg_organism,
   pAdjustMethod = "BH",
   pvalueCutoff = 0.05,
   qvalueCutoff = 0.05)
 
 
-enrich_bubble_by_ontology <- function(data_GO, path) {
-  processed_data <- data_GO@compareClusterResult
-  ontology_list <- unique(processed_data$ONTOLOGY)
-  for (ont in ontology_list) {
-    ont_subset <- processed_data %>% filter(ONTOLOGY == ont)
-    plot_data <- ont_subset %>%
-      as.data.frame() %>%
-      filter(p.adjust < 0.05) %>%
-      arrange(p.adjust) %>%
-      group_by(Cluster) %>%
-      arrange(desc(pvalue), .by_group = TRUE) %>%
-      mutate(rank = row_number()) %>%
-      arrange(Cluster, rank) %>%
-      slice_head(n = 5) %>%
-      ungroup() %>%  
-      mutate(Description = factor(Description,levels = unique(Description[order(p.adjust)])))
-    print(paste0(path,"/",ont,"_GO_cluster.png"))
-    print("dsadasdadasdasdasdad")
-    p2<-cluster_GO<-ggplot(plot_data, aes(x = Cluster, y = Description)) +
-      geom_point(aes(size = Count, color = p.adjust)) +
-      scale_color_gradientn(colors = c(c("#FF9999", "#FF6666", "#FF3333", "#CC0000"))) +  # 红色更显著
-      scale_size(range = c(3, 5)) +  # 气泡大小范围
-      labs(
-        x = "Enrichment Ratio (GeneRatio)",
-        y = "GO Term",
-        color = "Adjusted p-value",
-        size = "Gene Count",
-        title = "Enrichment Bubble Plot"
-      ) +
-      theme_bw() +
-      theme(plot.title = element_text(hjust = 0.5))
-    ggsave(
-      filename = paste0(path,"/",ont,"_GO_cluster.png"),
-      plot = p2,
-      width = 12,
-      height = 8,
-      units = "in")
+# Enrichment supports cluster annotation; it does not measure pathway activity.
+# Keep complete result tables, including when no terms pass the cutoffs.
+empty_results <- data.frame(Cluster = character(), ID = character(), Description = character(),
+                            GeneRatio = character(), BgRatio = character(), pvalue = numeric(),
+                            p.adjust = numeric(), qvalue = numeric(), geneID = character(), Count = integer())
+go_results <- if (is.null(data_GO)) transform(empty_results, ONTOLOGY = character()) else data_GO@compareClusterResult
+kegg_results <- if (is.null(data_kegg)) empty_results else data_kegg@compareClusterResult
+write.csv(go_results, file.path(parent_dir, "GO_data.csv"))
+write.csv(kegg_results, file.path(parent_dir, "kegg_data.csv"))
+
+wrap_terms <- function(x) {
+  vapply(x, function(term) paste(strwrap(term, width = 48), collapse = "\n"), character(1))
+}
+
+# One plotting theme and significance scale for all enrichment figures.
+enrichment_theme <- theme_classic(base_size = 11, base_family = "sans") +
+  theme(axis.text = element_text(colour = "#333333"),
+        axis.line = element_line(linewidth = 0.35, colour = "#555555"),
+        axis.ticks = element_line(linewidth = 0.3),
+        panel.grid.major.x = element_line(colour = "#EAEAEA", linewidth = 0.25),
+        legend.position = "right", plot.title = element_text(face = "bold"),
+        strip.background = element_blank(), strip.text = element_text(face = "bold"))
+
+# The overview selects top five terms per cluster, then displays every
+# significant cluster-term pair for that union (blank does not mean zero).
+for (ont in c("BP", "CC", "MF")) {
+  plot_data <- if (nrow(go_results)) {
+    subset(go_results, ONTOLOGY == ont & is.finite(p.adjust) & p.adjust < 0.05)
+  } else data.frame()
+  if (nrow(plot_data)) {
+    selected <- plot_data %>% arrange(p.adjust, ID) %>%
+      group_by(Cluster) %>% slice_head(n = 5) %>% ungroup()
+    term_ids <- unique(selected$ID[order(selected$p.adjust, selected$ID)])
+    plot_data <- plot_data[plot_data$ID %in% term_ids, ]
+    plot_data$ID <- factor(plot_data$ID, levels = rev(term_ids))
+    plot_data$Cluster <- factor(as.character(plot_data$Cluster),
+                                levels = unique(as.character(marker_genes_pval$group)))
+    plot_data$ratio <- vapply(strsplit(as.character(plot_data$GeneRatio), "/", fixed = TRUE),
+                              function(x) as.numeric(x[1]) / as.numeric(x[2]), numeric(1))
+    labels <- setNames(wrap_terms(plot_data$Description), as.character(plot_data$ID))
+    p <- ggplot(plot_data, aes(x = Cluster, y = ID)) +
+      geom_point(aes(size = ratio, colour = p.adjust)) +
+      scale_y_discrete(labels = labels) +
+      scale_x_discrete(drop = FALSE) +
+      scale_size_area(max_size = 5, name = "Gene ratio", limits = c(0, max(plot_data$ratio))) +
+      scale_colour_gradient(low = "#08519C", high = "#C6DBEF", limits = c(0, 0.05),
+                            name = "BH-adjusted P") +
+      labs(x = "Cluster", y = NULL, title = paste("GO", ont, "· cluster markers")) +
+      enrichment_theme + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    height <- max(4, 1.6 + 0.22 * sum(lengths(strsplit(unname(labels[!duplicated(names(labels))]), "\n"))))
+    width <- max(8, 6 + 0.35 * nlevels(plot_data$Cluster))
+  } else {
+    p <- ggplot() + annotate("text", x = 0, y = 0,
+                             label = paste("No significant GO", ont, "terms")) + theme_void()
+    width <- 8
+    height <- 4
+  }
+  ggsave(file.path(parent_dir, paste0(ont, "_GO_cluster.png")), p,
+         width = width, height = height, units = "in", dpi = 300, limitsize = FALSE)
+}
+
+# Per-cluster GO retains the three-ontology gene-count bars; KEGG uses a dot plot.
+# Keep the existing five terms per ontology for GO and all returned KEGG terms.
+for (analysis in c("GO", "KEGG")) {
+  results <- if (analysis == "GO") go_results else kegg_results
+  if (!nrow(results)) next
+  count_limit <- max(results$Count)
+  for (cluster in unique(results$Cluster)) {
+    plot_data <- results[results$Cluster == cluster, ]
+    plot_data <- plot_data[is.finite(plot_data$p.adjust) & plot_data$p.adjust < 0.05, ]
+    if (analysis == "GO") {
+      plot_data <- plot_data %>% arrange(p.adjust, ID) %>%
+        group_by(ONTOLOGY) %>% slice_head(n = 5) %>% ungroup()
+    }
+    if (!nrow(plot_data)) next
+    plot_data <- plot_data[order(plot_data$p.adjust, plot_data$ID), ]
+    plot_data$ID <- factor(plot_data$ID, levels = rev(unique(plot_data$ID)))
+    # Derive fold enrichment from the reported ratios for version compatibility.
+    ratio <- function(x) vapply(strsplit(as.character(x), "/", fixed = TRUE),
+                                function(y) as.numeric(y[1]) / as.numeric(y[2]), numeric(1))
+    plot_data$fold <- ratio(plot_data$GeneRatio) / ratio(plot_data$BgRatio)
+    labels <- setNames(wrap_terms(plot_data$Description), as.character(plot_data$ID))
+    if (analysis == "GO") {
+      p <- ggplot(plot_data, aes(x = Count, y = ID, fill = ONTOLOGY)) +
+        geom_col(width = 0.8) +
+        scale_y_discrete(labels = labels) +
+        scale_fill_brewer(palette = "Set2", limits = c("BP", "CC", "MF"), drop = FALSE) +
+        facet_grid(ONTOLOGY ~ ., scales = "free_y", space = "free_y") +
+        labs(x = "Gene Count", y = "Enriched Terms",
+             title = paste0("Cluster ", cluster, " · GO enrichment")) +
+        enrichment_theme + theme(legend.position = "none")
+    } else {
+      p <- ggplot(plot_data, aes(x = fold, y = ID)) +
+        geom_point(aes(size = Count, colour = p.adjust)) +
+        scale_y_discrete(labels = labels) +
+        scale_size_area(max_size = 5, name = "Marker genes", limits = c(0, count_limit),
+                        breaks = function(x) unique(pmax(1, round(pretty(x, n = 3))))) +
+        scale_colour_gradient(low = "#08519C", high = "#C6DBEF", limits = c(0, 0.05),
+                              name = "BH-adjusted P") +
+        labs(x = "Fold enrichment", y = NULL,
+             title = paste0("Cluster ", cluster, " · ", analysis, " enrichment")) + enrichment_theme
+    }
+    height <- max(4, 1.8 + 0.24 * sum(lengths(strsplit(unname(labels), "\n"))))
+    dir.create(file.path(parent_dir, cluster), showWarnings = FALSE, recursive = TRUE)
+    filename <- if (analysis == "GO") "GO_cluster.pdf" else "kegg_cluster.pdf"
+    ggsave(file.path(parent_dir, cluster, filename), p, width = 9, height = height,
+           units = "in", limitsize = FALSE)
   }
 }
 
-
-
-cluster_description_fun <- function(data_GO,path) {
-  processed_data <- data_GO@compareClusterResult
-  cluster_list <- unique(processed_data$Cluster)
-  for (cluster in cluster_list) {
-    ont_subset <- processed_data %>% filter(Cluster == cluster)
-  
-    plot_data <- ont_subset %>%
-      as.data.frame() %>%
-      filter(p.adjust < 0.05) %>%
-      arrange(p.adjust) %>%
-      group_by(ONTOLOGY) %>%
-      arrange(desc(pvalue), .by_group = TRUE) %>%
-      mutate(rank = row_number()) %>%
-      arrange(ONTOLOGY, rank) %>%
-      slice_head(n = 5) %>%
-      ungroup() %>%  
-      mutate(Description = factor(Description,levels = unique(Description[order(p.adjust)])))
-    p1<-ggplot(plot_data, aes(x = Count, y = Description, fill = ONTOLOGY)) +
-      geom_col(width = 0.8) +
-      facet_grid(ONTOLOGY ~ ., scales = "free_y") +
-      scale_fill_brewer(palette = "Set2") +
-      theme_bw() +
-      theme(
-        axis.text.y = element_text(size = 10),
-        strip.text.y = element_text(size = 12, face = "bold"),
-        legend.position = "none") +
-      labs(x = "Gene Count", y = "Enriched Terms")
-    ggsave(
-      filename = paste0(path,"/",cluster,"/GO_cluster.pdf"),
-      plot = p1,
-      width = 12,   
-      height = 8,   
-      units = "in")
-  write.csv(processed_data,paste0(path,'/GO_data.csv'))
-}
-
-}
-
-
-cluster_kegg_fun <- function(data_kegg,path) {
-  processed_data <- data_kegg@compareClusterResult
-  cluster_list <- unique(processed_data$Cluster)
-  for (cluster in cluster_list) {
-    plot_data <- processed_data %>% filter(Cluster == cluster)
-    p3<-ggplot(plot_data, aes(x = FoldEnrichment)) +
-      geom_point(data = plot_data,
-                 aes(x = FoldEnrichment,
-                     y = Description,
-                     size = Count,
-                     color = p.adjust)) +
-      theme(
-        axis.text.y = element_blank(),
-      ) +
-      labs(x = "FoldEnrichment",
-           y = "") +
-      scale_color_gradientn(
-        colors = c("#FFCCCC", "#FF6666", "#CC0000"),  
-        name = "p.adjust"
-      )
-    
-    flow_data <- plot_data %>%
-      group_by(subcategory, Description) %>%
-      summarise(n = n(), .groups = "drop") 
-    
-    sankey_data <- flow_data %>%
-      make_long(subcategory,Description,value = n)
-    
-    all_nodes <- unique(c(sankey_data$node, sankey_data$next_node))
-    node_colors <- hcl.colors(length(all_nodes), palette = "Set2")  
-    names(node_colors) <- all_nodes
-    
-    p4<-ggplot(sankey_data, 
-               aes(x = x,                # 层级位置
-                   next_x = next_x,      # 下一层级位置
-                   node = node,          # 当前节点名称
-                   next_node = next_node,# 下一层节点名称
-                   fill = node,          # 节点填充色（按节点名称）
-                   value = value,        # 流量大小（条带宽度）
-                   label = node)) +      # 节点标签文字
-      geom_sankey(
-        flow.alpha = 0.5,     # 流量条带的透明度
-        flow.fill = "grey",   # 流量条带的填充色
-        flow.color = "grey80",# 流量条带的描边色
-        smooth = 8,           # 条带的平滑度
-        width = 0.08          # 节点的宽度
-      ) +
-      scale_fill_manual(values = node_colors) +
-      geom_sankey_text(
-        size = 3.2,    # 标签文字大小
-        color = "black"# 标签文字颜色
-      ) +
-      theme_void() +        # 去除默认坐标轴等元素，使图更简洁
-      theme(legend.position = "none") +  # 隐藏图例（若不需要）
-      labs(title = "Sankey Diagram: Subcategory → Description")
-    
-    p5 <- p4 + theme(plot.margin = unit(c(0,19,0,0),units="cm"))
-    p6<-ggdraw() + draw_plot(p5) + draw_plot(p3, scale = 0.7, x = 0.35, y=-0.22, width=0.7, height=1.37)
-    ggsave(
-      filename = paste0(path, "/", cluster, "/kegg_cluster.pdf"),
-      plot = p6,
-      width = 12,   
-      height = 8,
-      units = "in")
-  write.csv(processed_data,paste0(path,'/kegg_data.csv'))
-  }
-  
-}
-
-
-enrich_bubble_by_ontology(data_GO=data_GO, path=parent_dir)
-cluster_description_fun(data_GO=data_GO, path=parent_dir)
-cluster_kegg_fun(data_kegg=data_kegg, path=parent_dir)
 
 
 
@@ -349,7 +321,7 @@ cluster_kegg_fun(data_kegg=data_kegg, path=parent_dir)
 #   filter(p.adjust < 0.05) %>%
 #   arrange(p.adjust) %>%
 #   group_by(Cluster) %>%
-#   arrange(desc(pvalue), .by_group = TRUE) %>%
+#   arrange(p.adjust, .by_group = TRUE) %>%
 #   mutate(rank = row_number()) %>%
 #   arrange(Cluster, rank) %>%
 #   slice_head(n = 5) %>%
@@ -362,7 +334,7 @@ cluster_kegg_fun(data_kegg=data_kegg, path=parent_dir)
 #   scale_color_gradientn(colors = c(c("#FF9999", "#FF6666", "#FF3333", "#CC0000"))) +  # 红色更显著
 #   scale_size(range = c(3, 5)) +  # 气泡大小范围
 #   labs(
-#     x = "Enrichment Ratio (GeneRatio)",
+#     x = "Cluster",
 #     y = "GO Term",
 #     color = "Adjusted p-value",
 #     size = "Gene Count",
@@ -567,7 +539,7 @@ cluster_kegg_fun(data_kegg=data_kegg, path=parent_dir)
 #   scale_color_gradientn(colors = c(c("#FF9999", "#FF6666", "#FF3333", "#CC0000"))) +  # 红色更显著
 #   scale_size(range = c(3, 5)) +  # 气泡大小范围
 #   labs(
-#     x = "Enrichment Ratio (GeneRatio)",
+#     x = "Cluster",
 #     y = "GO Term",
 #     color = "Adjusted p-value",
 #     size = "Gene Count",

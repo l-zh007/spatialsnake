@@ -28,7 +28,7 @@ SPREAD: 1
 variable: False
 NEIGHBORS: 10
 
-device: "cuda"
+device: "auto"
 input_spatial: ""
 input_singlecell: "data/Human_Lymph_Node.h5ad"
 max_epochs_reference: 100
@@ -62,6 +62,5 @@ threshold:
 threads: 8
 pvalue:
 output_name:
-
 
 

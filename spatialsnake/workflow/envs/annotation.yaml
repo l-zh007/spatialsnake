@@ -17,7 +17,7 @@ annotation_list: "annotation.txt"  # Manual annotation table used by manual/rean
 # Annotation method selection
 # -----------------------------------------------------------------------------
 anno_algorithm: "manual"  # Annotation strategy: manual, reannotation, cell2Location, or RCTD. Recommended: manual for curated labels.
-device: "cuda"  # Compute device for model-based annotation. Recommended: cuda when a compatible GPU is available.
+device: "auto"  # Compute device for model-based annotation: auto, cpu, or cuda. Recommended: auto.
 
 # -----------------------------------------------------------------------------
 # cell2Location options

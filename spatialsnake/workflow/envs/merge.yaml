@@ -3,7 +3,7 @@
 
 # Output and table selection
 INPUT:
-output_dir: 'results/useful_results'
+output_dir: 'results/useful_results/data_merge'
 output_name: 'concatenated_sdata.zarr'
 table_key: ''
 

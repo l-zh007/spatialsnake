@@ -1,4 +1,6 @@
 import argparse
+import copy
+import gc
 import os
 import sys
 
@@ -138,7 +140,10 @@ def write_output(adata, sdata, table_key, output_path):
 def matrix_column_variance(x):
     if sparse.issparse(x):
         mean = np.asarray(x.mean(axis=0)).ravel()
-        squared = x.copy()
+        # The reduction only reads the sparse structure; duplicate values, not
+        # potentially very large index arrays. Keep the original dtype/order.
+        squared = copy.copy(x)
+        squared.data = x.data.copy()
         squared.data **= 2
         mean_sq = np.asarray(squared.mean(axis=0)).ravel()
         return mean_sq - mean**2
@@ -218,7 +223,16 @@ def run_banksy_single(adata_input, sample_name, feature_names, output_prefix):
         raise ValueError(f"BANKSY sample {sample_name!r} has too few observations: {adata_input.n_obs}")
     local_k_geom = min(k_geom, adata_input.n_obs - 1)
     local_num_nn = min(banksy_num_nn, adata_input.n_obs - 1)
-    adata_banksy = adata_input[:, feature_names].copy()
+    selected = adata_input[:, feature_names]
+    # BANKSY reads X, obs, var and spatial coordinates. Its temporary working
+    # object does not use raw counts, layers or pre-existing neighbor graphs.
+    # Keep those on the original output object instead of copying them here.
+    adata_banksy = sc.AnnData(
+        X=selected.X.copy(),
+        obs=selected.obs.copy(),
+        var=selected.var.copy(),
+        obsm={key: value.copy() for key, value in selected.obsm.items()},
+    )
     ensure_spatial_coords(adata_banksy)
 
     est_gb = estimate_dense_banksy_gb(adata_banksy.n_obs, adata_banksy.n_vars, max_m)
@@ -468,12 +482,16 @@ summary_frames = []
 for sample_name, mask in sample_groups:
     obs_names = adata.obs_names[mask.to_numpy() if hasattr(mask, "to_numpy") else mask]
     output_prefix = os.path.join(results_dir, f"BANKSY-Results-{sample_name}" if is_multisample else "BANKSY-Results")
-    labels, summary = run_banksy_single(adata[obs_names].copy(), sample_name, feature_names, output_prefix)
+    # run_banksy_single makes the independent feature-selected working copy.
+    # A second full-gene copy here also duplicates raw/layers/embeddings.
+    labels, summary = run_banksy_single(adata[obs_names], sample_name, feature_names, output_prefix)
     labels = labels.astype(str)
     if is_multisample:
         labels = np.array([f"{sample_name}_{label}" for label in labels], dtype=object)
     all_labels.loc[obs_names] = labels
     summary_frames.append(summary)
+    plt.close("all")
+    gc.collect()
 
 if all_labels.isna().any():
     missing = int(all_labels.isna().sum())
@@ -519,7 +537,8 @@ if banksy_plot_celltype_enrichment and "celltype" in adata.obs.columns:
 sample_id = os.path.splitext(os.path.basename(args.output_zarr_path))[0]
 data_type = "xenium" if "xenium" in f"{args.input_dir}{args.output_zarr_path}".lower() else "visium"
 export_cluster_csv(
-    sdata if sdata is not None else adata,
+    # CSV export only reads obs. Avoid its per-sample copy of expression/raw.
+    sc.AnnData(obs=adata.obs.copy()),
     data_type,
     output_dir,
     cell_id_col="cell_id",

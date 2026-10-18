@@ -18,7 +18,7 @@ import sys
 import tempfile
 import timeit
 import warnings
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import resource
@@ -102,10 +102,10 @@ VALID_OPTIONS = [
 ]
 
 __author__ = 'lzh'
-__version__ = '0.0.4'
+__version__ = '0.0.5'
 __logo__ = """
 
-  ╭─── SpatialSnake · v0.0.4 ───╮
+  ╭─── SpatialSnake · v0.0.5 ───╮
   │                             │
   │    ●───●───●───●───●───●    │
   │    │ ╲ │ ╱ │ ╲ │ ╱ │ ╲ │    │
@@ -129,7 +129,7 @@ Usage:
     spatialsnake useful_tool [--option=<ways>] <INPUT>... [options]
     spatialsnake <command> <INPUT_FILE> <TYPE> [--option=<analysis_option>] [options]
     spatialsnake produce-file [--option=<analysis_option>]
-    spatialsnake install-packages [--extended] [--dry-run]
+    spatialsnake install-packages [--extended] [--torch-backend=<backend>] [--dry-run]
     spatialsnake (-h | --help)
     spatialsnake --version
 
@@ -169,7 +169,6 @@ Integration Step Options (--option integrate):
     --nucleus_boundaries <BOOL>  xenium key in load in data (yaml default: integrate.yaml).
     --nucleus_labels <BOOL>      xenium key in load in data (yaml default: integrate.yaml).
     --morphology_mip <BOOL>      xenium key in load in data (yaml default: integrate.yaml).
-    --bin_size <INT>             legacy fallback for Stereo-seq; prefer `sample.txt` column 3 `input_spec` (`cellbin`, `adjusted_cellbin`, or `50,150`).
     --merscope_z_layers <TEXT>   optional z layers for `spatialdata_io.merscope`, e.g. `0` or `0,1,2`.
     --merscope_region_name <TEXT> optional region name for `spatialdata_io.merscope`.
     --merscope_transcripts <BOOL> load transcripts in `spatialdata_io.merscope` (yaml default: integrate.yaml).
@@ -180,8 +179,8 @@ Integration Step Options (--option integrate):
 Preprocessing Step Options (--option preprocess):
     --min_cells <INT>         Minimum spots/cells per gene (yaml default: preprocess.yaml).
     --min_counts <INT>        Minimum total counts per spot/cell (yaml default: preprocess.yaml).
-    --seg_filter <BOOL>       Alias of --filter_list for per-sample QC thresholds (yaml default: preprocess.yaml).
-    --filter_list <BOOL>      Read per-sample thresholds from sample.txt for single analysis; compare analysis always uses them.
+    --seg_filter <BOOL>       Alias of --filter_list for YAML per-sample QC overrides (yaml default: preprocess.yaml).
+    --filter_list <BOOL>      Enable YAML per-sample QC overrides; sample.txt filter columns are detected automatically.
     --batch_method <TEXT>     Batch correction method for multiple sample analysis (yaml default: preprocess.yaml).
     --sketch <BOOL>           Whether use sketch method to analysis (yaml default: preprocess.yaml).
     --variable <BOOL>         Use highly variable genes for PCA (yaml default: preprocess.yaml).
@@ -256,7 +255,7 @@ Annotation option Options (--option annotation):
     --x2 <FLOAT>                Crop maximum x coordinate (yaml default: annotation.yaml or annotation_help.yaml).
     --y1 <FLOAT>                Crop minimum y coordinate (yaml default: annotation.yaml or annotation_help.yaml).
     --y2 <FLOAT>                Crop maximum y coordinate (yaml default: annotation.yaml or annotation_help.yaml).
-    --device <TEXT>             CPU or GPU acceleration for annotation models (yaml default: annotation.yaml).
+    --device <TEXT>             Compute device: auto, cpu, or cuda (yaml default: selected module).
     --max_cores <INT>           Legacy alias of --threads for annotation tools.
     --RCTD_mode <TEXT>             RCTD mode: full or doublet (yaml default: annotation.yaml).
 Advanced Analysis option Options (--option advance_analysis):
@@ -333,7 +332,7 @@ Advanced Analysis option Options (--option advance_analysis):
     --banksy_seed <INT>       Random seed for BANKSY Leiden clustering and plotting downsampling.
 
 useful_tool splitting Option:
-    --output_dir=<TEXT>       output directory for useful-tool results (yaml default: selected tool).
+    --output_dir=<TEXT>       final useful-tool output directory; defaults use a tool-specific folder under results/useful_results.
     --split_by=<TEXT>         slice out with the barcode in table[anndata] .obs (yaml default: splitting.yaml).
     --barcodes=<TEXT>         selected labels for split_by filter: comma combines labels, pipe creates separate outputs (yaml default: splitting.yaml).
     --roi_csv=<TEXT>          csv file or directory for ROI splitting (yaml default: splitting.yaml).
@@ -343,8 +342,12 @@ useful_tool splitting Option:
     --coordinate_system=<TEXT> Coordinate system for ROI polygons or spatial cropping; empty enables unambiguous inference.
     --roi_label_col=<TEXT>    Optional ROI/category column in Loupe or Xenium CSV files.
     --roi_region=<TEXT>       Optional region used to disambiguate repeated instance IDs in integrated objects.
-    --annotation_format=<TEXT> Annotation CSV output format: auto, loupe, xenium, both, or none.
-    --annotation_cols=<TEXT>  Optional comma-separated obs columns exported as software annotations.
+    --annotation_format=<TEXT> Ordinary splitting annotation CSV: auto, loupe, xenium, both, or none.
+    --annotation_cols=<TEXT>  Ordinary splitting obs columns exported as software annotations.
+    --distance=<FLOAT>        Outer distance from ROI/target cells in micrometres; enables distance splitting.
+    --distance_min=<FLOAT>    Inner distance in micrometres; selected neighbors satisfy min <= d < max.
+    --neighbor_types=<TEXT>   Optional comma-separated labels allowed among neighboring observations.
+    --neighbor_col=<TEXT>     obs column containing neighbor_types labels.
     --max_x=<FLOAT>           coordinate of image boundaries (yaml default: splitting.yaml).
     --min_x=<FLOAT>           coordinate of image boundaries (yaml default: splitting.yaml).
     --max_y=<FLOAT>           coordinate of image boundaries (yaml default: splitting.yaml).
@@ -374,7 +377,6 @@ useful_tool transform Option:
     --transform_to=<TEXT>      target format: zarr, h5ad, or seurat.
     --type=<TEXT>              data type for Seurat export: auto, st, or sc.
     --seurat_matrix=<TEXT>     Seurat matrix source: auto, raw, or X.
-    --table_key=<TEXT>         SpatialData table; empty requires exactly one table.
     --memory_limit_gb=<FLOAT>  memory safety limit; 0 uses 80 percent of available memory.
     --keep_intermediate=<BOOL> retain the H5AD intermediate for zarr to Seurat.
 
@@ -385,6 +387,7 @@ General Options:
 Utility Options:
     --install-packages   Install required packages.
     --extended           Install full downstream packages for conda/Bioconda environments.
+    --torch-backend <TEXT> PyTorch build for Bioconda extended installs: auto, cpu, or cu128 [default: auto].
     --dry-run            Preview install-packages actions without installing.
     -u, --unlock         Unlock stalled workflow.
     -r, --remove         Remove all output files.
@@ -634,7 +637,7 @@ class WorkflowRunner(BaseCommandLine):
         self.cmd_str = self.snakemake_cmd
 
     def add_config_argument(self):
-        self.cmd_str += " --config " + " ".join(self.config)
+        self.cmd_str += " --config " + " ".join(shlex.quote(str(item)) for item in self.config)
 
     def load_configfile(self):
         step = self.arguments.get("--option")
@@ -679,7 +682,7 @@ class WorkflowRunner(BaseCommandLine):
         # Parse dynamic arguments. Only user-provided CLI options override yaml values.
         exclude_keys = {
             "--jobs", "--configfile", "--option", "--unlock", "--remove", 
-            "--dry", "--dry-run", "--extended", "--help", "--version", "<INPUT_FILE>", "<command>",
+            "--dry", "--dry-run", "--extended", "--torch-backend", "--help", "--version", "<INPUT_FILE>", "<command>",
             "--install-packages", "<TYPE>", "useful_tool", "<INTEGRATED_FILE>"
         }
         for key, value in self.arguments.items():
@@ -752,6 +755,8 @@ class ToolRunner(BaseCommandLine):
         "annotation_csv",
         "barcodes",
         "coordinate_system",
+        "neighbor_col",
+        "neighbor_types",
         "roi_csv",
         "roi_label_col",
         "roi_region",
@@ -822,7 +827,7 @@ class ToolRunner(BaseCommandLine):
         self.load_configfile()
         self.build_subprocess_cmd()
         
-        exclude_keys = {"--jobs", "--configfile", "--option", "--dry-run", "--extended", "useful_tool", "<INPUT>"}
+        exclude_keys = {"--jobs", "--configfile", "--option", "--dry-run", "--extended", "--torch-backend", "useful_tool", "<INPUT>"}
 
         cli_config_keys = []
         for key, value in self.arguments.items():
@@ -961,47 +966,262 @@ def validate_tool_arguments(arguments: Dict[str, Any]) -> bool:
 INSTALL_PACKAGES_CONFIG = os.path.join(SPATIALSNAKE_PATH, "workflow/envs/install_packages.yaml")
 
 
-def install_packages(extended: bool = False, dry_run: bool = False):
-    """Install packages that are intentionally kept outside the Bioconda recipe.
+def conda_package_satisfied(name: str, version: Optional[str]) -> bool:
+    meta_dir = os.path.join(sys.prefix, "conda-meta")
+    if name == "gfortran_linux-64":
+        compiler = os.path.join(sys.prefix, "bin", "x86_64-conda-linux-gnu-gfortran")
+        if not os.path.isfile(compiler):
+            return False
+        for filename in os.listdir(meta_dir):
+            if filename.startswith("gfortran_linux-64-") and filename.endswith(".json"):
+                try:
+                    with open(os.path.join(meta_dir, filename), encoding="utf-8") as f:
+                        return json.load(f).get("version") == version
+                except (OSError, ValueError):
+                    return False
+        return False
+    if name.startswith(("r-", "bioconductor-")):
+        if not os.path.isdir(meta_dir):
+            return False
+        for filename in os.listdir(meta_dir):
+            if not filename.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(meta_dir, filename), encoding="utf-8") as f:
+                    package = json.load(f)
+            except (OSError, ValueError):
+                continue
+            if package.get("name") == name:
+                return version is None or package.get("version") == version
+        return False
+    try:
+        installed_version = importlib.metadata.version(name)
+        return version is None or installed_version == version
+    except importlib.metadata.PackageNotFoundError:
+        return False
 
-    PyPI/source installs keep the historical behavior: pybanksy plus the R
-    helper script. Conda/Bioconda installs use this command to fill the pip-only
-    gap left by the conda recipe, with full downstream packages behind
-    --extended.
-    """
+
+def install_conda_requirements(packages: Dict[str, Optional[str]], label: str, dry_run: bool = False):
+    """Repair compatibility packages that must remain Conda-managed."""
+    pending = [f"{name}={version}" if version else name for name, version in packages.items()
+               if not conda_package_satisfied(name, version)]
+    if not pending:
+        logger.info(f"All {label} are already installed.")
+        return
+
+    conda = os.environ.get("CONDA_EXE")
+    if not conda or not os.path.isfile(conda):
+        conda = os.path.join(
+            os.path.dirname(os.path.dirname(sys.prefix)), "bin", "conda"
+        )
+    if not os.path.isfile(conda):
+        conda = shutil.which("conda")
+    if not conda or not os.path.isfile(conda):
+        logger.error("Conda executable not found; activate the Bioconda environment and retry.")
+        sys.exit(1)
+    cmd = [conda, "install", "-p", sys.prefix, "--freeze-installed",
+           "--use-index-cache",
+           "--override-channels", "-c", "conda-forge", "-c", "bioconda",
+           *pending, "-y"]
+    if dry_run:
+        logger.info(f"DRY RUN: would install {label}: {' '.join(cmd)}")
+        return
+    logger.info(f"Installing {label}: {', '.join(pending)}")
+    try:
+        subprocess.check_call(cmd, env=get_subprocess_env())
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install {label}: {e}")
+        sys.exit(e.returncode)
+
+
+def check_conda_runtime(dry_run: bool = False):
+    if sys.version_info[:2] != (3, 12):
+        logger.error("This install profile is validated for Python 3.12. "
+                     "Create a fresh Bioconda environment with python=3.12.11.")
+        sys.exit(2)
+    if dry_run:
+        return
+    try:
+        subprocess.check_call(
+            [get_rscript_executable(), "-e",
+             'stopifnot(getRversion() >= "4.4.0", getRversion() < "4.5.0")'],
+            env=get_subprocess_env(), stdout=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        logger.error("This install profile needs R 4.4; create a fresh Conda "
+                     "environment with r-base=4.4.0.")
+        sys.exit(2)
+
+
+def repair_numpy_runtime(constraints: List[str], dry_run: bool = False):
+    target = next((item for item in constraints if item.startswith("numpy==")), None)
+    if not target:
+        return
+    if dry_run:
+        logger.info(f"DRY RUN: would verify runtime {target} after Conda/pip installation")
+        return
+    try:
+        actual = subprocess.check_output(
+            [sys.executable, "-c", "import numpy; print(numpy.__version__)"],
+            text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        actual = None
+    if actual == target.split("==", 1)[1]:
+        return
+    logger.warning(f"NumPy runtime is {actual or 'unavailable'}; repairing to {target}")
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-deps", target]
+    )
+
+
+def get_torch_runtime() -> Tuple[str, bool]:
+    """Return the installed Torch CUDA runtime and whether CUDA is usable."""
+    try:
+        output = subprocess.check_output(
+            [
+                sys.executable, "-c",
+                "import torch; print(torch.version.cuda or ''); "
+                "print('1' if torch.cuda.is_available() else '0')",
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).splitlines()
+    except (OSError, subprocess.CalledProcessError):
+        return "", False
+    runtime = output[0].strip() if output else ""
+    available = len(output) > 1 and output[1].strip() == "1"
+    return runtime, available
+
+
+def nvidia_gpu_available() -> bool:
+    """Check for an accessible NVIDIA GPU without requiring PyTorch."""
+    nvidia_smi = shutil.which("nvidia-smi")
+    if not nvidia_smi:
+        return False
+    try:
+        output = subprocess.check_output(
+            [nvidia_smi, "-L"], text=True, stderr=subprocess.DEVNULL, timeout=10,
+        )
+        return bool(output.strip())
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return False
+
+
+def resolve_torch_backend(requested: str) -> str:
+    backend = str(requested or "auto").strip().lower()
+    if backend not in {"auto", "cpu", "cu128"}:
+        logger.error("--torch-backend must be one of: auto, cpu, cu128")
+        sys.exit(2)
+    if backend != "auto":
+        return backend
+
+    _, torch_cuda_available = get_torch_runtime()
+    selected = "cu128" if torch_cuda_available or nvidia_gpu_available() else "cpu"
+    logger.info(f"Auto-selected PyTorch backend: {selected}")
+    return selected
+
+
+def install_pytorch(
+    config: Dict[str, Any], backend: str = "auto", dry_run: bool = False
+) -> str:
+    """Install the tested CPU or CUDA PyTorch build before dependent packages."""
+    requirement = config.get("requirement", "torch==2.8.0")
+    selected = resolve_torch_backend(backend)
+    indexes = config.get("index_urls", {})
+    index_url = indexes.get(
+        selected, f"https://download.pytorch.org/whl/{selected}"
+    )
+    cuda_runtime, _ = get_torch_runtime()
+    if package_satisfies_requirement(requirement):
+        matching_build = (selected == "cpu" and not cuda_runtime) or (
+            selected == "cu128" and cuda_runtime.startswith("12.8")
+        )
+        if matching_build:
+            build = "CPU" if selected == "cpu" else f"CUDA {cuda_runtime}"
+            logger.info(f"{requirement} is already installed with the requested {build} build.")
+            return selected
+
+    cmd = [
+        sys.executable, "-m", "pip", "install", "--force-reinstall",
+        requirement, "--index-url", index_url,
+        "--upgrade-strategy", "only-if-needed",
+    ]
+    if dry_run:
+        logger.info(f"DRY RUN: would install {selected} PyTorch: {' '.join(cmd)}")
+        return selected
+    logger.info(f"Installing {selected} PyTorch from {index_url}: {requirement}")
+    try:
+        subprocess.check_call(cmd)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install {selected} PyTorch: {e}")
+        sys.exit(e.returncode)
+
+    cuda_runtime, _ = get_torch_runtime()
+    matching_build = (selected == "cpu" and not cuda_runtime) or (
+        selected == "cu128" and cuda_runtime.startswith("12.8")
+    )
+    if not package_satisfies_requirement(requirement) or not matching_build:
+        logger.error(f"Installed PyTorch does not match the requested {selected} build.")
+        sys.exit(1)
+    return selected
+
+
+def install_packages(
+    extended: bool = False, torch_backend: str = "auto", dry_run: bool = False
+):
+    """Complete dependencies using the installation route for this package."""
+    torch_backend = str(torch_backend or "auto").strip().lower()
+    if torch_backend not in {"auto", "cpu", "cu128"}:
+        logger.error("--torch-backend must be one of: auto, cpu, cu128")
+        sys.exit(2)
     origin = detect_spatialsnake_install_origin()
     logger.info(f"Detected Spatialsnake install origin: {origin}")
+    config = load_install_packages_config()
+    conda_config = config.get("conda", {})
+    check_conda_runtime(dry_run=dry_run)
 
     if origin == "conda":
-        config = load_install_packages_config()
         pip_config = config.get("pip", {})
         constraints = config.get("constraints", [])
+
+        conda_packages = dict(conda_config.get("compatibility", {}))
+        if extended:
+            conda_packages.update(conda_config.get("extended", {}))
+        install_conda_requirements(
+            conda_packages, label="Conda compatibility and R packages",
+            dry_run=dry_run,
+        )
         install_pip_requirements(
             pip_config.get("conda_minimal", []),
-            label="conda minimal Python packages",
-            dry_run=dry_run,
-            constraints=constraints,
+            label="core Python packages", dry_run=dry_run, constraints=constraints,
         )
         install_pip_requirements(
             pip_config.get("conda_force_pypi", []),
-            label="conda PyPI wheel packages",
-            dry_run=dry_run,
-            constraints=constraints,
-            force_reinstall=True,
-            no_deps=True,
+            label="validated Numba/llvmlite wheels", dry_run=dry_run,
+            constraints=constraints, force_reinstall=True, no_deps=True,
             require_pip_installer=True,
         )
+        repair_numpy_runtime(constraints, dry_run=dry_run)
+        run_conda_r_core_install_script(dry_run=dry_run)
         if not extended:
-            logger.info("Conda minimal packages handled. Use --extended for downstream Python, pybanksy, and R/GitHub packages.")
+            logger.info("Core analysis packages handled. Use --extended for "
+                        "cell2location, downstream Python tools, RCTD and CellChat.")
             return
 
+        install_pytorch(
+            pip_config.get("pytorch", {}), backend=torch_backend, dry_run=dry_run
+        )
         install_pip_requirements(
             pip_config.get("conda_extended", []),
-            label="conda extended Python packages",
-            dry_run=dry_run,
+            label="extended Python packages", dry_run=dry_run,
             constraints=constraints,
         )
-        _install_pybanksy_if_needed(dry_run=dry_run)
+        repair_numpy_runtime(constraints, dry_run=dry_run)
+        _install_pybanksy_if_needed(
+            requirement=config.get("pybanksy", {}).get("requirement", "pybanksy==1.3.5"),
+            dry_run=dry_run,
+        )
         run_conda_r_install_script(dry_run=dry_run)
         run_conda_r_github_install_script(dry_run=dry_run)
         return
@@ -1011,7 +1231,10 @@ def install_packages(extended: bool = False, dry_run: bool = False):
             "--extended does not install Python extras for PyPI/source environments. "
             "Use `python -m pip install \"spatialsnake[extended]\"` before this command."
         )
-    _install_pybanksy_if_needed(dry_run=dry_run)
+    _install_pybanksy_if_needed(
+        requirement=config.get("pybanksy", {}).get("requirement", "pybanksy==1.3.5"),
+        dry_run=dry_run,
+    )
     run_r_install_script(dry_run=dry_run)
 
 
@@ -1064,7 +1287,7 @@ def package_satisfies_requirement(requirement: str) -> bool:
         installed_version = importlib.metadata.version(package_name)
     except importlib.metadata.PackageNotFoundError:
         return False
-    return installed_version == version
+    return installed_version.split("+", 1)[0] == version
 
 
 def package_installer(package_name: str) -> str:
@@ -1091,6 +1314,7 @@ def install_pip_requirements(
     force_reinstall: bool = False,
     no_deps: bool = False,
     require_pip_installer: bool = False,
+    extra_index_url: Optional[str] = None,
 ):
     satisfies = package_satisfies_pip_requirement if require_pip_installer else package_satisfies_requirement
     pending = [req for req in requirements if not satisfies(req)]
@@ -1103,6 +1327,8 @@ def install_pip_requirements(
         cmd.append("--force-reinstall")
     if no_deps:
         cmd.append("--no-deps")
+    if extra_index_url:
+        cmd.extend(["--extra-index-url", extra_index_url])
     cmd.extend(pending)
     cmd.extend(["--upgrade-strategy", "only-if-needed"])
     if dry_run:
@@ -1148,6 +1374,25 @@ def run_r_install_script(dry_run: bool = False):
         sys.exit(e.returncode)
     except FileNotFoundError:
         logger.error("Rscript not found or script missing.")
+        sys.exit(1)
+
+
+def run_conda_r_core_install_script(dry_run: bool = False):
+    r_script_path = os.path.join(
+        SPATIALSNAKE_PATH, "workflow/scripts/install_packages_core_conda.R"
+    )
+    rscript = get_rscript_executable()
+    if dry_run:
+        logger.info(f"DRY RUN: would run core R script with {rscript}: {r_script_path}")
+        return
+    try:
+        logger.info(f"Running core R script with {rscript}: {r_script_path}")
+        subprocess.check_call([rscript, r_script_path], env=get_subprocess_env())
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install core R packages: {e}")
+        sys.exit(e.returncode)
+    except FileNotFoundError:
+        logger.error("Rscript not found or core R script missing.")
         sys.exit(1)
 
 
@@ -1203,34 +1448,36 @@ def get_subprocess_env() -> Dict[str, str]:
     return env
 
 
-def _install_pybanksy_if_needed(dry_run: bool = False):
-    """pybanksy metadata declares numpy<2.0 which conflicts with our numpy>=2.
-    Install it with --no-deps since all its true dependencies are already
-    satisfied by spatialsnake core requirements.
+def _install_pybanksy_if_needed(
+    requirement: str = "pybanksy==1.3.5", dry_run: bool = False
+):
+    """Install pybanksy without resolver changes; its dependencies are already
+    satisfied by the extended environment.
 
     The distribution is named pybanksy, but its import package is `banksy`.
     Check distribution metadata so repeated runs are idempotent.
     """
+    _, expected_version = parse_pinned_requirement(requirement)
     try:
-        if importlib.metadata.version("pybanksy") == "1.3.4":
+        if expected_version and importlib.metadata.version("pybanksy") == expected_version:
             return
     except importlib.metadata.PackageNotFoundError:
         pass
 
     if dry_run:
-        logger.info(f"DRY RUN: would install pybanksy with: {sys.executable} -m pip install pybanksy==1.3.4 --no-deps")
+        logger.info(f"DRY RUN: would install pybanksy with: {sys.executable} -m pip install {requirement} --no-deps")
         return
 
     logger.info("Installing pybanksy (BANKSY spatial clustering) ...")
     try:
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "pybanksy==1.3.4", "--no-deps"],
+            [sys.executable, "-m", "pip", "install", requirement, "--no-deps"],
         )
         logger.info("pybanksy installed successfully.")
     except subprocess.CalledProcessError:
         logger.warning(
             "Failed to install pybanksy automatically. "
-            "You can install it manually later: pip install pybanksy==1.3.4 --no-deps"
+            f"You can install it manually later: pip install {requirement} --no-deps"
         )
 
 
@@ -1297,6 +1544,7 @@ def main():
     if cli_arguments.get("install-packages"):
         install_packages(
             extended=bool(cli_arguments.get("--extended")),
+            torch_backend=cli_arguments.get("--torch-backend") or "auto",
             dry_run=bool(cli_arguments.get("--dry-run")),
         )
         return

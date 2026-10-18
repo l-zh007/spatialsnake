@@ -21,12 +21,11 @@ nucleus_labels: False  # Load Xenium nucleus labels into SpatialData labels. Rec
 morphology_mip: False  # Load Xenium morphology MIP image. Recommended: False unless morphology overview is needed.
 
 # -----------------------------------------------------------------------------
-# Visium Segment and Stereo-seq input options
+# Visium Segment input options
 # -----------------------------------------------------------------------------
 geojson: 'cell_segmentations.geojson'  # Visium Segment cell segmentation GeoJSON filename. Recommended: cell_segmentations.geojson.
 image: 'tissue_hires_image.png'  # High-resolution tissue image filename for segmented Visium input. Recommended: tissue_hires_image.png.
 scale_factors: 'scalefactors_json.json'  # Visium scale factor JSON filename used for coordinate mapping. Recommended: scalefactors_json.json.
-bin_size: 50  # Fallback bin size for Stereo-seq tissue GEM aggregation. Recommended: define input_spec in sample.txt when possible.
 
 # -----------------------------------------------------------------------------
 # MERSCOPE / MERFISH input options

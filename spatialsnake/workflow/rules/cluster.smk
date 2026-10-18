@@ -13,9 +13,9 @@ def get_stereoseq_input_spec_param(wildcards):
     return ""
   sample_name = wildcards.sample if hasattr(wildcards, "sample") else None
   if channel == "compare_analysis":
-    requested = next(iter(globals().get("sample_stereoseq_input_spec_map", {}).values()), config.get("bin_size"))
+    requested = next(iter(globals().get("sample_stereoseq_input_spec_map", {}).values()), None)
   else:
-    requested = globals().get("sample_stereoseq_input_spec_map", {}).get(sample_name, config.get("bin_size"))
+    requested = globals().get("sample_stereoseq_input_spec_map", {}).get(sample_name)
   if requested in [None, "", False, "None", "False", "false", "NULL", "null"]:
     return ""
   return f"--input_spec '{requested}'"

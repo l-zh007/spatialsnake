@@ -2,7 +2,7 @@
 # Input paths are supplied positionally on the command line.
 
 INPUT:
-output_dir: "results/useful_results"
+output_dir: "results/useful_results/data_transforms"
 
 # Supported directions: zarr -> h5ad/seurat and h5ad -> zarr/seurat.
 transform_from: "zarr"

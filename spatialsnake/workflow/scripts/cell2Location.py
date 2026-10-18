@@ -101,20 +101,14 @@ if args.save_models:
     logger.info("Model checkpoints will be saved")
 
 
-def resolve_device(device):
-    requested = str(device or "cpu").strip().lower()
-    if requested not in {"cpu", "cuda"}:
-        raise ValueError("--device must be either 'cpu' or 'cuda'")
-    if requested == "cuda":
-        import torch
+from spatialsnake.workflow.function.device_utils import lightning_accelerator, resolve_torch_device
 
-        if not torch.cuda.is_available():
-            raise RuntimeError("CUDA was requested, but torch.cuda.is_available() is False")
-        return {"accelerator": "gpu", "device": "auto"}
-    return {"accelerator": "cpu", "device": "auto"}
-
-
-train_device_kwargs = resolve_device(args.device)
+selected_device = resolve_torch_device(args.device)
+train_device_kwargs = {
+    "accelerator": lightning_accelerator(selected_device),
+    "device": "auto",
+}
+logger.info(f"cell2location compute device: {selected_device}")
 
 def cell2loc_plot_history(model, fig_path, iter_start=0, iter_end=None, rolling_window=1):
 # Adapted from: https://github.com/BayraktarLab/cell2location/blob/master/cell2location/models/base/_pyro_mixin.py#L407

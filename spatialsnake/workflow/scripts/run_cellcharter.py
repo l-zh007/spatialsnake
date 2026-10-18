@@ -1,5 +1,6 @@
 import os
 import sys
+import gc
 import torch
 if hasattr(torch, "set_float32_matmul_precision"):
   torch.set_float32_matmul_precision("high")
@@ -8,6 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import anndata as ad
 import spatialdata as spd
+import spatialdata_plot
 import scanpy as sc
 import matplotlib.pyplot as plt
 import argparse
@@ -19,11 +21,12 @@ import cellcharter as cc
 import scvi
 from scipy import sparse as sp
 from spatialdata.models import PointsModel
-from spatialdata.transformations import Identity
+from spatialdata.transformations import get_transformation
 from spatialsnake.workflow.function.plot import cluster_proportion
 from spatialsnake.workflow.function.export_cluster_csv import export_cluster_csv
 from spatialsnake.workflow.function.stereoseq_selection import resolve_visual_target
 from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
+from spatialsnake.workflow.function.device_utils import lightning_accelerator, resolve_torch_device
 import argparse
 warnings.filterwarnings("ignore")
 logger = setup_logger("cellcharter")
@@ -57,11 +60,16 @@ parser.add_argument('--cellcharter_col', type=str,required=False,
                    help='Path for the output zarr file')   
 parser.add_argument('--threads', type=int, default=8,
                    help='Threads allocated to CellCharter')
+parser.add_argument('--device', choices=['auto', 'cpu', 'cuda'], default='auto',
+                   help='Compute device: auto, cpu, or cuda')
                   
 args = parser.parse_args()
 if args.threads < 1:
   parser.error("--threads must be >= 1")
 torch.set_num_threads(args.threads)
+selected_device = resolve_torch_device(args.device)
+trainer_accelerator = lightning_accelerator(selected_device)
+logger.info(f"CellCharter compute device: {selected_device}")
 
 type = args.type
 dir_path = os.path.dirname(args.output_zarr_path)
@@ -71,7 +79,7 @@ sample_id = args.sample_id
 RANDOM_SEED = 0
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
-if torch.cuda.is_available():
+if selected_device == "cuda":
   torch.cuda.manual_seed_all(RANDOM_SEED)
 scvi.settings.seed = RANDOM_SEED
 
@@ -82,6 +90,16 @@ def _as_region_list(region):
   if isinstance(region, (list, tuple, np.ndarray, pd.Index)):
     return [str(value) for value in region]
   return [str(region)]
+
+
+def _sanitize_obs_index_name(adata):
+  instance_key = adata.uns.get("spatialdata_attrs", {}).get("instance_key")
+  if instance_key and instance_key in adata.obs and adata.obs_names.name == instance_key:
+    safe_name = "__obs_index__"
+    while safe_name in adata.obs:
+      safe_name = f"_{safe_name}"
+    adata.obs_names.name = safe_name
+  return adata
 
 
 def _matrix_is_nonnegative_integer(x, atol=1e-6, chunk_size=1_000_000):
@@ -115,7 +133,7 @@ def _select_counts(adata):
     raw_var_names = pd.Index(adata.raw.var_names.astype(str))
     var_names = pd.Index(adata.var_names.astype(str))
     if var_names.isin(raw_var_names).all():
-      raw_x = adata.raw[:, var_names].X
+      raw_x = adata.raw.X if raw_var_names.equals(var_names) else adata.raw[:, var_names].X
       if _matrix_is_nonnegative_integer(raw_x):
         return _copy_matrix(raw_x), "raw.X (aligned to adata.var_names)"
       logger.warning("Ignoring raw.X because it is not a non-negative integer matrix")
@@ -178,12 +196,6 @@ def _validate_spatial_annotations(sdata, table):
     point_index = pd.Index(points_df.index.astype(str))
     if point_index.has_duplicates:
       raise ValueError(f"Points element '{region}' contains duplicate IDs")
-    if len(points_df) != len(table_obs):
-      raise ValueError(
-        f"Points/table row count mismatch for '{region}': {len(points_df)} Points and "
-        f"{len(table_obs)} table rows"
-      )
-
     candidate_ids = []
     if instance_key in table_obs.columns:
       table_instance_ids = pd.Index(table_obs[instance_key].astype(str))
@@ -197,13 +209,17 @@ def _validate_spatial_annotations(sdata, table):
         candidate_ids.append((f"Points column '{instance_key}'", point_instance_ids, table_instance_ids))
     table_obs_ids = pd.Index(table_obs.index.astype(str))
     candidate_ids.append(("Points index", point_index, table_obs_ids))
-    if not any(set(point_ids) == set(table_ids) for _, point_ids, table_ids in candidate_ids):
+    matched_ids = next(
+      ((point_ids, table_ids) for _, point_ids, table_ids in candidate_ids
+       if set(table_ids).issubset(set(point_ids))), None
+    )
+    if matched_ids is None:
       raise ValueError(
         f"Points element '{region}' cannot be aligned to table rows by instance key or obs ID"
       )
 
     x_col, y_col = _infer_xy_columns(points_df)
-    coordinates = points_df[[x_col, y_col]].apply(pd.to_numeric, errors="coerce").to_numpy()
+    coordinates = points_df.loc[matched_ids[0].isin(matched_ids[1]), [x_col, y_col]].apply(pd.to_numeric, errors="coerce").to_numpy()
     if not np.isfinite(coordinates).all():
       raise ValueError(f"Points element '{region}' contains missing or non-finite coordinates")
     logger.info(
@@ -230,7 +246,8 @@ def _restore_table_identity(adata, original_obs_names, original_uns):
       "Converted table rows do not match the original SpatialData table "
       f"(original={len(original_obs_names)}, converted={len(adata)}, missing={len(missing)}, extra={len(extra)})"
     )
-  adata = adata[original_obs_names].copy()
+  if not adata.obs_names.equals(original_obs_names) or adata.is_view:
+    adata = adata[original_obs_names].copy()
   for key, value in original_uns.items():
     adata.uns[key] = deepcopy(value)
   if not adata.obs_names.equals(original_obs_names):
@@ -269,6 +286,7 @@ table_key = next(iter(concatenated_sdata.tables.keys()))
 original_table = concatenated_sdata.tables[table_key]
 original_obs_names = pd.Index(original_table.obs_names.astype(str))
 original_uns = deepcopy(original_table.uns)
+original_spatial = original_table.obsm["spatial"].copy() if "spatial" in original_table.obsm else None
 spatialdata_attrs, annotated_regions = _validate_spatial_annotations(concatenated_sdata, original_table)
 image_elements = list(concatenated_sdata.images.keys())
 shape_elements = list(concatenated_sdata.shapes.keys())
@@ -308,6 +326,8 @@ if channel == "compare_analysis" and len(systems) > 1:
     data.obsm['spatial'][:, 1] = np.max(data.obsm['spatial'][:, 1]) - data.obsm['spatial'][:, 1]
     adata_list.append(data)
   adata = ad.concat(adata_list, axis=0, merge='same', pairwise=True, index_unique=None)
+  # The concatenated object owns the data needed below; release per-sample copies.
+  del adata_list, data
 else:
   coord_system = systems[0] if len(systems) > 0 else None
   point_annotated = any(region in concatenated_sdata.points for region in annotated_regions)
@@ -318,6 +338,8 @@ else:
     table_name=table_key,
   )
 adata = _restore_table_identity(adata, original_obs_names, original_uns)
+del original_table, original_uns
+gc.collect()
 logger.info(f"Loaded {adata.n_obs} observations and {adata.n_vars} genes")
 
 log_step(logger, 2, 7, "preparing counts layer")
@@ -354,8 +376,16 @@ else:
 
 log_step(logger, 3, 7, "training SCVI model")
 model = scvi.model.SCVI(adata)
-model.train(early_stopping=True, enable_progress_bar=True)
+model.train(
+  early_stopping=True,
+  enable_progress_bar=True,
+  accelerator=trainer_accelerator,
+  devices=1,
+)
 adata.obsm['X_scVI'] = model.get_latent_representation(adata).astype(np.float32)
+# No downstream step uses the trained model after extracting its representation.
+del model
+gc.collect()
 
 if channel == "compare_analysis":
   log_step(logger, 4, 7, "building spatial neighbors for compare analysis")
@@ -365,6 +395,7 @@ if channel == "compare_analysis":
   if np.any(sample_codes[spatial_graph.row] != sample_codes[spatial_graph.col]):
     raise RuntimeError("Spatial neighbor graph contains edges between different samples")
   logger.info("Validated spatial neighbor graph: no cross-sample edges")
+  del spatial_graph, sample_codes
   cc.gr.aggregate_neighbors(adata, n_layers=3, use_rep='X_scVI', out_key='X_cellcharter', sample_key=args.sample_col)
 else:
   log_step(logger, 4, 7, "building spatial neighbors")
@@ -372,7 +403,7 @@ else:
   cc.gr.aggregate_neighbors(adata, n_layers=3, use_rep='X_scVI', out_key='X_cellcharter')
 
 cluster_trainer_params = {
-  "accelerator": "gpu" if torch.cuda.is_available() else "cpu",
+  "accelerator": trainer_accelerator,
   "devices": 1,
   "strategy": "auto",
   "enable_progress_bar": False,
@@ -394,6 +425,8 @@ plt.savefig(
 plt.close()
 best_k = int(autok.best_k)
 predicted_labels = np.asarray(autok.predict(adata, use_rep='X_cellcharter')).astype(str)
+del autok
+gc.collect()
 adata.obs[args.cellcharter_col] = pd.Categorical(predicted_labels)
 analysis_parameters = {
   "best_k": best_k,
@@ -555,6 +588,7 @@ def select_elements(items, keyword):
     selected = [item for item in items if keyword in item]
     return selected if selected else list(items)
 sample_cnt=adata.obs["sample"].astype(str).nunique() if "sample" in adata.obs else 1
+adata = _sanitize_obs_index_name(adata)
 concatenated_sdata[table_key] = adata
 log_step(logger, 6, 7, "rendering CellCharter spatial plots")
 active_vis_mode = "shape" if len(getattr(concatenated_sdata, "shapes", {})) > 0 else "point"
@@ -578,63 +612,82 @@ if active_vis_mode == "point":
     point_visual_elements = select_elements(point_elements, region_name)
     if not point_visual_elements:
         point_visual_elements = [visual_region_name] if visual_region_name in getattr(concatenated_sdata, "points", {}) else point_elements
-    keep_ids = adata.obs_names.astype(str)
-    point_transformations = {coord_system: Identity() for coord_system in valid_coord_systems} if valid_coord_systems else {"global": Identity()}
     for current_visual_region in point_visual_elements:
       source_points = concatenated_sdata.points[current_visual_region]
       points_df = source_points.compute() if hasattr(source_points, "compute") else source_points.copy()
       points_df = points_df.copy()
-      points_df.index = points_df.index.astype(str)
-      points_df = points_df.reindex(keep_ids).copy()
-      points_df[args.cellcharter_col] = adata.obs[args.cellcharter_col].astype(str).reindex(points_df.index).fillna("unassigned").astype("category")
+      region_key = spatialdata_attrs.get("region_key")
+      local_obs = adata.obs.loc[adata.obs[region_key].astype(str).eq(current_visual_region)] if region_key in adata.obs else adata.obs
+      instance_key = spatialdata_attrs["instance_key"]
+      point_ids = points_df[instance_key].astype(str) if instance_key in points_df.columns else pd.Series(points_df.index.astype(str), index=points_df.index)
+      labels = pd.Series(local_obs[args.cellcharter_col].astype(str).to_numpy(), index=local_obs[instance_key].astype(str))
+      points_df[args.cellcharter_col] = point_ids.map(labels).fillna("unassigned").astype("category")
       points_df = points_df.dropna(subset=["x", "y"])
       concatenated_sdata.points[current_visual_region] = PointsModel.parse(
         points_df.sort_index(),
         coordinates={"x": "x", "y": "y"},
-        transformations=point_transformations,
+        transformations=get_transformation(source_points, get_all=True),
       )
 
-for i in range(sample_cnt):
-    sys = systems[0] if len(systems) < 2 else systems[i]
-    title = images[i].replace("_hires_image", "")
-    current_visual_region = visual_region_name
-    if active_vis_mode == "point" and len(point_visual_elements) > 0:
-      current_visual_region = point_visual_elements[0] if len(point_visual_elements) < 2 else point_visual_elements[min(i, len(point_visual_elements) - 1)]
-    fig, axes = plt.subplots(2, 1, figsize=(20, 13))
-    axes = np.ravel(axes)
-    concatenated_sdata.pl.render_images(images[i]).pl.show(
-      ax=axes[0],
-      title="image",
-      coordinate_systems=sys,
-    )
-    if active_vis_mode == "shape":
-      concatenated_sdata.pl.render_images(images[i]).pl.render_shapes(
-        shapes[i],
-        color=args.cellcharter_col,
-        table_name=table_key,
-        outline_alpha=0,
-        fill_alpha=1,
-      ).pl.show(
-        ax=axes[1],
+if not images:
+  sys = systems[0] if systems else "global"
+  current_visual_region = visual_region_name
+  if active_vis_mode == "point" and point_visual_elements:
+    current_visual_region = point_visual_elements[0]
+  fig, ax = plt.subplots(figsize=(10, 10))
+  if active_vis_mode == "shape":
+    concatenated_sdata.pl.render_shapes(
+      visual_region_name, color=args.cellcharter_col, table_name=table_key,
+      outline_alpha=0, fill_alpha=1,
+    ).pl.show(ax=ax, coordinate_systems=sys, title=str(sample_id))
+  else:
+    concatenated_sdata.pl.render_points(
+      current_visual_region, color=args.cellcharter_col, size=2.5, alpha=0.8,
+    ).pl.show(ax=ax, coordinate_systems=sys, title=str(sample_id))
+  plt.savefig(os.path.join(dir_path, f"{sample_id}_spatial_Clusters.png"), dpi=300, bbox_inches='tight')
+  plt.close()
+else:
+  for i in range(sample_cnt):
+      sys = systems[0] if len(systems) < 2 else systems[i]
+      title = images[i].replace("_hires_image", "")
+      current_visual_region = visual_region_name
+      if active_vis_mode == "point" and len(point_visual_elements) > 0:
+        current_visual_region = point_visual_elements[0] if len(point_visual_elements) < 2 else point_visual_elements[min(i, len(point_visual_elements) - 1)]
+      fig, axes = plt.subplots(2, 1, figsize=(20, 13))
+      axes = np.ravel(axes)
+      concatenated_sdata.pl.render_images(images[i]).pl.show(
+        ax=axes[0],
+        title="image",
         coordinate_systems=sys,
-        title=title,
       )
-    else:
-      concatenated_sdata.pl.render_images(images[i]).pl.render_points(
-        current_visual_region,
-        color=args.cellcharter_col,
-        size=2.5,
-        alpha=0.8,
-      ).pl.show(
-        ax=axes[1],
-        coordinate_systems=sys,
-        title=title,
-      )
-    plt.savefig(
-      os.path.join(dir_path, f"{sample_id}_{images[i]}_Clusters.png"),
-      dpi=300,
-      bbox_inches='tight')
-    plt.close()
+      if active_vis_mode == "shape":
+        concatenated_sdata.pl.render_images(images[i]).pl.render_shapes(
+          shapes[i],
+          color=args.cellcharter_col,
+          table_name=table_key,
+          outline_alpha=0,
+          fill_alpha=1,
+        ).pl.show(
+          ax=axes[1],
+          coordinate_systems=sys,
+          title=title,
+        )
+      else:
+        concatenated_sdata.pl.render_images(images[i]).pl.render_points(
+          current_visual_region,
+          color=args.cellcharter_col,
+          size=2.5,
+          alpha=0.8,
+        ).pl.show(
+          ax=axes[1],
+          coordinate_systems=sys,
+          title=title,
+        )
+      plt.savefig(
+        os.path.join(dir_path, f"{sample_id}_{images[i]}_Clusters.png"),
+        dpi=300,
+        bbox_inches='tight')
+      plt.close()
 
 
 
@@ -649,5 +702,9 @@ export_cluster_csv(
 )
 
 log_step(logger, 7, 7, f"saving CellCharter output to {args.output_zarr_path}")
+if original_spatial is not None:
+  adata.obsm["spatial"] = original_spatial
+else:
+  adata.obsm.pop("spatial", None)
 concatenated_sdata.write(args.output_zarr_path)
 logger.info("CellCharter module completed")

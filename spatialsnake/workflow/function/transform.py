@@ -92,6 +92,9 @@ def _coordinate_system_for_region(sdata: sd.SpatialData, region: str) -> str:
             candidates.append(system)
     if len(candidates) == 1:
         return candidates[0]
+    native = [system for system in candidates if "_downscaled_" not in system]
+    if len(native) == 1:
+        return native[0]
     if not candidates:
         raise ValueError(
             f"Region {region!r} is not connected to any coordinate system; available: {systems}"
@@ -182,6 +185,23 @@ def _export_library(
     if not adata.obs_names.is_unique:
         raise ValueError(f"Library {library_id!r} contains duplicated observation IDs")
     _validate_spatial_coordinates(adata, library_id)
+    # Keep native coordinates separate from the downscaled legacy image coordinates.
+    source_table = sdata.tables[table_key]
+    positions = source_table.obs_names.get_indexer(adata.obs_names)
+    if (positions < 0).any():
+        raise ValueError("Converted observations do not match the source table")
+    if region in sdata.points or region in sdata.shapes:
+        from spatialsnake.workflow.function.splitting import _linked_coordinates
+        adata.obsm["spatial_native"] = _linked_coordinates(sdata, source_table, positions)
+    elif "spatial" in source_table.obsm:
+        adata.obsm["spatial_native"] = np.asarray(source_table.obsm["spatial"])[positions, :2].copy()
+    resolution = source_table.uns.get("resolution")
+    source_gef = source_table.uns.get("source_gef", "")
+    if resolution is None and source_gef and Path(source_gef).is_file():
+        with h5py.File(source_gef, "r") as handle:
+            resolution = handle.attrs.get("resolution")
+    if resolution is not None:
+        adata.obs["spatialsnake_resolution_nm"] = float(np.asarray(resolution).reshape(-1)[0])
     messages = _normalize_spatial_uns(adata, library_id)
     adata.obs["library_id"] = pd.Categorical([library_id] * adata.n_obs)
     image_count = _count_spatial_images(adata) if save_image else 0
@@ -982,7 +1002,7 @@ def _validate_formats(inputs: Sequence[str], transform_from: str, transform_to: 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Spatialsnake format conversion")
     parser.add_argument("--INPUT", nargs="+", required=True, help="Input Zarr or H5AD path(s)")
-    parser.add_argument("--output_dir", required=True)
+    parser.add_argument("--output_dir", default="results/useful_results/data_transforms")
     parser.add_argument("--save_image", default="True")
     parser.add_argument("--transform_to", required=True)
     parser.add_argument("--transform_from", required=True)

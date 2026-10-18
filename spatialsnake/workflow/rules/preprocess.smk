@@ -26,7 +26,7 @@ def get_stereoseq_input_spec_param(wildcards):
   sample_name = wildcards.sample if hasattr(wildcards, "sample") else None
   if not sample_name:
     return ""
-  requested = globals().get("sample_stereoseq_input_spec_map", {}).get(sample_name, config.get("bin_size"))
+  requested = globals().get("sample_stereoseq_input_spec_map", {}).get(sample_name)
   if requested in [None, "", False, "None", "False", "false", "NULL", "null"]:
     return ""
   return f"--input_spec '{requested}'"

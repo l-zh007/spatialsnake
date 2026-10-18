@@ -45,3 +45,9 @@ docker/
 *.key
 credentials.json
 secrets.yaml
+
+# Local analysis notes and run logs
+log/
+优化步骤.md
+大内存模块优化建议.md
+packages.txt

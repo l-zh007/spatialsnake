@@ -14,9 +14,9 @@ def get_stereoseq_input_spec_param(wildcards):
     return ""
   sample_name = wildcards.sample if hasattr(wildcards, "sample") else None
   if channel == "compare_analysis":
-    requested = next(iter(globals().get("sample_stereoseq_input_spec_map", {}).values()), config.get("bin_size"))
+    requested = next(iter(globals().get("sample_stereoseq_input_spec_map", {}).values()), None)
   else:
-    requested = globals().get("sample_stereoseq_input_spec_map", {}).get(sample_name, config.get("bin_size"))
+    requested = globals().get("sample_stereoseq_input_spec_map", {}).get(sample_name)
   if requested in [None, "", False, "None", "False", "false", "NULL", "null"]:
     return ""
   return f"--input_spec '{requested}'"
@@ -28,6 +28,7 @@ rule annotation_manual:
     main=directory(annotation_output(run_type, "{sample}.zarr", "concatenated_sdata.zarr")),
     cell_clusters=annotation_output(run_type, "{sample}_cell_clusters.csv", "concatenated_sdata_cell_clusters.csv"),
     proportion_png=annotation_output(run_type, "celltype_proportion.png"),
+    proportion_tsv=annotation_output(run_type, "celltype_proportion.composition.tsv"),
     umap_png=annotation_output(run_type, "{sample}_UMAP.png", "concatenated_sdata_UMAP.png"),
     gene_enrich_png=annotation_output(run_type, "{sample}_gene_enrich.png", "concatenated_sdata_gene_enrich.png")
   threads: workflow_threads

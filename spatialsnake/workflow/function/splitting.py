@@ -8,14 +8,19 @@ Spatial elements are filtered only when ``--subset_mode spatial`` is requested.
 """
 
 import argparse
+import json
 import os
 import re
 from pathlib import Path
 
+import h5py
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import scanpy as sc
 import spatialdata as spd
+import spatialdata_plot
+from scipy.spatial import cKDTree
 from shapely.geometry import Point, Polygon
 
 from spatialsnake.workflow.function.logging_utils import log_step, setup_logger
@@ -27,7 +32,8 @@ logger = setup_logger("useful_splitting")
 def build_parser():
     parser = argparse.ArgumentParser(description="Split an AnnData or SpatialData object")
     parser.add_argument("--INPUT_FILE", type=str, required=True, help="Input .h5ad file or SpatialData Zarr directory")
-    parser.add_argument("--output_dir", type=str, required=True, help="Output directory")
+    parser.add_argument("--output_dir", type=str, default="results/useful_results/data_splitting",
+                        help="Output directory")
     parser.add_argument("--split_by", type=str, required=True, help="obs column, ROI, or image")
     parser.add_argument("--barcodes", type=str, default="", help="Comma-combined or pipe-separated labels")
     # These arguments remain required for compatibility with the existing ToolRunner.
@@ -46,6 +52,10 @@ def build_parser():
     parser.add_argument("--annotation_format", choices=("auto", "loupe", "xenium", "both", "none"),
                         default="auto", help="Companion annotation CSV format")
     parser.add_argument("--annotation_cols", type=str, default="", help="Additional comma-separated obs columns to export")
+    parser.add_argument("--distance", type=float, default=None, help="Outer distance from target in micrometres")
+    parser.add_argument("--distance_min", type=float, default=0, help="Inner distance from target in micrometres")
+    parser.add_argument("--neighbor_types", type=str, default="", help="Optional comma-separated neighbor labels")
+    parser.add_argument("--neighbor_col", type=str, default="", help="obs column used by neighbor_types")
     return parser
 
 
@@ -444,7 +454,10 @@ def _csv_header_row(path):
 
 
 def _read_roi_csv(path):
-    return pd.read_csv(path, skiprows=_csv_header_row(path), sep=",", engine="python", on_bad_lines="skip")
+    return pd.read_csv(
+        path, skiprows=_csv_header_row(path), sep=",", engine="python",
+        on_bad_lines="skip", dtype=str, keep_default_na=False,
+    )
 
 
 def _selection_name_from_preamble(path):
@@ -628,7 +641,9 @@ def _polygon_mask(adata, sdata, polygon, coordinate_system):
         annotated_regions = [annotated_regions]
     for element_name in annotated_regions:
         if element_name in sdata.shapes:
-            element = spd.transform(sdata.shapes[element_name], to_coordinate_system=coordinate_system)
+            element = sdata.shapes[element_name]
+            if coordinate_system:
+                element = spd.transform(element, to_coordinate_system=coordinate_system)
             geometries = element.geometry
             if "radius" in element.columns:
                 geometries = geometries.buffer(pd.to_numeric(element["radius"], errors="coerce").fillna(0))
@@ -638,7 +653,9 @@ def _polygon_mask(adata, sdata, polygon, coordinate_system):
             )
             selected_pairs.update((str(element_name), str(index)) for index in element.index[selected])
         elif element_name in sdata.points:
-            element = spd.transform(sdata.points[element_name], to_coordinate_system=coordinate_system)
+            element = sdata.points[element_name]
+            if coordinate_system:
+                element = spd.transform(element, to_coordinate_system=coordinate_system)
             frame = element.compute() if hasattr(element, "compute") else element
             selected = [polygon.covers(Point(float(x), float(y))) for x, y in zip(frame["x"], frame["y"])]
             selected_pairs.update((str(element_name), str(index)) for index in frame.index[selected])
@@ -710,16 +727,18 @@ def crop_image(sdata, table_key, args):
 def _save_crop_preview(sdata, coordinate_system, output_path):
     """Best-effort preview supporting images, shapes, and points-only objects."""
     try:
-        render = sdata.pl
+        render = sdata
         rendered = False
         if len(sdata.images):
-            render = render.render_images()
+            image_name = next((name for name in sdata.images if "hires" in name), next(iter(sdata.images)))
+            norm = plt.Normalize(0, 255) if getattr(sdata.images[image_name], "dtype", None) == np.uint8 else None
+            render = render.pl.render_images(element=image_name, scale="full", norm=norm)
             rendered = True
-        if len(sdata.shapes):
-            render = render.render_shapes()
+        elif len(sdata.shapes):
+            render = render.pl.render_shapes()
             rendered = True
-        if len(sdata.points):
-            render = render.render_points()
+        elif len(sdata.points):
+            render = render.pl.render_points()
             rendered = True
         if not rendered:
             logger.warning("Crop is valid but contains no plottable images, shapes, or points")
@@ -733,10 +752,520 @@ def _save_crop_preview(sdata, coordinate_system, output_path):
         logger.warning("Crop was written, but preview rendering failed: %s", exc)
 
 
+DISTANCE_SAMPLE_COLUMNS = ["sample_id", "spatialdata_path", "raw_dir", "bin_size", "roi_csv"]
+
+
+def _read_distance_samples(path):
+    """Read one physical section per row; paths are resolved from the working directory."""
+    frame = pd.read_csv(path, sep=r"\s+", dtype=str, keep_default_na=False)
+    missing = [column for column in DISTANCE_SAMPLE_COLUMNS if column not in frame.columns]
+    if missing:
+        raise ValueError(
+            "distance sample table must contain: " + " ".join(DISTANCE_SAMPLE_COLUMNS)
+        )
+    frame = frame[DISTANCE_SAMPLE_COLUMNS].copy()
+    for column in DISTANCE_SAMPLE_COLUMNS:
+        frame[column] = frame[column].astype(str).str.strip().replace({"-": "", "None": ""})
+    if frame.empty or frame["sample_id"].eq("").any():
+        raise ValueError("distance sample table must contain at least one non-empty sample_id")
+    if frame["sample_id"].duplicated().any():
+        repeated = frame.loc[frame["sample_id"].duplicated(keep=False), "sample_id"].unique()
+        raise ValueError(f"sample_id must be unique: {', '.join(repeated)}")
+    for column in ("spatialdata_path", "raw_dir"):
+        if frame[column].eq("").any():
+            raise ValueError(f"{column} is required for every distance sample")
+        frame[column] = frame[column].map(lambda value: str(Path(value).expanduser().resolve()))
+    frame["roi_csv"] = frame["roi_csv"].map(
+        lambda value: str(Path(value).expanduser().resolve()) if value else ""
+    )
+    for value in frame["spatialdata_path"]:
+        if _detect_input(value) != "zarr":
+            raise ValueError("distance splitting requires SpatialData Zarr inputs")
+    for value in frame["raw_dir"]:
+        if not Path(value).is_dir():
+            raise ValueError(f"raw_dir is not a directory: {value}")
+    return frame
+
+
+def _visium_spatial_dir(path):
+    path = Path(path)
+    candidates = [path, path / "spatial"]
+    for candidate in candidates:
+        if (candidate / "scalefactors_json.json").is_file():
+            return candidate
+    raise ValueError(f"scalefactors_json.json not found under {path}")
+
+
+def _read_scalefactor(path, allow_spot_fallback=False):
+    json_path = _visium_spatial_dir(path) / "scalefactors_json.json"
+    with open(json_path, encoding="utf-8") as handle:
+        factors = json.load(handle)
+    if "microns_per_pixel" in factors:
+        return float(factors["microns_per_pixel"]), str(json_path)
+    if allow_spot_fallback and "spot_diameter_fullres" in factors:
+        return 55.0 / float(factors["spot_diameter_fullres"]), str(json_path)
+    raise ValueError(f"physical pixel scale is unavailable in {json_path}")
+
+
+def _raw_layout(raw_dir, bin_size):
+    raw = Path(raw_dir)
+    spec = str(bin_size).strip().lower()
+    segment = raw if (raw / "cell_segmentations.geojson").is_file() else raw / "segmented_outputs"
+    if spec in {"cell", "segment", "segmented"} and segment.is_dir():
+        return "visium_segment", segment
+
+    direct_hd = re.fullmatch(r"square_(\d+(?:\.\d+)?)um", raw.name.lower())
+    if direct_hd and (raw / "spatial" / "scalefactors_json.json").is_file():
+        if not np.isclose(float(direct_hd.group(1)), float(spec)):
+            raise ValueError(f"Visium HD bin_size={bin_size} does not match {raw.name}")
+        return "visium_HD", raw
+
+    binned = raw / "binned_outputs"
+    if binned.is_dir():
+        try:
+            size = float(spec)
+        except ValueError as exc:
+            raise ValueError("Visium HD bin_size must be a numeric micrometre value") from exc
+        label = f"{int(size):03d}" if size.is_integer() else f"{size:g}"
+        output = binned / f"square_{label}um"
+        if not output.is_dir():
+            raise ValueError(f"Visium HD output not found for bin_size={bin_size}: {output}")
+        return "visium_HD", output
+
+    if list(raw.glob("*.xenium")) or (raw / "cells.parquet").is_file() or (raw / "cells.csv.gz").is_file():
+        return "xenium", raw
+    if (raw / "cell_metadata.csv").is_file() and (
+        (raw / "cell_by_gene.csv").is_file() or (raw / "cell_by_gene.csv.gz").is_file()
+    ):
+        return "MERFISH", raw
+    feature = raw / "feature_expression"
+    if list(raw.glob("*.gef")) or (feature.is_dir() and list(feature.glob("*.gef"))):
+        return "Stereo-seq", raw
+    try:
+        spatial_dir = _visium_spatial_dir(raw)
+    except ValueError as exc:
+        raise ValueError(f"could not identify a supported platform from raw_dir={raw}") from exc
+    if not any((spatial_dir / name).exists() for name in (
+        "tissue_positions.csv", "tissue_positions_list.csv", "tissue_positions.parquet"
+    )):
+        raise ValueError(f"Visium tissue positions not found in {spatial_dir}")
+    return "Visium", raw
+
+
+def _linked_coordinates(sdata, adata, positions):
+    region_key, instance_key = _table_keys(adata)
+    if not instance_key or instance_key not in adata.obs.columns:
+        raise ValueError("linked spatial coordinates require spatialdata_attrs.instance_key")
+    if not region_key or region_key not in adata.obs.columns:
+        raise ValueError("linked spatial coordinates require spatialdata_attrs.region_key")
+    selected = adata.obs.iloc[positions]
+    coordinates = np.full((len(selected), 2), np.nan, dtype=float)
+    for region in pd.unique(selected[region_key].astype(str)):
+        local = selected[region_key].astype(str).eq(region).to_numpy()
+        instances = selected.loc[local, instance_key].astype(str)
+        if region in sdata.shapes:
+            element = sdata.shapes[region]
+            centroids = element.geometry.centroid
+            lookup = pd.DataFrame(
+                {"x": centroids.x.to_numpy(), "y": centroids.y.to_numpy()},
+                index=element.index.astype(str),
+            )
+        elif region in sdata.points:
+            element = sdata.points[region]
+            frame = element.compute() if hasattr(element, "compute") else element
+            lookup = pd.DataFrame(
+                {"x": pd.to_numeric(frame["x"]), "y": pd.to_numeric(frame["y"])},
+                index=frame.index.astype(str),
+            )
+        else:
+            raise ValueError(f"linked Shapes/Points element {region!r} is missing")
+        aligned = lookup.reindex(instances.to_numpy())
+        coordinates[local] = aligned[["x", "y"]].to_numpy(dtype=float)
+    if not np.isfinite(coordinates).all():
+        raise ValueError("some table observations do not match their linked Shapes/Points instances")
+    return coordinates
+
+
+def _stereo_resolution(raw_dir, bin_size):
+    root = Path(raw_dir)
+    files = sorted(list(root.glob("*.gef")) + list((root / "feature_expression").glob("*.gef")))
+    spec = str(bin_size).strip().lower()
+    if spec in {"cell", "cellbin", "adjusted_cellbin"}:
+        files = [path for path in files if "cellbin" in path.name.lower()]
+        if spec == "adjusted_cellbin":
+            files = [path for path in files if "adjusted.cellbin" in path.name.lower()]
+        elif spec in {"cell", "cellbin"}:
+            plain = [path for path in files if "adjusted.cellbin" not in path.name.lower()]
+            files = plain or files
+        if len(files) != 1:
+            raise ValueError(f"could not select one Stereo-seq cellbin GEF for bin_size={bin_size}")
+        with h5py.File(files[0], "r") as handle:
+            value = handle.attrs.get("resolution")
+    else:
+        try:
+            size = int(float(spec))
+        except ValueError as exc:
+            raise ValueError("Stereo-seq bin_size must be numeric, cellbin, or adjusted_cellbin") from exc
+        files = [path for path in files if path.name.lower().endswith("tissue.gef")]
+        if len(files) != 1:
+            raise ValueError("could not select one Stereo-seq tissue GEF")
+        with h5py.File(files[0], "r") as handle:
+            key = f"geneExp/bin{size}/expression"
+            if key not in handle:
+                raise ValueError(f"{key} not found in {files[0]}")
+            value = handle[key].attrs.get("resolution")
+    if value is None:
+        raise ValueError(f"resolution metadata is missing from {files[0]}")
+    resolution_nm = float(np.asarray(value).reshape(-1)[0])
+    return resolution_nm / 1000.0, str(files[0])
+
+
+def _physical_coordinates(sdata, adata, positions, row):
+    platform, analysis_dir = _raw_layout(row["raw_dir"], row["bin_size"])
+    if "spatial_native" in adata.obsm:
+        coordinates = np.asarray(adata.obsm["spatial_native"])[positions, :2].astype(float)
+    elif platform in {"Visium", "visium_HD"} and _table_keys(adata)[1]:
+        # Native linked geometry also makes older CellCharter tables safe to split.
+        coordinates = _linked_coordinates(sdata, adata, positions)
+    elif platform in {"Visium", "visium_HD", "xenium", "MERFISH"}:
+        if "spatial" in adata.obsm:
+            coordinates = np.asarray(adata.obsm["spatial"])[positions, :2].astype(float)
+        elif platform == "MERFISH" and {"center_x", "center_y"}.issubset(adata.obs.columns):
+            coordinates = adata.obs.iloc[positions][["center_x", "center_y"]].to_numpy(dtype=float)
+        else:
+            raise ValueError(f"{platform} table has no aligned spatial coordinates")
+    else:
+        coordinates = _linked_coordinates(sdata, adata, positions)
+
+    if platform == "Visium":
+        scale, source = _read_scalefactor(analysis_dir, allow_spot_fallback=True)
+        coordinates *= scale
+        unit = "spot"
+        source = f"native coordinates * {scale:g} um/fullres_pixel ({source})"
+    elif platform == "visium_HD":
+        scale, source = _read_scalefactor(analysis_dir)
+        with open(_visium_spatial_dir(analysis_dir) / "scalefactors_json.json", encoding="utf-8") as handle:
+            factors = json.load(handle)
+        requested = float(row["bin_size"])
+        if "bin_size_um" in factors and not np.isclose(float(factors["bin_size_um"]), requested):
+            raise ValueError("Visium HD bin_size does not match scalefactors_json.json")
+        coordinates *= scale
+        unit = f"{requested:g}um_bin"
+        source = f"native coordinates * {scale:g} um/fullres_pixel ({source})"
+    elif platform == "visium_segment":
+        scale, source = _read_scalefactor(analysis_dir)
+        coordinates *= scale
+        unit = "segmented_cell"
+        source = f"linked cell polygon centroid * {scale:g} um/fullres_pixel ({source})"
+    elif platform == "Stereo-seq":
+        scale, source = _stereo_resolution(analysis_dir, row["bin_size"])
+        coordinates *= scale
+        unit = "cellbin" if "cell" in str(row["bin_size"]).lower() else f"bin{row['bin_size']}"
+        source = f"GEF x/y * {scale:g} um/DNB ({source})"
+    elif platform == "xenium":
+        unit = "cell"
+        source = "obsm['spatial'] in um (Xenium cells output)"
+    else:
+        unit = "cell"
+        source = "obsm['spatial']/cell_metadata center in um"
+    if not np.isfinite(coordinates).all():
+        raise ValueError(f"non-finite coordinates found for sample {row['sample_id']}")
+    return coordinates, platform, unit, source
+
+
+def _sample_positions(adata, sample_id, one_row):
+    if "sample" not in adata.obs.columns:
+        if one_row:
+            return np.arange(adata.n_obs)
+        raise ValueError("a multi-sample distance table requires obs['sample']")
+    values = adata.obs["sample"].astype(str).to_numpy()
+    positions = np.flatnonzero(values == str(sample_id))
+    if len(positions) == 0:
+        if one_row and len(pd.unique(values)) == 1:
+            logger.warning("sample_id %s differs from the single obs['sample'] value; using the whole table", sample_id)
+            return np.arange(adata.n_obs)
+        raise ValueError(f"sample_id {sample_id!r} not found in obs['sample']")
+    return positions
+
+
+def _neighbor_mask(coordinates, target_mask, candidate_mask, distance_min, distance_max):
+    if not target_mask.any():
+        return np.zeros(len(target_mask), dtype=bool), np.full(len(target_mask), np.nan)
+    distances = cKDTree(coordinates[target_mask]).query(coordinates, k=1)[0]
+    neighbors = candidate_mask & ~target_mask & (distances >= distance_min) & (distances < distance_max)
+    return neighbors, distances
+
+
+def _distance_roi_mask(adata, positions, definition, sample_id, platform):
+    sample = adata[positions, :]
+    identifiers, _ = _obs_identifier(sample)
+    requested = pd.Index(definition["ids"]).astype(str)
+    mask = identifiers.isin(requested).to_numpy()
+    if platform == "visium_segment":
+        prefixed = pd.Index([f"{sample_id}_{value}" for value in requested])
+        mask |= identifiers.isin(prefixed).to_numpy()
+    logger.info(
+        "ROI %s: requested=%d, matched=%d", definition["name"],
+        len(pd.unique(requested)), int(mask.sum()),
+    )
+    if not mask.any():
+        raise ValueError(f"ROI {definition['name']!r} matched no observations in sample {sample_id}")
+    return mask
+
+
+def _distance_sdata(sdata, table_key, table, subset_mode):
+    if subset_mode == "spatial":
+        filtered = spd.match_sdata_to_table(sdata, table_name=table_key, table=table, how="right")
+        points, shapes = dict(filtered.points), dict(filtered.shapes)
+    else:
+        points, shapes = dict(sdata.points), dict(sdata.shapes)
+    return spd.SpatialData(
+        images=dict(sdata.images), labels=dict(sdata.labels), points=points,
+        shapes=shapes, tables={table_key: table}, attrs=dict(sdata.attrs),
+    )
+
+
+def _plot_distance_selection(records, output_path):
+    columns = min(3, len(records))
+    rows = int(np.ceil(len(records) / columns))
+    figure, axes = plt.subplots(rows, columns, figsize=(8 * columns, 7 * rows), squeeze=False)
+    for ax, record in zip(axes.flat, records):
+        coordinates, target, neighbor, sample_id = record
+        background = ~(target | neighbor)
+        background_size = max(0.4, min(3.0, 50000 / len(coordinates)))
+        selected_size = max(1.5, background_size * 2)
+        ax.scatter(
+            coordinates[background, 0], coordinates[background, 1],
+            s=background_size, c="#9E9E9E", linewidths=0, rasterized=True,
+            label=f"Unselected ({int(background.sum()):,})",
+        )
+        ax.scatter(
+            coordinates[target, 0], coordinates[target, 1],
+            s=selected_size, c="#d55e00", linewidths=0, rasterized=True,
+            label=f"Target ({int(target.sum()):,})",
+        )
+        ax.scatter(
+            coordinates[neighbor, 0], coordinates[neighbor, 1],
+            s=selected_size, c="#0072b2", linewidths=0, rasterized=True,
+            label=f"Selected neighbor ({int(neighbor.sum()):,})",
+        )
+        ax.set_title(str(sample_id))
+        ax.set_aspect("equal")
+        ax.invert_yaxis()
+        ax.set_xlabel("x (μm)")
+        ax.set_ylabel("y (μm)")
+        ax.legend(frameon=False, markerscale=2.5, loc="center left", bbox_to_anchor=(1.02, 0.5))
+    for ax in axes.flat[len(records):]:
+        ax.axis("off")
+    figure.tight_layout(w_pad=5)
+    figure.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(figure)
+
+
+def _write_distance_result(sdata, adata, table_key, selected, roles, distances,
+                           records, metadata, output_stem, args):
+    subset = prepare_subset_table(adata, selected)
+    subset.obs["selection_role"] = pd.Categorical(roles[selected], categories=["target", "neighbor"])
+    subset.obs["distance_to_target_um"] = distances[selected]
+    subset.uns["distance_splitting"] = metadata
+    output_path = os.path.join(args.output_dir, f"{output_stem}.zarr")
+    result = _distance_sdata(sdata, table_key, subset, args.subset_mode)
+    result.write(output_path, overwrite=True)
+    _plot_distance_selection(records, os.path.join(args.output_dir, f"{output_stem}_spatial.png"))
+    logger.info("Wrote %d observations to %s", subset.n_obs, output_path)
+
+
+def _distance_celltype(sdata, adata, table_key, rows, args, prefix=""):
+    if args.split_by not in adata.obs.columns:
+        raise ValueError(f"split_by column {args.split_by!r} not found in table obs")
+    groups = parse_barcode_groups(args.barcodes)
+    if not groups:
+        raise ValueError("--barcodes is required for celltype distance splitting")
+    neighbor_values = [value.strip() for value in str(args.neighbor_types).split(",") if value.strip()]
+    if neighbor_values and not args.neighbor_col:
+        raise ValueError("--neighbor_col is required when --neighbor_types is used")
+    if args.neighbor_col and args.neighbor_col not in adata.obs.columns:
+        raise ValueError(f"neighbor_col {args.neighbor_col!r} not found in table obs")
+    if neighbor_values:
+        available_neighbors = set(adata.obs[args.neighbor_col].astype(str))
+        missing = [value for value in neighbor_values if value not in available_neighbors]
+        if missing:
+            raise ValueError(f"neighbor_types not found in {args.neighbor_col}: {', '.join(missing)}")
+    split_values = adata.obs[args.split_by].astype(str).to_numpy()
+
+    for values in groups:
+        selected = np.zeros(adata.n_obs, dtype=bool)
+        roles = np.full(adata.n_obs, "", dtype=object)
+        distances = np.full(adata.n_obs, np.nan)
+        records = []
+        metadata_samples = {
+            "sample_id": [], "platform": [], "observation_unit": [],
+            "coordinate_source": [], "target_n": [], "neighbor_n": [],
+        }
+        total_targets = 0
+        for _, row in rows.iterrows():
+            positions = _sample_positions(adata, row["sample_id"], len(rows) == 1)
+            coordinates, platform, unit, source = _physical_coordinates(sdata, adata, positions, row)
+            target = np.isin(split_values[positions], values)
+            candidate = np.ones(len(positions), dtype=bool)
+            if neighbor_values:
+                candidate = np.isin(adata.obs.iloc[positions][args.neighbor_col].astype(str), neighbor_values)
+            neighbor, local_distances = _neighbor_mask(
+                coordinates, target, candidate, args.distance_min, args.distance,
+            )
+            total_targets += int(target.sum())
+            chosen = target | neighbor
+            selected[positions[chosen]] = True
+            roles[positions[target]] = "target"
+            roles[positions[neighbor]] = "neighbor"
+            distances[positions[target]] = 0.0
+            distances[positions[neighbor]] = local_distances[neighbor]
+            logger.info(
+                "%s: platform=%s, unit=%s, target=%d, neighbor=%d, coordinates=%s",
+                row["sample_id"], platform, unit, int(target.sum()), int(neighbor.sum()), source,
+            )
+            records.append((coordinates, target, neighbor, row["sample_id"]))
+            metadata_samples["sample_id"].append(str(row["sample_id"]))
+            metadata_samples["platform"].append(platform)
+            metadata_samples["observation_unit"].append(unit)
+            metadata_samples["coordinate_source"].append(source)
+            metadata_samples["target_n"].append(int(target.sum()))
+            metadata_samples["neighbor_n"].append(int(neighbor.sum()))
+        if total_targets == 0:
+            raise ValueError(f"target values not found in {args.split_by}: {', '.join(values)}")
+        neighbor_tag = f"_to_{safe_name('_'.join(neighbor_values))}" if neighbor_values else ""
+        stem = (
+            f"{prefix}{safe_name(args.split_by)}_{safe_name('_'.join(values))}{neighbor_tag}"
+            f"_distance_{args.distance_min:g}_{args.distance:g}um"
+        )
+        _write_distance_result(
+            sdata, adata, table_key, selected, roles, distances, records,
+            {
+                "mode": "celltype",
+                "target_column": args.split_by,
+                "target_values": values,
+                "neighbor_column": args.neighbor_col or "",
+                "neighbor_values": neighbor_values,
+                "distance_min_um": float(args.distance_min),
+                "distance_max_um": float(args.distance),
+                "samples": metadata_samples,
+            },
+            stem, args,
+        )
+
+
+def _distance_roi(sdata, adata, table_key, row, args):
+    roi_csv = row["roi_csv"] or _optional_text(args.roi_csv)
+    if not roi_csv:
+        raise ValueError("ROI distance splitting requires roi_csv in the distance sample table")
+    definitions = load_roi_definitions(roi_csv, args.roi_label_col)
+    positions = _sample_positions(adata, row["sample_id"], True)
+    coordinates, platform, unit, source = _physical_coordinates(sdata, adata, positions, row)
+    if platform not in {"Visium", "visium_HD", "visium_segment", "xenium"}:
+        raise ValueError("ROI distance mode supports Visium, Visium HD, Visium Segment, and Xenium")
+    if platform != "xenium" and any(definition["kind"] == "polygon" for definition in definitions):
+        raise ValueError("polygon coordinate CSVs in distance ROI mode are supported only for Xenium")
+    neighbor_values = [value.strip() for value in str(args.neighbor_types).split(",") if value.strip()]
+    if neighbor_values and not args.neighbor_col:
+        raise ValueError("--neighbor_col is required when --neighbor_types is used")
+    if args.neighbor_col and args.neighbor_col not in adata.obs.columns:
+        raise ValueError(f"neighbor_col {args.neighbor_col!r} not found in table obs")
+    if neighbor_values:
+        available_neighbors = set(adata.obs[args.neighbor_col].astype(str))
+        missing = [value for value in neighbor_values if value not in available_neighbors]
+        if missing:
+            raise ValueError(f"neighbor_types not found in {args.neighbor_col}: {', '.join(missing)}")
+    for definition in definitions:
+        if definition["kind"] == "ids":
+            target = _distance_roi_mask(adata, positions, definition, row["sample_id"], platform)
+        else:
+            target = _polygon_mask(
+                adata, sdata, definition["polygon"], coordinate_system=None,
+            )[positions]
+            logger.info(
+                "ROI %s: matched=%d Xenium cells fully contained by polygon",
+                definition["name"], int(target.sum()),
+            )
+        candidate = np.ones(len(positions), dtype=bool)
+        if neighbor_values:
+            candidate = np.isin(adata.obs.iloc[positions][args.neighbor_col].astype(str), neighbor_values)
+        neighbor, local_distances = _neighbor_mask(
+            coordinates, target, candidate, args.distance_min, args.distance,
+        )
+        chosen = target | neighbor
+        selected = np.zeros(adata.n_obs, dtype=bool)
+        selected[positions[chosen]] = True
+        roles = np.full(adata.n_obs, "", dtype=object)
+        roles[positions[target]] = "target"
+        roles[positions[neighbor]] = "neighbor"
+        distances = np.full(adata.n_obs, np.nan)
+        distances[positions[target]] = 0.0
+        distances[positions[neighbor]] = local_distances[neighbor]
+        logger.info(
+            "%s ROI %s: platform=%s, unit=%s, target=%d, neighbor=%d, coordinates=%s",
+            row["sample_id"], definition["name"], platform, unit,
+            int(target.sum()), int(neighbor.sum()), source,
+        )
+        neighbor_tag = f"_to_{safe_name('_'.join(neighbor_values))}" if neighbor_values else ""
+        stem = (
+            f"ROI_{safe_name(definition['name'])}{neighbor_tag}"
+            f"_distance_{args.distance_min:g}_{args.distance:g}um"
+        )
+        _write_distance_result(
+            sdata, adata, table_key, selected, roles, distances,
+            [(coordinates, target, neighbor, row["sample_id"])],
+            {
+                "mode": "ROI",
+                "roi_name": definition["name"],
+                "roi_source": definition["kind"],
+                "neighbor_column": args.neighbor_col or "",
+                "neighbor_values": neighbor_values,
+                "distance_min_um": float(args.distance_min),
+                "distance_max_um": float(args.distance),
+                "samples": {
+                    "sample_id": [str(row["sample_id"])],
+                    "platform": [platform],
+                    "observation_unit": [unit],
+                    "coordinate_source": [source],
+                    "target_n": [int(target.sum())],
+                    "neighbor_n": [int(neighbor.sum())],
+                },
+            },
+            stem, args,
+        )
+
+
+def split_distance(args):
+    if args.distance <= 0 or args.distance_min < 0 or args.distance_min >= args.distance:
+        raise ValueError("distance radii must satisfy 0 <= distance_min < distance")
+    rows = _read_distance_samples(args.INPUT_FILE)
+    roi_mode = args.split_by.lower() in {"roi", "rois"}
+    if roi_mode and len(rows) != 1:
+        raise ValueError("ROI distance splitting accepts one physical sample per run")
+    path_groups = list(rows.groupby("spatialdata_path", sort=False))
+    for path, path_rows in path_groups:
+        logger.info("Loading distance input %s", path)
+        sdata = spd.read_zarr(path)
+        if len(sdata.tables) > 1 and not args.table_key:
+            raise ValueError("distance splitting requires --table_key when SpatialData has multiple tables")
+        table_key = _select_table(sdata, args.table_key)
+        adata = sdata.tables[table_key]
+        if roi_mode:
+            _distance_roi(sdata, adata, table_key, path_rows.iloc[0], args)
+        else:
+            prefix = "" if len(path_groups) == 1 else f"{safe_name(path_rows.iloc[0]['sample_id'])}_"
+            _distance_celltype(sdata, adata, table_key, path_rows, args, prefix)
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     os.makedirs(args.output_dir, exist_ok=True)
     log_step(logger, 1, 4, f"preparing split by {args.split_by}")
+    if args.distance is not None:
+        log_step(logger, 2, 4, f"loading distance sample table {args.INPUT_FILE}")
+        split_distance(args)
+        log_step(logger, 4, 4, f"completed distance splitting into {args.output_dir}")
+        return
     input_kind = _detect_input(args.INPUT_FILE)
     log_step(logger, 2, 4, f"loading input file {args.INPUT_FILE}")
     if input_kind == "h5ad":

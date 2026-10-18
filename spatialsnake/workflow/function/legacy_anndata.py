@@ -489,7 +489,9 @@ def to_legacy_anndata(
     downscaled_images_hires = {}
     downscaled_images_lowres = {}
     sdata_post_rasterize = None
-    if not include_images:
+    if include_images and len(sdata.images) == 0:
+        logger.info("No images are present; continuing with shapes-only legacy conversion")
+    if not include_images or len(sdata.images) == 0:
         sdata_post_rasterize = sdata_pre_rasterize
     else:
         sdata_images = sdata.subset(element_names=list(sdata.images.keys()))
@@ -546,5 +548,4 @@ def to_legacy_anndata(
     logger.info(f"Legacy AnnData spatial image keys: {list(adata.uns.get('spatial', {}).keys())}")
     logger.info("Legacy AnnData conversion completed")
     return adata
-
 

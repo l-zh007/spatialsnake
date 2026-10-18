@@ -222,6 +222,9 @@ if run_sketch:
       f"Sketch mode requires the full preprocessed query at {full_path}"
     )
   full_adata = sc.read_h5ad(full_path)
+  spatial_attrs = full_adata.uns.get("spatialdata_attrs", {})
+  if isinstance(spatial_attrs.get("region"), np.ndarray):
+    spatial_attrs["region"] = spatial_attrs["region"].reshape(-1).astype(str).tolist()
   if not full_adata.var_names.equals(adata_for_sketch.var_names):
     raise RuntimeError("The sketch reference and full query have different gene order")
   if clustering_rep not in full_adata.obsm:
@@ -242,15 +245,15 @@ if run_sketch:
     (full_adata.n_obs, adata_for_sketch.obsm["X_umap"].shape[1]), dtype=np.float32
   )
   chunk_size = 100000
+  ingest = sc.tl.Ingest(adata_for_sketch)
   for start in range(0, full_adata.n_obs, chunk_size):
     end = min(start + chunk_size, full_adata.n_obs)
     query_chunk = full_adata[start:end].copy()
-    sc.tl.ingest(
-      query_chunk,
-      adata_for_sketch,
-      obs="clusters",
-      embedding_method=("umap",),
-    )
+    ingest.fit(query_chunk)
+    ingest.map_embedding("umap")
+    ingest.neighbors(random_state=0)
+    ingest.map_labels("clusters", "knn")
+    ingest.to_adata(inplace=True)
     cluster_values[start:end] = query_chunk.obs["clusters"].astype(str).to_numpy()
     umap_values[start:end] = query_chunk.obsm["X_umap"]
 

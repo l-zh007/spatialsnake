@@ -1,5 +1,5 @@
 <p align="center"> 
-  <img src="spatialsnake-logo.png" alt="spatialsnake logo" width="760">
+  <img src="https://raw.githubusercontent.com/l-zh007/spatialsnake/main/spatialsnake-logo.png" alt="spatialsnake logo" width="760">
 </p>
 
 <p align="center">
@@ -46,7 +46,7 @@
 | Workflow Modes | `single_analysis`, `compare_analysis` |
 | Utility Entry Points | `useful_tool`, `produce-file`, `install-packages` |
 | Main Analysis Options | `integrate`, `preprocess`, `clustering`, `reclustering`, `annotation_help`, `annotation`, `advance_analysis`, `compare_stage` |
-| Supported Input Types | `visium`, `visium_segment`, `visium_HD`, `xenium`, `Merfish`, `stereo_seq` |
+| Supported Input Types | `visium`, `visium_segment`, `visium_HD`, `xenium`, `Merfish`, `stereoseq` |
 
 ## Core Functions
 
@@ -64,7 +64,7 @@
 - `visium`: 10x Genomics spatial transcriptomics data
 - `visium_HD`: high-resolution 10x Genomics spatial transcriptomics data
 - `visium_segment`: cell segmentation outputs from 10x Genomics Space Ranger
-- `stereo_seq`: BGI Stereo-seq spatial transcriptomics data, including different bin sizes, `cellbin`, and adjusted `cellbin` data types
+- `stereoseq`: BGI Stereo-seq spatial transcriptomics data, including different bin sizes, `cellbin`, and adjusted `cellbin` data types
 
 ### Imaging-based
 
@@ -73,73 +73,99 @@
 
 ## Basic Installation
 
-### 1. Create the base conda environment
+The commands below describe version 0.0.5. Until 0.0.5 reaches PyPI and Bioconda, use the source option. All routes require Linux and a fresh Conda environment.
+
+### Option 1. PyPI (recommended)
 
 ```bash
-conda config --add channels defaults
-conda config --add channels bioconda
-conda config --add channels conda-forge
-conda create -n spatialsnake_env python=3.12.11 snakemake-minimal=9.8.1 r-base=4.4.0 -y
+conda create -n spatialsnake_env --override-channels -c conda-forge -c bioconda \
+  python=3.12.11 snakemake-minimal=9.8.1 r-base=4.4.0 -y
 conda activate spatialsnake_env
-```
 
-### 2. Install the documented core dependencies
-
-```bash
-conda install -c conda-forge r-optparse r-tidyverse r-future r-jsonlite r-rcolorbrewer r-patchwork r-cowplot r-pheatmap r-seurat r-remotes r-biocmanager r-presto r-nmf r-circlize
-conda install -c bioconda bioconductor-annotationdbi bioconductor-complexheatmap bioconductor-clusterprofiler bioconductor-edger bioconductor-org.hs.eg.db bioconductor-org.mm.eg.db bioconductor-rhdf5 bioconductor-biocneighbors
-conda install -c conda-forge bbknn cython
-```
-
-### 3. Install `spatialsnake`
-
-#### Option 1. Install from PyPI (recommended)
-
-```bash
-pip install spatialsnake
+conda install --override-channels -c conda-forge -c bioconda \
+  r-optparse r-tidyverse r-future r-jsonlite r-rcolorbrewer r-patchwork \
+  r-cowplot r-pheatmap r-seurat r-remotes r-biocmanager r-presto r-nmf \
+  r-circlize r-ggpubr -y
+conda install --override-channels -c conda-forge -c bioconda \
+  bioconductor-annotationdbi bioconductor-complexheatmap \
+  bioconductor-clusterprofiler bioconductor-edger \
+  bioconductor-org.hs.eg.db bioconductor-org.mm.eg.db \
+  bioconductor-rhdf5 bioconductor-biocneighbors -y
+python -m pip install spatialsnake
 spatialsnake --version
 ```
 
-#### Option 2. Install from Bioconda
-
-The official Bioconda package provides an alternative Conda-based installation
-in a fresh environment:
-
 ```bash
-conda create -n spatialsnake_env -c conda-forge -c bioconda spatialsnake -y
-conda activate spatialsnake_env
-spatialsnake --version
+# Choose one PyTorch build (do not run both commands)
+python -m pip install --index-url https://download.pytorch.org/whl/cu128 "torch==2.8.0"  # NVIDIA GPU
+# python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch==2.8.0"  # CPU-only
+
+python -m pip install "spatialsnake[extended]"
 spatialsnake install-packages
+python -m pip check
+```
+
+### Option 2. Bioconda
+
+```bash
+conda create -n spatialsnake_env --override-channels -c conda-forge -c bioconda \
+  spatialsnake=0.0.5 python=3.12.11 r-base=4.4.3 snakemake-minimal=9.8.1 -y
+conda activate spatialsnake_env
+spatialsnake install-packages
+```
+
+Optional advanced analyses:
+
+```bash
+# Automatically choose cu128 when an NVIDIA GPU is available, otherwise CPU
+spatialsnake install-packages --extended --torch-backend=auto
+
+# Or force one build instead:
+# spatialsnake install-packages --extended --torch-backend=cpu
+# spatialsnake install-packages --extended --torch-backend=cu128
 ```
 
 See package details and release files on [Bioconda](https://anaconda.org/bioconda/spatialsnake).
 
-#### Option 3. Install from source code
+### Option 3. Source (before the 0.0.5 release)
 
 ```bash
-git clone https://github.com/zhenghlin/spatialsnake.git
+conda create -n spatialsnake_env --override-channels -c conda-forge -c bioconda \
+  python=3.12.11 r-base=4.4.3 snakemake-minimal=9.8.1 -y
+conda activate spatialsnake_env
+```
+
+Install both Conda/R dependency commands from Option 1 in this environment, then continue:
+
+```bash
+git clone https://github.com/l-zh007/spatialsnake.git
 cd spatialsnake
 python -m pip install .
-python -m pip install ".[extended]"
 spatialsnake --version
 ```
 
-### 4. Optional extended package step
-
-For PyPI or source installs:
+Optional advanced analyses:
 
 ```bash
-pip install "spatialsnake[extended]"
+python -m pip install --index-url https://download.pytorch.org/whl/cu128 "torch==2.8.0"
+python -m pip install ".[extended]"
 spatialsnake install-packages
 ```
 
-For conda installs:
+For PyPI, the Conda/R layer plus `pip install spatialsnake` covers integration,
+preprocessing, clustering/reclustering, annotation help,
+manual annotation, enrichment and common utilities. The optional extras add
+the selected CPU or cu128 PyTorch build, cell2location, scvi-tools, CellCharter, Squidpy,
+CellPhoneDB, LIANA, pySCENIC and napari-spatialdata; `install-packages` then
+adds BANKSY, RCTD and CellChat support.
 
-```bash
-spatialsnake install-packages --extended
-```
-
-With the minimal installation, the documented workflow includes `integrate`, `preprocess`, `clustering`, `reclustering`, `annotation_help`, `annotation`, `reannotation`, and utility operations for merge and split. For conda installs, `spatialsnake install-packages` completes the minimal pip-only core packages; `spatialsnake install-packages --extended` adds downstream Python packages, `pybanksy`, and R/GitHub packages for documented extended components including `compare_stage`, `transform`, `banksy`, and `cellchat`-related workflows. For PyPI installs, keep using `pip install "spatialsnake[extended]"` before `spatialsnake install-packages`.
+For Bioconda, `install-packages` provides the same base functional scope.
+`install-packages --extended` includes that complete base stage and adds the
+advanced Python/R modules listed above. `--torch-backend=auto` chooses the
+smaller CPU build when no accessible NVIDIA GPU is detected. Runtime
+`device=auto` selects CUDA when available or CPU otherwise. GitHub-hosted R
+packages require an active network connection; rerun
+the same installer command after an interrupted download.
 
 ## Working Directory
 
@@ -168,7 +194,7 @@ The command-line interface provides the following documented entry points:
 spatialsnake <command> <INPUT> <TYPE> [--option=<analysis_option>] [options]
 spatialsnake useful_tool [--option=<ways>] <INPUT> [options]
 spatialsnake produce-file [--option=<analysis_option>]
-spatialsnake install-packages [--extended] [--dry-run]
+spatialsnake install-packages [--extended] [--torch-backend=<auto|cpu|cu128>] [--dry-run]
 spatialsnake (-h | --help)
 spatialsnake --version
 ```
@@ -176,7 +202,7 @@ spatialsnake --version
 Main workflow selection:
 
 - `<command>`: choose `single_analysis` or `compare_analysis`
-- `<TYPE>`: choose from `visium`, `visium_segment`, `visium_HD`, `xenium`, `Merfish`, and `stereo_seq`
+- `<TYPE>`: choose from `visium`, `visium_segment`, `visium_HD`, `xenium`, `Merfish`, and `stereoseq`
 - `--option=<analysis_option>`: choose from `integrate`, `preprocess`, `clustering`, `reclustering`, `annotation_help`, `annotation`, `advance_analysis`, and `compare_stage`
 
 Configuration files can be generated with:

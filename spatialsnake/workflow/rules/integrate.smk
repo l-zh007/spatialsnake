@@ -40,7 +40,7 @@ def get_bin_size_param(wildcards):
     return f"--bin_size {wildcards.bin}"
   if run_type in STEREOSEQ_TYPES:
     compare_key = f"{wildcards.group}::{wildcards.sample}" if channel == "compare_analysis" and hasattr(wildcards, "group") else wildcards.sample
-    requested = globals().get("sample_stereoseq_input_spec_map", {}).get(compare_key, globals().get("sample_stereoseq_input_spec_map", {}).get(wildcards.sample, config.get("bin_size")))
+    requested = globals().get("sample_stereoseq_input_spec_map", {}).get(compare_key, globals().get("sample_stereoseq_input_spec_map", {}).get(wildcards.sample))
     if requested in [None, "", False, "None", "False", "false"]:
       return ""
     return f"--input_spec '{requested}'"

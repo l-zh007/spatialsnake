@@ -1,8 +1,124 @@
+"""Preserve the pySCENIC rule/API while isolating scoring and plotting memory.
+
+The existing full and AUCell H5AD outputs are exact, reusable checkpoints.
+Only an internal cache manifest is added; no scientific output is removed.
+"""
 import os
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "8")
 os.environ.setdefault("OMP_NUM_THREADS", "8")
 os.environ.setdefault("MKL_NUM_THREADS", "8")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "8")
+import argparse
+import gc
+import hashlib
+import importlib.metadata
+import json
+from pathlib import Path
+import random
+import subprocess
+import sys
+import tempfile
+
+parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
+parser.add_argument('--input_dir', type=str, required=True,
+                   help='Path to the raw data directory')
+parser.add_argument('--sample_id', type=str, required=True,
+                   help='Path for the output zarr file')
+parser.add_argument('--celltype', type=str, required=True,
+                   help='Path for the output zarr file')
+parser.add_argument('--outputs', type=str, required=True,
+                   help='Path for the output zarr file')
+parser.add_argument('--num_workers', type=int, required=True,
+                   help='Path for the output zarr file')
+parser.add_argument('--types', type=str, required=True,
+                   help='Path for the output zarr file')
+parser.add_argument('--regulons', type=str, required=True,
+                   help='Path to the raw data directory')
+parser.add_argument('--top_regulons', type=int, default=20,
+                   help='Number of regulons shown in dotplot and violin plots. Use <=0 to show all regulons.')
+parser.add_argument('--min_regulon_genes', type=int, default=10,
+                   help='Minimum number of target genes required for a regulon to be used in AUCell.')
+parser.add_argument('--stage', choices=['all', 'compute', 'plot', 'export'], default='all', help=argparse.SUPPRESS)
+args = parser.parse_args()
+output_dir = os.path.dirname(args.outputs)
+os.makedirs(output_dir, exist_ok=True)
+top_regulons = max(0, int(args.top_regulons))
+min_regulon_genes = max(1, int(args.min_regulon_genes))
+full_checkpoint = Path(output_dir) / f"{args.sample_id}.h5ad"
+auc_checkpoint = Path(output_dir) / f"{args.sample_id}_aucell.h5ad"
+cache_manifest = Path(output_dir) / f".{args.sample_id}.aucell_cache.json"
+
+
+def file_digest(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def input_digest(path):
+    path = Path(path)
+    if path.is_file():
+        return file_digest(path)
+    if not path.is_dir():
+        raise FileNotFoundError(path)
+    digest = hashlib.sha256()
+    for entry in sorted(p for p in path.rglob("*") if p.is_file()):
+        digest.update(str(entry.relative_to(path)).encode())
+        digest.update(b"\0")
+        digest.update(file_digest(entry).encode())
+    return digest.hexdigest()
+
+
+def compute_identity():
+    versions = {}
+    for package in ("pyscenic", "ctxcore", "numpy", "pandas", "scipy", "anndata", "scanpy", "spatialdata"):
+        try:
+            versions[package] = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError:
+            versions[package] = None
+    return {
+        "schema": 1,
+        "input_path": str(Path(args.input_dir).resolve()),
+        "input_sha256": input_digest(args.input_dir),
+        "regulons_sha256": file_digest(args.regulons),
+        "min_regulon_genes": min_regulon_genes,
+        "num_workers": args.num_workers,
+        "source_sha256": file_digest(__file__),
+        "compat_sha256": file_digest(Path(__file__).with_name("pyscenic_numpy_compat.py")),
+        "versions": versions,
+    }
+
+
+def read_valid_cache():
+    try:
+        record = json.loads(cache_manifest.read_text())
+        if record["identity"] != compute_identity():
+            return None
+        if any(file_digest(path) != record["checkpoints"][path.name]
+               for path in (full_checkpoint, auc_checkpoint)):
+            return None
+        return record
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def run_stage(stage):
+    subprocess.run([sys.executable, str(Path(__file__).resolve()), *sys.argv[1:], '--stage', stage], check=True)
+
+
+if args.stage == 'all':
+    if read_valid_cache() is None:
+        run_stage('compute')
+    else:
+        print('Reusing validated AUCell checkpoints; inference is unchanged.', flush=True)
+    # Same computation -> visualization -> final Loom order inside the same rule.
+    run_stage('plot')
+    run_stage('export')
+    sys.exit(0)
+
+# Heavy scientific imports are confined to the stage process, never the controller.
 import spatialdata as spd
 import scanpy as sc
 import spatialdata_plot as splt
@@ -13,6 +129,8 @@ from functools import partial
 from collections import OrderedDict
 from cytoolz import compose
 import anndata as ad
+import h5py
+from anndata.io import read_elem
 from pyscenic_numpy_compat import apply_numpy_compat, apply_pkg_resources_compat
 
 apply_numpy_compat()
@@ -25,7 +143,7 @@ try:
 except Exception:
   load_regulons = None
 from pyscenic.transform import df2regulons
-from pyscenic.aucell import aucell
+from pyscenic.aucell import create_rankings, aucell4r, DTYPE
 from pyscenic.rss import regulon_specificity_scores
 from pyscenic.plotting import plot_rss
 from matplotlib import pyplot as plt
@@ -35,85 +153,151 @@ from spatialsnake.workflow.function.plot import plot_auc_heatmap_scanpy
 from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
 import argparse
 logger = setup_logger("pyscenic_visualize")
-parser = argparse.ArgumentParser(description='Process spatial data and convert to zarr format')
-parser.add_argument('--input_dir', type=str, required=True, 
-                   help='Path to the raw data directory')
-parser.add_argument('--sample_id', type=str, required=True,
-                   help='Path for the output zarr file')
-parser.add_argument('--celltype', type=str, required=True,
-                   help='Path for the output zarr file')
-parser.add_argument('--outputs', type=str, required=True,
-                   help='Path for the output zarr file')
-parser.add_argument('--num_workers', type=int, required=True,
-                   help='Path for the output zarr file')
-parser.add_argument('--types', type=str, required=True,
-                   help='Path for the output zarr file')
-parser.add_argument('--regulons', type=str, required=True, 
-                   help='Path to the raw data directory')
-parser.add_argument('--top_regulons', type=int, default=20,
-                   help='Number of regulons shown in dotplot and violin plots. Use <=0 to show all regulons.')
-parser.add_argument('--min_regulon_genes', type=int, default=10,
-                   help='Minimum number of target genes required for a regulon to be used in AUCell.')
-args = parser.parse_args()
-output_dir = os.path.dirname(args.outputs)
-os.makedirs(output_dir,exist_ok=True)
-top_regulons = max(0, int(args.top_regulons))
-min_regulon_genes = max(1, int(args.min_regulon_genes))
 
-log_step(logger, 1, 5, "loading expression data and regulons")
-if os.path.splitext(args.input_dir)[1].lower()==".h5ad":
-  adata = sc.read_h5ad(args.input_dir)
-else:
-  concatenated_sdata = spd.read_zarr(args.input_dir)
-  for table in concatenated_sdata.tables.keys():
-    table=table
-    adata = concatenated_sdata[table]
+def read_regulons():
+    if load_regulons is not None:
+      regulons = load_regulons(args.regulons)
+    else:
+      motifs = load_motifs(args.regulons)
+      if isinstance(motifs.columns, pd.MultiIndex):
+        motifs.columns = motifs.columns.droplevel(0)
+      regulons = list(filter(lambda r: len(r) >= min_regulon_genes, df2regulons(motifs[(motifs['NES'] >= 3.0)])))
+      regulons = list(map(lambda r: r.rename(r.transcription_factor), regulons))
+    regulons = [reg for reg in regulons if len(reg) >= min_regulon_genes]
+    logger.info(f"Loaded {len(regulons)} regulon(s) with at least {min_regulon_genes} target genes")
+    if len(regulons) == 0:
+      raise ValueError(
+          f"No regulons passed the minimum target-gene threshold ({min_regulon_genes}). "
+          "Lower pyscenic_min_regulon_genes or check the ctx regulon output."
+      )
 
-if load_regulons is not None:
-  regulons = load_regulons(args.regulons)
-else:
-  motifs = load_motifs(args.regulons)
-  if isinstance(motifs.columns, pd.MultiIndex):
-    motifs.columns = motifs.columns.droplevel(0)
-  regulons = list(filter(lambda r: len(r) >= min_regulon_genes, df2regulons(motifs[(motifs['NES'] >= 3.0)])))
-  regulons = list(map(lambda r: r.rename(r.transcription_factor), regulons))
-regulons = [reg for reg in regulons if len(reg) >= min_regulon_genes]
-logger.info(f"Loaded {len(regulons)} regulon(s) with at least {min_regulon_genes} target genes")
-if len(regulons) == 0:
-  raise ValueError(
-      f"No regulons passed the minimum target-gene threshold ({min_regulon_genes}). "
-      "Lower pyscenic_min_regulon_genes or check the ctx regulon output."
-  )
+    return regulons
 
-log_step(logger, 2, 5, "calculating AUCell matrix")
-exp_matrix = adata.X
-if issparse(exp_matrix):
-  nnz = exp_matrix.nnz
-  dense_bytes = adata.n_obs * adata.n_vars * np.dtype(np.float32).itemsize
-  logger.info(
-      f"Sparse expression matrix detected with shape={exp_matrix.shape}, nnz={nnz}, "
-      f"estimated dense float32 memory={dense_bytes / 1024**3:.2f} GB"
-  )
-  if dense_bytes > 8 * 1024**3:
-    raise MemoryError(
-        "pySCENIC visualization requires dense AUCell ranking input and the current matrix is estimated to exceed 8 GB "
-        "when densified. Please reduce object size before visualization."
-    )
-  exp_matrix = exp_matrix.toarray()
-else:
-  logger.info(f"Dense expression matrix detected with shape={exp_matrix.shape}")
-gene_names = adata.var_names
-cell_names = adata.obs_names
-exp_df = pd.DataFrame(exp_matrix,index=cell_names,columns=gene_names)
-auc_mtx = aucell(exp_df, regulons, num_workers=args.num_workers)
 
-add_scenic_metadata(adata, auc_mtx, regulons)
-adata.write(os.path.join(output_dir,f"{args.sample_id}.h5ad"))
+def read_expression_table():
+    if os.path.splitext(args.input_dir)[1].lower() == ".h5ad":
+        return sc.read_h5ad(args.input_dir)
+    sdata = spd.read_zarr(args.input_dir)
+    return sdata.tables[list(sdata.tables)[-1]]
 
-aucell_adata = sc.AnnData(X=auc_mtx.loc[adata.obs_names].values)
-aucell_adata.obs = adata.obs
-aucell_adata.var_names = auc_mtx.columns
-aucell_adata.write(os.path.join(output_dir,f"{args.sample_id}_aucell.h5ad"))
+
+def rank_expression(expression, cells, genes):
+    # Ranking is independent for each row. Reuse the same random gene shuffle
+    # for every block, including ties, and advance the RNG only once as before.
+    if expression.shape[0] == 0:
+        values = expression.toarray() if issparse(expression) else expression
+        return create_rankings(pd.DataFrame(values, index=cells, columns=genes))
+    block_size = max(1, (64 * 1024**2) // max(1, expression.shape[1] * expression.dtype.itemsize))
+    values = np.empty(expression.shape, dtype=DTYPE)
+    state = np.random.get_state()
+    columns = None
+    for start in range(0, expression.shape[0], block_size):
+        stop = min(start + block_size, expression.shape[0])
+        block = expression[start:stop]
+        if issparse(block):
+            block = block.toarray()
+        np.random.set_state(state)
+        ranked = create_rankings(pd.DataFrame(block, index=cells[start:stop], columns=genes))
+        if columns is None:
+            columns = ranked.columns
+            next_state = np.random.get_state()
+        values[start:stop] = ranked.to_numpy()
+        del block, ranked
+    np.random.set_state(next_state)
+    return pd.DataFrame(values, index=cells, columns=columns)
+
+
+if args.stage == 'compute':
+    cache_manifest.unlink(missing_ok=True)
+    identity = compute_identity()
+    log_step(logger, 1, 5, "loading expression data and regulons")
+    adata = read_expression_table()
+
+    regulons = read_regulons()
+    log_step(logger, 2, 5, "calculating AUCell matrix")
+    exp_matrix = adata.X
+    gene_names = adata.var_names
+    cell_names = adata.obs_names
+    # Ranking only needs X and its axes, not raw/layers/images. Reload the same
+    # table after scoring to preserve every field of the existing H5AD output.
+    del adata
+    gc.collect()
+    if issparse(exp_matrix):
+      nnz = exp_matrix.nnz
+      dense_bytes = exp_matrix.shape[0] * exp_matrix.shape[1] * exp_matrix.dtype.itemsize
+      logger.info(
+          f"Sparse expression matrix detected with shape={exp_matrix.shape}, nnz={nnz}, "
+          f"estimated dense {exp_matrix.dtype} memory={dense_bytes / 1024**3:.2f} GB"
+      )
+      # uint32 ranks retain the original float32-based size limit, including
+      # for float64 inputs; only the reported expression estimate changes.
+      if exp_matrix.shape[0] * exp_matrix.shape[1] * np.dtype(DTYPE).itemsize > 8 * 1024**3:
+        raise MemoryError(
+            "The AUCell ranking matrix is estimated to exceed the existing 8 GB size limit. "
+            "Please reduce object size before visualization."
+        )
+    else:
+      logger.info(f"Dense expression matrix detected with shape={exp_matrix.shape}")
+    rankings = rank_expression(exp_matrix, cell_names, gene_names)
+    del exp_matrix
+    gc.collect()
+    auc_mtx = aucell4r(rankings, regulons, num_workers=args.num_workers)
+    del rankings
+    gc.collect()
+
+    adata = read_expression_table()
+    add_scenic_metadata(adata, auc_mtx, regulons)
+    adata.write(os.path.join(output_dir,f"{args.sample_id}.h5ad"))
+
+    aucell_adata = sc.AnnData(X=auc_mtx.loc[adata.obs_names].values)
+    aucell_adata.obs = adata.obs
+    aucell_adata.var_names = auc_mtx.columns
+    aucell_adata.write(os.path.join(output_dir,f"{args.sample_id}_aucell.h5ad"))
+
+
+    rng = np.random.get_state()
+    record = {
+        "identity": identity,
+        "checkpoints": {path.name: file_digest(path) for path in (full_checkpoint, auc_checkpoint)},
+        "auc_index": [str(value) for value in auc_mtx.index],
+        "auc_index_name": auc_mtx.index.name,
+        "auc_columns_name": auc_mtx.columns.name,
+        "numpy_random_state": [rng[0], rng[1].tolist(), rng[2], rng[3], rng[4]],
+        "python_random_state": random.getstate(),
+    }
+    with tempfile.NamedTemporaryFile(mode='w', dir=output_dir, prefix='.aucell_cache-', suffix='.json', delete=False) as stream:
+        json.dump(record, stream)
+        temporary = Path(stream.name)
+    os.replace(temporary, cache_manifest)
+    logger.info("AUCell checkpoints saved; releasing scoring process memory")
+    sys.exit(0)
+
+if args.stage == 'export':
+    # Loom requires expression, but no dense ranking matrix or plotting objects.
+    adata = sc.read_h5ad(full_checkpoint)
+    log_step(logger, 5, 5, f"writing pySCENIC loom output to {args.outputs}")
+    adata.write_loom(args.outputs)
+    logger.info("pySCENIC visualization module completed")
+    sys.exit(0)
+
+# Plot only activity scores and original observation metadata, not full expression.
+record = json.loads(cache_manifest.read_text())
+adata = sc.read_h5ad(auc_checkpoint)
+# Preserve original plotting metadata (including annotation palettes) without
+# loading the full expression matrix, raw counts, layers or embeddings.
+with h5py.File(full_checkpoint, 'r') as checkpoint:
+    adata.uns = read_elem(checkpoint['uns'])
+auc_mtx = pd.DataFrame(adata.X, index=adata.obs_names, columns=adata.var_names)
+auc_mtx = auc_mtx.loc[record["auc_index"]]
+auc_mtx.index.name = record["auc_index_name"]
+auc_mtx.columns.name = record["auc_columns_name"]
+regulons = read_regulons()
+# Preserve the original RNG continuation for plots that use random jitter.
+rng = record["numpy_random_state"]
+np.random.set_state((rng[0], np.asarray(rng[1], dtype=np.uint32), rng[2], rng[3], rng[4]))
+def nested_tuple(value):
+    return tuple(nested_tuple(item) for item in value) if isinstance(value, list) else value
+random.setstate(nested_tuple(record["python_random_state"]))
 
 regulon_cols = [c for c in adata.obs.columns if c.startswith("Regulon(")]
 plot_regulon_cols = regulon_cols
@@ -174,32 +358,32 @@ if celltype_col in adata.obs:
     # Dynamic layout calculation
     ncols = 5  # Fixed at 5 columns for better readability if many types
     nrows = math.ceil(len(celltypes) / ncols)
-    
+
     # Adjust figure size dynamically
     fig_width = 4 * ncols
     fig_height = 3.5 * nrows
-    
+
     fig, axes = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height), dpi=120)
     axes = np.array(axes).reshape(-1)
-    
+
     for i, ct in enumerate(celltypes):
       # Skip if data is invalid (e.g. all NaNs)
       if rss.loc[ct].isna().all():
         logger.warning(f"RSS data for {ct} contains only NaNs; skip plot")
         continue
-        
+
       # Fill NaNs with 0 to prevent plotting errors
       rss_filled = rss.fillna(0)
       plot_rss(rss_filled, ct, ax=axes[i])
-      
+
       axes[i].set_xlabel('')
       axes[i].set_ylabel('')
       # Add title to identify cell type clearly
       axes[i].set_title(ct, fontsize=10)
-      
+
     for j in range(len(celltypes), len(axes)):
       axes[j].set_visible(False)
-      
+
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir,f"{args.sample_id}_rss.png"), dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
@@ -212,20 +396,20 @@ if len(regulon_cols) > 0:
   if len(valid_cols) > 0:
     df_scores = df_scores[valid_cols + [celltype_col]]
     df_z = (df_scores.groupby(celltype_col).mean() - df_obs[valid_cols].mean()) / df_obs[valid_cols].std()
-    
+
     # Save full Z-score matrix for reproduction
     df_z.to_csv(os.path.join(output_dir, f"{args.sample_id}_zscore_matrix.csv"))
 
     # Plot ALL regulons sorted by mean absolute Z-score activity
     top_regs = df_z.abs().mean().sort_values(ascending=False).index
     df_heatmap = df_z[top_regs]
-    
+
     # Adjust figure size based on number of regulons
     n_cols = df_heatmap.shape[1]
     n_rows = df_heatmap.shape[0]
     fig_width = max(12, n_cols * 0.25)
     fig_height = max(8, n_rows * 0.5)
-    
+
     fig, ax1 = plt.subplots(1, 1, figsize=(fig_width, fig_height))
     # Use linewidths=0 for cleaner look with many columns
     sns.heatmap(df_heatmap, ax=ax1, cmap="vlag", center=0, linewidths=0, cbar_kws={'label': 'Z-score'})
@@ -245,6 +429,5 @@ if len(regulon_cols) > 0:
     fig = sc.pl.stacked_violin(adata, violin_targets, groupby=celltype_col, return_fig=True, show=False)
     fig.savefig(os.path.join(output_dir, f"{args.sample_id}_stacked_violin.png"), dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
-log_step(logger, 5, 5, f"writing pySCENIC loom output to {args.outputs}")
-adata.write_loom(args.outputs)
-logger.info("pySCENIC visualization module completed")
+
+logger.info("pySCENIC plotting completed using saved AUCell scores")

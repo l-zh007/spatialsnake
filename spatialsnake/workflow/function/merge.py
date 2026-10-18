@@ -18,6 +18,10 @@ from typing import Any, Iterable, Sequence
 import numpy as np
 import pandas as pd
 import spatialdata as sd
+import spatialdata_plot
+import matplotlib.pyplot as plt
+from spatialdata.models import PointsModel
+from spatialdata.transformations import get_transformation
 from pandas.api.types import (
     is_bool_dtype,
     is_datetime64_any_dtype,
@@ -927,10 +931,91 @@ def _write_validated(
             shutil.rmtree(backup)
 
 
+def _save_annotation_plot(
+    sdata: sd.SpatialData,
+    table_key: str,
+    color: str,
+    output_path: str,
+) -> None:
+    table = sdata.tables[table_key]
+    regions = table.uns["spatialdata_attrs"].get("region", [])
+    regions = [regions] if isinstance(regions, str) else list(regions)
+    regions = [region for region in regions if region in sdata.shapes or region in sdata.points]
+    if not regions:
+        regions = list(sdata.shapes) + list(sdata.points)
+
+    images = list(sdata.images)
+    systems = sorted(sdata.coordinate_systems)
+    hires_images = [image for image in images if "hires" in image.lower()]
+    hires_systems = [system for system in systems if "hires" in system.lower()]
+    images = hires_images or images
+    systems = hires_systems or systems
+
+    for region in regions:
+        if region not in sdata.points:
+            continue
+        source = sdata.points[region]
+        points = source.compute().copy()
+        points.index = points.index.astype(str)
+        points[color] = table.obs[color].astype(str).reindex(points.index).fillna("unassigned").astype("category")
+        points = points.dropna(subset=["x", "y"])
+        sdata.points[region] = PointsModel.parse(
+            points.sort_index(),
+            coordinates={"x": "x", "y": "y"},
+            transformations=get_transformation(source, get_all=True),
+        )
+
+    panels = []
+    for region in regions:
+        element = sdata.shapes[region] if region in sdata.shapes else sdata.points[region]
+        element_systems = get_transformation(element, get_all=True)
+        candidates = [system for system in systems if system in element_systems]
+        if not candidates:
+            candidates = list(element_systems)
+        if not candidates:
+            continue
+        system = candidates[0]
+        matching_images = [
+            image for image in images
+            if system in get_transformation(sdata.images[image], get_all=True)
+        ]
+        panels.append((region, system, matching_images[0] if matching_images else None))
+
+    if not panels:
+        return
+    rows = 2 if any(image for _, _, image in panels) else 1
+    count = len(panels)
+    _, axes = plt.subplots(rows, count, figsize=(10 * count, 13 if rows == 2 else 8), squeeze=False)
+    for i, (region, system, image) in enumerate(panels):
+        barcode_ax = axes[-1, i]
+        if image:
+            sdata.pl.render_images(image).pl.show(
+                ax=axes[0, i], title="image", coordinate_systems=system,
+            )
+            title = image.replace("_hires_image", "")
+        else:
+            if rows == 2:
+                axes[0, i].axis("off")
+            title = str(region)
+        if region in sdata.shapes:
+            sdata.pl.render_shapes(
+                region, color=color, table_name=table_key,
+                outline_alpha=0, fill_alpha=1,
+            ).pl.show(ax=barcode_ax, coordinate_systems=system, title=title)
+        else:
+            sdata.pl.render_points(
+                region, color=color, size=3, alpha=0.8,
+            ).pl.show(ax=barcode_ax, coordinate_systems=system, title=title)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Merge SpatialData samples or annotations")
     parser.add_argument("--INPUT", nargs="+", required=True, help="Input SpatialData Zarr directories")
-    parser.add_argument("--output_dir", required=True, help="Output directory")
+    parser.add_argument("--output_dir", default="results/useful_results/data_merge",
+                        help="Output directory")
     parser.add_argument("--output_name", default="concatenated_sdata.zarr", help="Output Zarr name")
     parser.add_argument("--merge_by", required=True, type=str.lower, choices=("sample", "annotation"))
     parser.add_argument("--table_key", default="", help="Table to merge; empty requires an unambiguous table")
@@ -1009,6 +1094,13 @@ def main(argv: Sequence[str] | None = None) -> str:
     expected_obs = result.tables[table_key].n_obs
     _write_validated(result, output_path, table_key, expected_obs)
     pd.DataFrame(report).to_csv(os.path.join(args.output_dir, "merge_report.csv"), index=False)
+    if args.merge_by == "annotation":
+        _save_annotation_plot(
+            result,
+            table_key,
+            args.target_col,
+            os.path.join(args.output_dir, "spatial_annotations.png"),
+        )
     log_step(logger, 3, 3, f"merged output saved to {output_path}")
     return output_path
 

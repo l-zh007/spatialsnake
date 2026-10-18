@@ -1,5 +1,4 @@
-include *.txt
-include Snakefile
+include requirements.txt requirements-extended.txt
 recursive-include spatialsnake *.R
 recursive-include spatialsnake *.py
 recursive-include spatialsnake *.sh
@@ -10,3 +9,8 @@ prune build
 prune dist
 global-exclude __pycache__
 global-exclude *.py[cod]
+prune .snakemake
+prune log
+prune logs
+prune resources/data
+global-exclude *.log

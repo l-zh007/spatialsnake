@@ -36,9 +36,11 @@ option_list <- list(
   make_option(c("--top_cell_pairs"), type="integer", default=3),
   make_option(c("--bubble_top_lr"), type="integer", default=20),
   make_option(c("--plot_advanced"), type="logical", default=TRUE),
-  make_option(c("--future_max_size_gb"), type="double", default=64)
+  make_option(c("--future_max_size_gb"), type="double", default=64),
+  make_option(c("--stage"), type="character", default="all")
 )
 opt <- parse_args(OptionParser(option_list=option_list))
+if (!opt$stage %in% c("all", "compute", "plot")) stop("stage must be all, compute, or plot")
 dir.create(opt$output_dir, showWarnings = FALSE, recursive = TRUE)
 message(paste("CellChat input:", opt$input_path))
 message(paste("CellChat run_type:", opt$run_type))
@@ -222,7 +224,7 @@ infer_visium_hd_bin_size <- function(input_path) {
 resolve_default_spot_size <- function(run_type, configured_spot_size, input_path) {
   rt <- normalize_run_type(run_type)
   if (rt == "visium") {
-    return(65)
+    return(55)
   }
   if (rt == "visiumhd") {
     inferred <- infer_visium_hd_bin_size(input_path)
@@ -267,19 +269,36 @@ parse_visium_json_spec <- function(spec, spot_size, run_type) {
   }
   print(spec)
   sf <- jsonlite::fromJSON(txt = spec)
-  if (is.null(sf$spot_diameter_fullres) || is.na(sf$spot_diameter_fullres) || sf$spot_diameter_fullres <= 0) {
-    stop(paste("spot_diameter_fullres missing or invalid in", spec))
+  rt <- normalize_run_type(run_type)
+  ratio <- sf$microns_per_pixel
+  if (is.null(ratio) && rt == "visium" && !is.null(sf$spot_diameter_fullres)) {
+    ratio <- 55 / sf$spot_diameter_fullres
   }
-  ratio <- spot_size / sf$spot_diameter_fullres
+  if (is.null(ratio) || !is.finite(ratio) || ratio <= 0) {
+    stop(paste("Physical pixel scale is unavailable in", spec))
+  }
+  if (rt == "visiumhd") {
+    size <- sf$bin_size_um
+    if (is.null(size)) size <- infer_visium_hd_bin_size(spec)
+    if (is.null(size) || !is.finite(size)) {
+      size <- if (!is.null(sf$spot_diameter_fullres)) sf$spot_diameter_fullres * ratio else NA_real_
+    }
+    if (!is.finite(size) || size <= 0) stop("Cannot determine Visium HD bin size from scalefactors")
+    spot_size <- size
+  }
   list(
     ratio = ratio,
     spot_size = spot_size,
-    scale.factors = list(spot.diameter = spot_size, spot = sf$spot_diameter_fullres),
+    scale.factors = build_scale_factors(spot_size, ratio),
     source = spec
   )
 }
 
-parse_stereoseq_scale_spec <- function(spec, configured_spot_size) {
+parse_stereoseq_scale_spec <- function(spec, configured_spot_size, resolution_nm) {
+  if (!is.finite(resolution_nm) || resolution_nm <= 0) {
+    stop("Stereo-seq resolution is missing; re-export the SpatialData input with useful_tool transform")
+  }
+  ratio <- resolution_nm / 1000
   if (is.null(spec) || spec == "") {
     stop("Stereo-seq requires sample.txt third column to be a bin_size number or 'cellbin'")
   }
@@ -287,9 +306,9 @@ parse_stereoseq_scale_spec <- function(spec, configured_spot_size) {
   if (spec_norm %in% c("cellbin", "cell", "adjustedcellbin", "adjusted")) {
     spot_size <- if (!is.null(configured_spot_size) && !is.na(configured_spot_size) && configured_spot_size != 65) configured_spot_size else 10
     return(list(
-      ratio = 0.5,
+      ratio = ratio,
       spot_size = spot_size,
-      scale.factors = build_scale_factors(spot_size, 0.5),
+      scale.factors = build_scale_factors(spot_size, ratio),
       source = spec
     ))
   }
@@ -297,16 +316,16 @@ parse_stereoseq_scale_spec <- function(spec, configured_spot_size) {
   if (is.na(bin_size) || bin_size <= 0) {
     stop(paste("Invalid Stereo-seq spec:", spec, "Expected a positive bin_size or 'cellbin'"))
   }
-  spot_size <- bin_size * 0.5
+  spot_size <- bin_size * ratio
   list(
-    ratio = 0.5,
+    ratio = ratio,
     spot_size = spot_size,
-    scale.factors = build_scale_factors(spot_size, 0.5),
+    scale.factors = build_scale_factors(spot_size, ratio),
     source = spec
   )
 }
 
-resolve_platform_spatial_params <- function(run_type, input_path, scale_factor_spec, scale_factor_spec_list, sample_names, configured_spot_size) {
+resolve_platform_spatial_params <- function(run_type, input_path, scale_factor_spec, scale_factor_spec_list, sample_names, configured_spot_size, resolutions = NULL) {
   rt <- normalize_run_type(run_type)
   default_spot_size <- resolve_default_spot_size(run_type, configured_spot_size, input_path)
   has_multi_specs <- !is.null(scale_factor_spec_list) && length(scale_factor_spec_list) > 0
@@ -319,7 +338,7 @@ resolve_platform_spatial_params <- function(run_type, input_path, scale_factor_s
         conversion.factor = 1,
         spatial.factors = build_spatial_factors(
           vapply(parsed, function(item) item$ratio, numeric(1)),
-          default_spot_size,
+          vapply(parsed, function(item) item$spot_size, numeric(1)),
           sample_names
         ),
         spot_size = default_spot_size
@@ -328,7 +347,7 @@ resolve_platform_spatial_params <- function(run_type, input_path, scale_factor_s
     parsed <- parse_visium_json_spec(scale_factor_spec, default_spot_size, run_type)
     return(list(
       scale.factors = parsed$scale.factors,
-      conversion.factor = parsed$ratio,
+      conversion.factor = 1,
       spatial.factors = build_spatial_factors(parsed$ratio, parsed$spot_size),
       spot_size = parsed$spot_size
     ))
@@ -336,7 +355,7 @@ resolve_platform_spatial_params <- function(run_type, input_path, scale_factor_s
 
   if (rt == "stereoseq") {
     if (has_multi_specs) {
-      parsed <- lapply(scale_factor_spec_list, function(spec) parse_stereoseq_scale_spec(spec, configured_spot_size))
+      parsed <- Map(function(spec, resolution) parse_stereoseq_scale_spec(spec, configured_spot_size, resolution), scale_factor_spec_list, resolutions[sample_names])
       return(list(
         scale.factors = parsed[[1]]$scale.factors,
         conversion.factor = 1,
@@ -348,10 +367,10 @@ resolve_platform_spatial_params <- function(run_type, input_path, scale_factor_s
         spot_size = parsed[[1]]$spot_size
       ))
     }
-    parsed <- parse_stereoseq_scale_spec(scale_factor_spec, configured_spot_size)
+    parsed <- parse_stereoseq_scale_spec(scale_factor_spec, configured_spot_size, resolutions[[1]])
     return(list(
       scale.factors = parsed$scale.factors,
-      conversion.factor = parsed$ratio,
+      conversion.factor = 1,
       spatial.factors = build_spatial_factors(parsed$ratio, parsed$spot_size),
       spot_size = parsed$spot_size
     ))
@@ -479,7 +498,9 @@ extract_spatial_coordinates <- function(obj, sample_names = NULL, data_cell_name
       img_order <- c(matched, setdiff(img_names, matched))
     }
     spatial_list <- lapply(img_order, function(img) {
-      coords <- Seurat::GetTissueCoordinates(obj, image = img)
+      coords <- if (inherits(obj[[img]], c("VisiumV1", "VisiumV2"))) {
+        Seurat::GetTissueCoordinates(obj, image = img, scale = NULL)
+      } else Seurat::GetTissueCoordinates(obj, image = img)
       standardize_coordinate_table(coords, source_label = img, data_cell_names = data_cell_names)
     })
     spatial.df <- do.call(rbind, spatial_list)
@@ -508,6 +529,17 @@ extract_spatial_coordinates <- function(obj, sample_names = NULL, data_cell_name
       source_label = "metadata",
       data_cell_names = data_cell_names
     )
+  }
+
+  native_key <- grep("spatialnative", Reductions(obj), value = TRUE, ignore.case = TRUE)
+  if (length(native_key) > 0) {
+    native <- Embeddings(obj, reduction = native_key[[1]])
+    spatial.df[, c("x", "y")] <- native[rownames(spatial.df), 1:2, drop = FALSE]
+  }
+  if ("sample" %in% colnames(obj@meta.data)) {
+    spatial.df$library_id <- as.character(obj@meta.data[rownames(spatial.df), "sample"])
+  } else if ("library_id" %in% colnames(obj@meta.data)) {
+    spatial.df$library_id <- as.character(obj@meta.data[rownames(spatial.df), "library_id"])
   }
 
   if (any(duplicated(rownames(spatial.df)))) {
@@ -574,6 +606,9 @@ load_seurat <- function(file_path, is_single_cell = opt$is_single_cell) {
 }
 
 
+if (opt$stage == "plot") {
+  cellchat <- readRDS(file.path(opt$output_dir, "cellchat.rds"))
+} else {
 obj <- load_seurat(opt$input_path, is_single_cell = opt$is_single_cell)
 
 
@@ -638,13 +673,23 @@ if (opt$is_single_cell) {
     stop("scale_factors_list and sample_names length mismatch")
   }
 
+  resolutions <- if ("spatialsnake_resolution_nm" %in% colnames(obj@meta.data)) {
+    sample_col <- if ("sample" %in% colnames(obj@meta.data)) "sample" else "library_id"
+    vapply(split(obj@meta.data$spatialsnake_resolution_nm, obj@meta.data[[sample_col]]), function(values) {
+      values <- unique(values)
+      if (length(values) != 1) stop("Multiple Stereo-seq resolutions occur within one sample")
+      values[[1]]
+    }, numeric(1))
+  } else c(sample = NA_real_)
+
   platform_params <- resolve_platform_spatial_params(
     run_type = opt$run_type,
     input_path = opt$input_path,
     scale_factor_spec = opt$scale_factors,
     scale_factor_spec_list = scale_factors_list,
     sample_names = sample_names,
-    configured_spot_size = opt$spot_size
+    configured_spot_size = opt$spot_size,
+    resolutions = resolutions
   )
   scale.factors <- platform_params$scale.factors
   conversion.factor <- platform_params$conversion.factor
@@ -670,35 +715,22 @@ if (opt$is_single_cell) {
   data <- data[, common_cells, drop = FALSE]
   meta <- meta[common_cells, , drop = FALSE]
 
-  use_spatial_factors <- !is.null(spatial.factors) && "spatial.factors" %in% names(formals(CellChat::computeCommunProb))
-  if (!use_spatial_factors) {
-    spatial.df <- offset_coordinates_by_library(spatial.df, interaction_length = opt$interaction_length)
+  libraries <- unique(as.character(spatial.df$library_id))
+  if (nrow(spatial.factors) == 1 && length(libraries) == 1) {
+    rownames(spatial.factors) <- libraries
+  } else if (nrow(spatial.factors) == 1 && normalize_run_type(opt$run_type) %in% c("xenium", "merfish", "merscope")) {
+    spatial.factors <- spatial.factors[rep(1, length(libraries)), , drop = FALSE]
+    rownames(spatial.factors) <- libraries
   }
+  if (!setequal(libraries, rownames(spatial.factors))) {
+    stop("Spatial sample identifiers must match sample.txt; supply one physical scale per sample")
+  }
+  meta$samples <- factor(spatial.df$library_id, levels = rownames(spatial.factors))
   spatial.mat <- as.matrix(spatial.df[, c("x", "y"), drop = FALSE])
-  cellchat <- createCellChat(object = data, meta = meta, group.by = "celltypes", datatype = "spatial", coordinates = spatial.mat, scale.factors = scale.factors)
-  
-  # Ensure scale.distance satisfies CellChat's requirement (min scaled distance >= 1)
-  if (nrow(spatial.mat) > 1) {
-    coords_sorted_x <- spatial.mat[order(spatial.mat[,1], spatial.mat[,2]), , drop = FALSE]
-    dx <- diff(coords_sorted_x[,1])
-    dy <- diff(coords_sorted_x[,2])
-    dists_x <- sqrt(dx^2 + dy^2)
-    
-    coords_sorted_y <- spatial.mat[order(spatial.mat[,2], spatial.mat[,1]), , drop = FALSE]
-    dx2 <- diff(coords_sorted_y[,1])
-    dy2 <- diff(coords_sorted_y[,2])
-    dists_y <- sqrt(dx2^2 + dy2^2)
-    
-    dists_valid <- c(dists_x[dists_x > 0], dists_y[dists_y > 0])
-    if (length(dists_valid) > 0) {
-      min_dist <- min(dists_valid)
-      scaled_dist <- conversion.factor * min_dist
-      if (scaled_dist < 1 || scaled_dist > 2) {
-        conversion.factor <- 1.5 / min_dist
-        message(paste("Adjusted conversion.factor to", conversion.factor, "to satisfy CellChat distance requirements"))
-      }
-    }
-  }
+  cellchat <- createCellChat(object = data, meta = meta, group.by = "celltypes", datatype = "spatial", coordinates = spatial.mat, spatial.factors = spatial.factors)
+  # Physical conversion is in spatial.factors; use the same model scale across samples.
+  conversion.factor <- 1
+
 }
 cellchat@DB <- CellChatDB.use
 future_max_size <- if (!is.null(opt$future_max_size_gb) && !is.na(opt$future_max_size_gb) && opt$future_max_size_gb > 0) {
@@ -718,20 +750,15 @@ cellchat <- identifyOverExpressedInteractions(cellchat)
 if (opt$is_single_cell) {
   cellchat <- computeCommunProb(cellchat, type = "truncatedMean", trim = opt$trim)
 } else {
-  if (use_spatial_factors && "spatial.factors" %in% names(formals(CellChat::computeCommunProb))) {
-    cellchat <- computeCommunProb(cellchat, type = "truncatedMean", trim = opt$trim, distance.use = TRUE, scale.distance = conversion.factor, interaction.length = opt$interaction_length, spatial.factors = spatial.factors)
-  } else {
-    if (use_spatial_factors) {
-      message("spatial.factors is ignored because computeCommunProb does not accept it")
-    }
-    cellchat <- computeCommunProb(cellchat, type = "truncatedMean", trim = opt$trim, distance.use = TRUE, scale.distance = conversion.factor, interaction.length = opt$interaction_length)
-  }
+  # Keep the existing interaction range for all LR classes; no additional contact filter.
+  cellchat <- computeCommunProb(cellchat, type = "truncatedMean", trim = opt$trim, distance.use = TRUE, scale.distance = conversion.factor, interaction.range = opt$interaction_length, contact.dependent = FALSE)
 }
 cellchat <- filterCommunication(cellchat, min.cells = opt$min_cells)
 cellchat <- computeCommunProbPathway(cellchat)
+cellchat <- aggregateNet(cellchat)
+}
 net <- subsetCommunication(cellchat)
 netP <- subsetCommunication(cellchat, slot.name = "netP")
-cellchat <- aggregateNet(cellchat)
 counts <- cellchat@net$count
 weights <- cellchat@net$weight
 df_counts <- as.data.frame(counts)
@@ -786,6 +813,17 @@ if ("lr_pair" %in% names(net_lr)) {
       .groups = "drop"
     )
 }
+
+if (opt$stage != "plot") {
+  saveRDS(cellchat, file.path(opt$output_dir, "cellchat.rds"))
+  write.csv(stats, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_stats.csv")), row.names = FALSE)
+  write.csv(net_lr, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_lr.csv")), row.names = FALSE)
+  if (!is.null(lr_summary)) write.csv(lr_summary, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_lr_summary.csv")), row.names = FALSE)
+  if (!is.null(pathway_pairs)) write.csv(pathway_pairs, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_pathway_pairs.csv")), row.names = FALSE)
+  if (!is.null(pathway_summary)) write.csv(pathway_summary, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_pathway_summary.csv")), row.names = FALSE)
+  if (is.data.frame(netP) || is.matrix(netP)) write.csv(netP, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_pathway_net.csv")), row.names = FALSE)
+}
+if (opt$stage == "compute") quit(save = "no")
 
 cell_group_sizes <- as.numeric(table(cellchat@idents))
 names(cell_group_sizes) <- names(table(cellchat@idents))
@@ -1097,8 +1135,14 @@ if (!is.null(net_lr) && nrow(net_lr) > 0) {
 }
 
 if (!isTRUE(opt$is_single_cell) && !is.null(selected_pair_plot) && nzchar(selected_pair_plot)) {
-  png(file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_spatial_lr.png")), width = 8, height = 6.5, units = "in", res = 300, bg = "white")
-  p_spatial <- spatialFeaturePlot(cellchat, pairLR.use = selected_pair_plot, point.size = 0.8, do.binary = TRUE, cutoff = 0.05, enriched.only = FALSE, direction = 1, legend.size = 3, legend.text.size = 8)
+  spatial_samples <- unique(as.character(cellchat@meta$samples))
+  png(file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_spatial_lr.png")), width = if (length(spatial_samples) > 1) 16 else 8, height = 6.5 * ceiling(length(spatial_samples) / 2), units = "in", res = 300, bg = "white")
+  spatial_plots <- lapply(spatial_samples, function(sample) {
+    plot <- spatialFeaturePlot(cellchat, pairLR.use = selected_pair_plot, sample.use = sample, point.size = 0.8, do.binary = TRUE, cutoff = 0.05, enriched.only = FALSE, direction = 1, legend.size = 3, legend.text.size = 8)
+    if (length(spatial_samples) > 1) plot <- plot + ggplot2::ggtitle(paste(sample, selected_pair_plot, sep = " | "))
+    plot
+  })
+  p_spatial <- if (length(spatial_samples) > 1) patchwork::wrap_plots(spatial_plots, ncol = 2) else spatial_plots[[1]]
   print(p_spatial)
   dev.off()
   message(paste("Spatial LR plot generated for:", selected_pair_plot))
@@ -1145,7 +1189,16 @@ if (isTRUE(opt$plot_advanced) && length(advanced_pathways) > 0) {
     }
 
     png(file.path(advanced_dir, paste0(pathway_label, "_gene_expression.png")), width = 7.5, height = 5.5, units = "in", res = 300, bg = "white")
-    p_gene <- plotGeneExpression(cellchat, signaling = pathway, type = "dot", color.use = c("#4C78A8", "#E07B73"))
+    gene_features <- extractEnrichedLR(cellchat, signaling = pathway, geneLR.return = TRUE)$geneLR
+    if (is.list(gene_features)) {
+      seen_genes <- character()
+      for (i in seq_along(gene_features)) {
+        gene_features[[i]] <- setdiff(unique(gene_features[[i]]), seen_genes)
+        seen_genes <- c(seen_genes, gene_features[[i]])
+      }
+      gene_features <- gene_features[lengths(gene_features) > 0]
+    } else gene_features <- unique(gene_features)
+    p_gene <- plotGeneExpression(cellchat, features = gene_features, type = "dot", color.use = c("#4C78A8", "#E07B73"))
     print(p_gene)
     dev.off()
 
@@ -1156,21 +1209,5 @@ if (isTRUE(opt$plot_advanced) && length(advanced_pathways) > 0) {
   }
 }
 
-saveRDS(cellchat, file.path(opt$output_dir, "cellchat.rds"))
-
-write.csv(stats, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_stats.csv")), row.names = FALSE)
-write.csv(net_lr, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_lr.csv")), row.names = FALSE)
 write.csv(selected_lr, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_selected_lr.csv")), row.names = FALSE)
 write.csv(selected_pathway_summary, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_selected_pathway_summary.csv")), row.names = FALSE)
-if (!is.null(lr_summary)) {
-  write.csv(lr_summary, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_lr_summary.csv")), row.names = FALSE)
-}
-if (!is.null(pathway_pairs)) {
-  write.csv(pathway_pairs, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_pathway_pairs.csv")), row.names = FALSE)
-}
-if (!is.null(pathway_summary)) {
-  write.csv(pathway_summary, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_pathway_summary.csv")), row.names = FALSE)
-}
-if (is.data.frame(netP) || is.matrix(netP)) {
-  write.csv(netP, file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_pathway_net.csv")), row.names = FALSE)
-}

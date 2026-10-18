@@ -40,7 +40,7 @@ CHOICE_RULES = {
     "cluster_algorithm": {"choices": ["leiden", "louvain", "Kmeans", "kmeans"], "case_sensitive": False},
     "anno_algorithm": {"choices": ["manual", "reannotation", "cell2Location", "RCTD"], "case_sensitive": False},
     "RCTD_mode": {"choices": ["full", "doublet"], "case_sensitive": False},
-    "device": {"choices": ["cpu", "cuda"], "case_sensitive": False},
+    "device": {"choices": ["auto", "cpu", "cuda"], "case_sensitive": False},
     "compare_algorithm": {"choices": ["DESeq2", "edgeR"], "case_sensitive": False},
     "compare_gene_id_type": {
         "choices": ["auto", "SYMBOL", "ENSEMBL", "ENTREZID"],
@@ -216,6 +216,18 @@ def validate_splitting_config(config: Dict[str, Any]) -> None:
             continue
         if normalized not in choices:
             errors.append(f"{name} must be one of {_format_choices(rule['choices'])}; got {value!r}.")
+
+    distance = config.get("distance")
+    if not _is_none_like(distance):
+        try:
+            distance = float(distance)
+            distance_min = float(config.get("distance_min", 0))
+            if not 0 <= distance_min < distance:
+                errors.append("distance radii must satisfy 0 <= distance_min < distance.")
+        except (TypeError, ValueError):
+            errors.append("distance and distance_min must be numeric micrometre values.")
+        if not _is_none_like(config.get("neighbor_types")) and _is_none_like(config.get("neighbor_col")):
+            errors.append("neighbor_col is required when neighbor_types is set.")
 
     if errors:
         joined = "\n".join(f"- {message}" for message in errors)
@@ -492,7 +504,7 @@ def _validate_sample_parameters(config: Dict[str, Any], errors: List[str]) -> No
         return
 
     sample_ids = _read_sample_ids(config.get("sample_list"))
-    reserved_keys = {"sample_id", "input_path", "group", "condition"}
+    reserved_keys = {"sample_id", "input_path", "group", "condition", "bin_size"}
     for sample_id, parameters in value.items():
         if _is_none_like(sample_id):
             errors.append("sample_parameters contains an empty sample_id key.")
@@ -519,7 +531,7 @@ def _validate_sample_parameters(config: Dict[str, Any], errors: List[str]) -> No
                 errors.append(
                     f"sample_parameters[{sample_id!r}][{field!r}] must not be empty."
                 )
-        for field in ["min_cells", "min_counts", "bin_size"]:
+        for field in ["min_cells", "min_counts"]:
             if field not in parameters:
                 continue
             parsed = _parse_int(
