@@ -12,6 +12,7 @@ from spatialsnake.workflow.function.plot import cluster_proportion
 from spatialsnake.workflow.function.stereoseq_selection import (
     resolve_stereoseq_table_key,
     resolve_visual_target,
+    resolve_region_image,
 )
 from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
 
@@ -122,10 +123,7 @@ def render_spatial_plots(sdata, table_key, adata, run_type, vis_mode, point_size
         if not candidates:
             continue
         system = next((system for system in candidates if "hires" in system.lower()), candidates[0])
-        image = next(
-            (name for name in images if system in get_transformation(sdata.images[name], get_all=True)),
-            None,
-        )
+        image = resolve_region_image(sdata, adata, region, system)
         panels.append((region, mode, element_name, system, image))
 
     if panels:
@@ -206,8 +204,8 @@ def main():
     output_dir = os.path.dirname(args.output_csv)
     os.makedirs(output_dir, exist_ok=True)
     cluster_key = "celltype"
-    umap_png = os.path.join(output_dir, "umap_recluster.png")
-    spatial_png = os.path.join(output_dir, "spatial_clusters.png")
+    umap_png = os.path.join(output_dir, "umap_annotations.png")
+    spatial_png = os.path.join(output_dir, "spatial_annotations.png")
 
     log_step(logger, 1, 5, "loading annotation map and input data")
     sdata = spd.read_zarr(args.input_dir)

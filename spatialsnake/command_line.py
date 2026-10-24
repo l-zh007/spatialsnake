@@ -30,6 +30,8 @@ import yaml
 from docopt import docopt
 from spatialsnake.workflow.function.config_validator import (
     ConfigValidationError,
+    OPTION_ALIASES,
+    RUNPIPE_ALIASES,
     validate_merge_config,
     validate_splitting_config,
     validate_transform_config,
@@ -102,10 +104,10 @@ VALID_OPTIONS = [
 ]
 
 __author__ = 'lzh'
-__version__ = '0.0.5'
+__version__ = '0.0.6'
 __logo__ = """
 
-  ╭─── SpatialSnake · v0.0.5 ───╮
+  ╭─── SpatialSnake · v0.0.6 ───╮
   │                             │
   │    ●───●───●───●───●───●    │
   │    │ ╲ │ ╱ │ ╲ │ ╱ │ ╲ │    │
@@ -134,18 +136,18 @@ Usage:
     spatialsnake --version
 
 commands:
-    single_analysis      Process single spatial transcriptomics dataset (runs all basic steps except advance_analysis by default)
-    compare_analysis     Compare multiple spatial transcriptomics datasets
+    single_analysis      Process single spatial transcriptomics dataset (runs all basic steps except advanced_analysis by default)
+    compare_analysis     Run multi-sample spatial transcriptomics analysis
 
 analysis option:
-    integrate
+    ingestion           Data ingestion and QC (legacy alias: integrate)
     preprocess
     clustering
     reclustering
     annotation_help
     annotation
     compare_stage
-    advance_analysis
+    advanced_analysis   Advanced analysis (legacy alias: advance_analysis)
 
 Type Arguments:
     visium
@@ -164,7 +166,7 @@ Basic Configuration:
     --configfile <FILE>    User YAML configuration file. If omitted, Spatialsnake uses the matching workflow/envs template.
                            YAML values are authoritative defaults; command-line values override only when explicitly provided.
 
-Integration Step Options (--option integrate):
+Data Ingestion and QC Options (--option ingestion; integrate remains supported):
     --cells_boundaries <BOOL>    xenium key in load in data (yaml default: integrate.yaml).
     --nucleus_boundaries <BOOL>  xenium key in load in data (yaml default: integrate.yaml).
     --nucleus_labels <BOOL>      xenium key in load in data (yaml default: integrate.yaml).
@@ -201,14 +203,14 @@ Clustering Step Options (--option clustering):
 
 Reclustering Step Options (--option reclustering):
     --recluster_resolution <FLOAT>      Leiden resolution (yaml default: reclustering.yaml).
-    --recluster_n_top_genes <INT>       Highly variable genes count (yaml default: reclustering.yaml).
+    --recluster_n_top_genes <INT>       0 uses all genes without HVG selection (default); >=2 selects subset HVGs.
     --recluster_neighbors <INT>         Neighbors for graph construction (yaml default: reclustering.yaml).
     --recluster_n_pcs <INT>             Number of PCs for neighbors (yaml default: reclustering.yaml).
     --recluster_marker_method <TEXT>    Marker test method (yaml default: reclustering.yaml).
     --recluster_min_pct <FLOAT>         Min fraction for marker filtering (yaml default: reclustering.yaml).
     --recluster_logfc_threshold <FLOAT> Min log2FC for marker filtering (yaml default: reclustering.yaml).
     
-Annotation Help Step Options (--option annotation_help):
+Annotation Support Options (--option annotation_help):
     --markers_algorithm <TEXT>       Marker gene test method (yaml default: annotation_help.yaml).
     --species <TEXT>                 Species for enrichment or CellPhoneDB: human or mouse (yaml default: module config).
 
@@ -258,8 +260,8 @@ Annotation option Options (--option annotation):
     --device <TEXT>             Compute device: auto, cpu, or cuda (yaml default: selected module).
     --max_cores <INT>           Legacy alias of --threads for annotation tools.
     --RCTD_mode <TEXT>             RCTD mode: full or doublet (yaml default: annotation.yaml).
-Advanced Analysis option Options (--option advance_analysis):
-    --runpipe <TEXT>          Select module for advance_analysis or compare_stage (yaml default: advance_analysis.yaml or compare_stage.yaml).
+Advanced Analysis Options (--option advanced_analysis; advance_analysis remains supported):
+    --runpipe <TEXT>          Select module: cellPhoneDB, pyscenic (legacy: pysenic), liana, cellcharter, banksy, or cellchat.
     --senic_input <DIR>       Input file for PySCENIC analysis.
     --motifs_input <FILE>     PySCENIC database directory.
     --feather_input <FILE>    Comma-separated cisTarget ranking feather database path(s) for pySCENIC.
@@ -387,7 +389,7 @@ General Options:
 Utility Options:
     --install-packages   Install required packages.
     --extended           Install full downstream packages for conda/Bioconda environments.
-    --torch-backend <TEXT> PyTorch build for Bioconda extended installs: auto, cpu, or cu128 [default: auto].
+    --torch-backend <TEXT> Bioconda PyTorch build: auto reuses preinstalled Torch; cpu/cu128 explicitly install that build [default: auto].
     --dry-run            Preview install-packages actions without installing.
     -u, --unlock         Unlock stalled workflow.
     -r, --remove         Remove all output files.
@@ -1127,6 +1129,19 @@ def install_pytorch(
 ) -> str:
     """Install the tested CPU or CUDA PyTorch build before dependent packages."""
     requirement = config.get("requirement", "torch==2.8.0")
+    if backend == "auto":
+        if package_satisfies_requirement(requirement):
+            cuda_runtime, _ = get_torch_runtime()
+            logger.info(f"Reusing user-installed {requirement}; CUDA runtime: {cuda_runtime or 'CPU'}")
+            return "cu128" if cuda_runtime else "cpu"
+        logger.error(
+            f"Install {requirement} first, choosing --index-url "
+            "https://download.pytorch.org/whl/cpu or "
+            "https://download.pytorch.org/whl/cu128."
+        )
+        if dry_run:
+            return "manual"
+        sys.exit(2)
     selected = resolve_torch_backend(backend)
     indexes = config.get("index_urls", {})
     index_url = indexes.get(
@@ -1192,8 +1207,19 @@ def install_packages(
             conda_packages, label="Conda compatibility and R packages",
             dry_run=dry_run,
         )
+        core_requirements = list(pip_config.get("conda_minimal", []))
+        for constraint in constraints:
+            name, _ = parse_pinned_requirement(constraint)
+            if name == "torch":
+                continue
+            try:
+                importlib.metadata.version(name)
+            except importlib.metadata.PackageNotFoundError:
+                continue
+            if not package_satisfies_requirement(constraint) and constraint not in core_requirements:
+                core_requirements.append(constraint)
         install_pip_requirements(
-            pip_config.get("conda_minimal", []),
+            core_requirements,
             label="core Python packages", dry_run=dry_run, constraints=constraints,
         )
         install_pip_requirements(
@@ -1535,6 +1561,9 @@ def main():
     except Exception as e:
         logger.error(f"Error parsing arguments: {e}")
         sys.exit(2)
+
+    cli_arguments["--option"] = OPTION_ALIASES.get(cli_arguments.get("--option"), cli_arguments.get("--option"))
+    cli_arguments["--runpipe"] = RUNPIPE_ALIASES.get(cli_arguments.get("--runpipe"), cli_arguments.get("--runpipe"))
 
     if cli_arguments.get("produce-file"):
         if not generate_config_file(cli_arguments):

@@ -73,7 +73,10 @@ def _spatial_attrs(table) -> dict[str, Any]:
 
 
 def _table_regions(table) -> list[str]:
-    region = _spatial_attrs(table).get("region")
+    attrs = _spatial_attrs(table)
+    if attrs.get("region_key") in table.obs:
+        return pd.unique(table.obs[attrs["region_key"]].dropna().astype(str)).tolist()
+    region = attrs.get("region")
     if region is None:
         return []
     values = region if isinstance(region, (list, tuple, np.ndarray, pd.Index)) else [region]
@@ -118,24 +121,38 @@ def _unique_library_id(candidate: str, source: str, used: set[str]) -> str:
     return value
 
 
-def _normalize_spatial_uns(adata: ad.AnnData, library_id: str) -> list[str]:
+def _normalize_spatial_uns(adata: ad.AnnData, library_id: str, image_names=None) -> list[str]:
     warnings: list[str] = []
     spatial = adata.uns.get("spatial")
     if not isinstance(spatial, dict) or not spatial:
         return warnings
 
-    if library_id in spatial:
+    image_keys = [key for key, value in spatial.items()
+                  if isinstance(value, dict) and value.get("images")
+                  and (image_names is None or key in image_names)]
+    # Visium exports both resolutions of the same section; prefer its hires image.
+    hires_key = f"{library_id}_hires_image"
+    if hires_key in image_keys and library_id not in image_keys:
+        image_keys = [hires_key]
+    elif len(image_keys) > 1:
+        hires = [key for key in image_keys if key.endswith(("_hires_image", "_hires_tissue_image"))]
+        if len(hires) == 1:
+            image_keys = hires
+    if library_id in spatial and (
+        library_id in image_keys or not image_keys
+    ):
         entry = spatial[library_id]
-    elif len(spatial) == 1:
-        entry = next(iter(spatial.values()))
-    else:
-        keys = sorted(spatial)
-        image_keys = [key for key in keys if isinstance(spatial[key], dict) and spatial[key].get("images")]
-        chosen = image_keys[0] if image_keys else keys[0]
+    elif len(image_keys) == 1:
+        chosen = image_keys[0]
         entry = spatial[chosen]
-        warnings.append(
-            f"multiple legacy image entries {keys} were available for {library_id}; used {chosen}"
+        warnings.append(f"used legacy image entry {chosen} for {library_id}")
+    elif len(image_keys) > 1:
+        raise ValueError(
+            f"Multiple legacy image entries {image_keys} match {library_id}; "
+            "cannot choose an image and its spatial scale unambiguously."
         )
+    else:
+        entry = spatial[sorted(spatial)[0]]
     adata.uns["spatial"] = {library_id: entry}
     return warnings
 
@@ -173,11 +190,15 @@ def _export_library(
         coordinate_system = ""
     else:
         coordinate_system = _coordinate_system_for_region(sdata, region)
+        from spatialsnake.workflow.function.stereoseq_selection import resolve_region_image
+        image_name = resolve_region_image(sdata, sdata.tables[table_key], region, coordinate_system) if save_image else None
         adata = to_legacy_anndata(
             sdata,
             table_name=table_key,
             coordinate_system=coordinate_system,
             include_images=save_image,
+            region_name=region,
+            image_name=image_name,
         )
 
     if adata.n_obs == 0 or adata.n_vars == 0:
@@ -202,7 +223,8 @@ def _export_library(
             resolution = handle.attrs.get("resolution")
     if resolution is not None:
         adata.obs["spatialsnake_resolution_nm"] = float(np.asarray(resolution).reshape(-1)[0])
-    messages = _normalize_spatial_uns(adata, library_id)
+    image_names = [image_name] if region is not None and image_name else None
+    messages = _normalize_spatial_uns(adata, library_id, image_names)
     adata.obs["library_id"] = pd.Categorical([library_id] * adata.n_obs)
     image_count = _count_spatial_images(adata) if save_image else 0
     return adata, {
@@ -266,18 +288,16 @@ def _replace_file(staged: Path, destination: Path) -> None:
     os.replace(staged, destination)
 
 
-def _restore_pairwise_matrices(paths: Sequence[Path], destination: Path) -> None:
-    """Append block-diagonal ``obsp`` matrices after on-disk concatenation.
+def _restore_pairwise_matrices(paths: Sequence[Path], destination: Path, source_graphs=None) -> None:
+    """Preserve source graphs, using separate blocks only for independent inputs.
 
-    AnnData 0.12 does not yet implement ``pairwise=True`` for
-    ``concat_on_disk``.  Pairwise graphs are therefore assembled one key at a
-    time as sparse block diagonals and written directly to the output store.
-    This preserves within-library graphs without introducing cross-library
-    edges or materialising the expression matrix.
+    AnnData 0.12 concat_on_disk does not implement pairwise=True. Write sparse
+    graphs directly, retaining integrated expression edges between libraries.
     """
-    backed_inputs = [ad.read_h5ad(path, backed="r") for path in paths]
+    backed_inputs = [ad.read_h5ad(path, backed="r") for path in paths] if source_graphs is None else []
     try:
-        keys = sorted({key for backed in backed_inputs for key in backed.obsp})
+        graph_inputs = source_graphs if source_graphs is not None else [(backed.n_obs, backed.obsp) for backed in backed_inputs]
+        keys = sorted({key for _, graphs in graph_inputs for key in graphs})
         if not keys:
             return
         with h5py.File(destination, "r+") as handle:
@@ -286,11 +306,11 @@ def _restore_pairwise_matrices(paths: Sequence[Path], destination: Path) -> None
             group.attrs["encoding-version"] = "0.1.0"
             for key in keys:
                 blocks = []
-                for backed in backed_inputs:
-                    if key not in backed.obsp:
-                        blocks.append(sparse.csr_matrix((backed.n_obs, backed.n_obs)))
+                for n_obs, graphs in graph_inputs:
+                    if key not in graphs:
+                        blocks.append(sparse.csr_matrix((n_obs, n_obs)))
                         continue
-                    value = backed.obsp[key]
+                    value = graphs[key]
                     value = value.to_memory() if hasattr(value, "to_memory") else value
                     blocks.append(value if sparse.issparse(value) else sparse.csr_matrix(value))
                 matrix = sparse.block_diag(blocks, format="csr")
@@ -450,7 +470,7 @@ def _restore_spatial_uns(paths: Sequence[Path], destination: Path) -> None:
                     source.copy(source_spatial[library_id], merged, name=library_id)
 
 
-def _concat_h5ad_on_disk(paths: Sequence[Path], destination: Path) -> None:
+def _concat_h5ad_on_disk(paths: Sequence[Path], destination: Path, source_graphs=None) -> None:
     staged = destination.parent / f".{destination.stem}.tmp-{os.getpid()}.h5ad"
     if staged.exists():
         staged.unlink()
@@ -469,7 +489,7 @@ def _concat_h5ad_on_disk(paths: Sequence[Path], destination: Path) -> None:
         _restore_var_metadata(paths, staged)
         _restore_raw_matrix(paths, staged)
         _restore_spatial_uns(paths, staged)
-        _restore_pairwise_matrices(paths, staged)
+        _restore_pairwise_matrices(paths, staged, source_graphs)
     _replace_file(staged, destination)
 
 
@@ -513,16 +533,20 @@ def _export_zarr_to_h5ad(
     output.parent.mkdir(parents=True, exist_ok=True)
     used_library_ids: set[str] = set()
     records: list[dict[str, Any]] = []
+    expected_obs = 0
 
     with tempfile.TemporaryDirectory(prefix="spatialsnake-transform-", dir=output.parent) as temp_dir:
         temp_paths: list[Path] = []
         library_ids: list[str] = []
+        source_graphs = []
         for input_index, file_path in enumerate(input_list):
             logger.info("Reading SpatialData Zarr: %s", file_path)
             sdata = sd.read_zarr(file_path)
             selected_key, table = _select_table(sdata, table_key)
+            expected_obs += table.n_obs
             regions = _table_regions(table) or [None]
             source = _clean_stem(file_path)
+            exported_positions = []
             for region_index, region in enumerate(regions):
                 proposed = region or source
                 library_id = _unique_library_id(proposed, source, used_library_ids)
@@ -542,16 +566,21 @@ def _export_zarr_to_h5ad(
                 record.update({"input": str(file_path), "table_key": selected_key})
                 path = Path(temp_dir) / f"library-{input_index}-{region_index}.h5ad"
                 library.write_h5ad(path)
+                exported_positions.extend(table.obs_names.get_indexer(library.obs_names).tolist())
                 temp_paths.append(path)
                 library_ids.append(library_id)
                 records.append(record)
                 del library
                 gc.collect()
+            positions = np.asarray(exported_positions, dtype=int)
+            source_graphs.append((len(positions), {
+                key: sparse.csr_matrix(graph)[positions][:, positions]
+                for key, graph in table.obsp.items()
+            }))
 
         renamed = _resolve_duplicate_obs_names(temp_paths, library_ids)
-        _concat_h5ad_on_disk(temp_paths, output)
+        _concat_h5ad_on_disk(temp_paths, output, source_graphs)
 
-    expected_obs = sum(int(record["observations"]) for record in records)
     summary = _validate_h5ad(output, expected_obs)
     logger.info(
         "Validated H5AD: obs=%d genes=%d libraries=%s; duplicate IDs renamed=%s",

@@ -38,22 +38,19 @@ pip:
     - dask==2024.11.2
     - dask-expr==1.1.19
     - dask-image==2024.5.3
-    - opencv-python==4.13.0.92
   conda_force_pypi:
     - numba==0.62.1
     - llvmlite==0.45.1
   conda_extended:
+    - opencv-python==4.13.0.92
     - squidpy==1.6.5
-    - napari-spatialdata==0.5.7
     - cell2location==0.1.5
     - scvi-tools==1.4.0
     - pytorch-lightning==2.5.5
     - pyro-ppl==1.9.1
     - pyro-api==0.1.1
     - opt-einsum==3.3.0
-    - PyQt5==5.15.11
     - scikit-misc==0.5.2
-    - ipython==9.5.0
     - cellphonedb==5.0.1
     - cellcharter==0.3.5
     - torchgmm==0.1.4
@@ -75,11 +72,7 @@ constraints:
   - distributed==2024.11.2
   - setuptools==80.9.0
   - squidpy==1.6.5
-  - napari-spatialdata==0.5.7
-  - napari==0.6.6
-  - PyQt5==5.15.11
   - python-igraph==0.11.9
-  - ipykernel==6.31.0
   - cell2location==0.1.5
   - scvi-tools==1.4.0
   - torch==2.8.0
@@ -121,7 +114,7 @@ constraints:
   - igraph==0.11.9
   - louvain==0.8.2
   - leidenalg==0.10.2
-  - pydeseq2==0.5.2
+  - pydeseq2==0.5.4
   - harmonypy==0.0.10
   - bbknn==1.6.0
   - dask==2024.11.2
@@ -132,7 +125,6 @@ constraints:
   - xarray==2025.1.2
   - opencv-python==4.13.0.92
   - scikit-misc==0.5.2
-  - ipython==9.5.0
   - pybanksy==1.3.5
   - cellphonedb==5.0.1
   - cellcharter==0.3.5
@@ -150,4 +142,3 @@ constraints:
   - bokeh==3.9.0
   - pydantic==2.13.4
   - pydantic-core==2.46.4
-  - xarray-datatree==0.0.14

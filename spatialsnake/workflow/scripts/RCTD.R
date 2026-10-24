@@ -48,7 +48,7 @@ h5ad_loading <- function(input_h5ad, is_spatial = TRUE) {
     left0 <- NULL
     for (i in visl) {
       if (is.null(left0)) {
-         left0 <- merge(i, left0) 
+         left0 <- i
       } else {
          left0 <- merge(i, left0)
       }

@@ -13,16 +13,22 @@ TRUE_VALUES = {"true", "1", "yes", "y", "t"}
 FALSE_VALUES = {"false", "0", "no", "n", "f"}
 
 
+OPTION_ALIASES = {"ingestion": "integrate", "advanced_analysis": "advance_analysis"}
+RUNPIPE_ALIASES = {"pysenic": "pyscenic"}
+
+
 CHOICE_RULES = {
     "option": {
         "choices": [
             "integrate",
+            "ingestion",
             "preprocess",
             "clustering",
             "annotation_help",
             "annotation",
             "compare_stage",
             "advance_analysis",
+            "advanced_analysis",
             "reclustering",
             "splitting",
             "merge",
@@ -52,7 +58,7 @@ CHOICE_RULES = {
     },
     "species": {"choices": ["human", "mouse"], "case_sensitive": False},
     "runpipe": {
-        "choices": ["cellPhoneDB", "pysenic", "liana", "cellcharter", "banksy", "cellchat", "compare_gene"],
+        "choices": ["cellPhoneDB", "pyscenic", "pysenic", "liana", "cellcharter", "banksy", "cellchat", "compare_gene"],
         "case_sensitive": False,
     },
     "liana_method": {
@@ -114,7 +120,7 @@ INT_RULES = {
     "pcs": {"min": 1},
     "recluster_neighbors": {"min": 1},
     "recluster_n_pcs": {"min": 1},
-    "recluster_n_top_genes": {"min": 1},
+    "recluster_n_top_genes": {"min": 0},
     "min_replicates": {"min": 2},
     "min_cells_per_sample": {"min": 1},
     "min_total_counts_per_gene": {"min": 1},

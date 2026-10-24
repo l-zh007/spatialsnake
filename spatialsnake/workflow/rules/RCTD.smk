@@ -95,12 +95,14 @@ RCTD_EXTRA_OUTPUTS = (
 
 rule RCTD_prepare_spatial:
     input:
-        spatial_zarr = _rctd_spatial_zarr
+        spatial_zarr = _rctd_spatial_zarr,
+        single_cell = _rctd_single_cell_reference
     output:
         converted_dir = temp(directory(RCTD_TEMP_DIR))
     threads: workflow_threads
     params:
         converted_h5ad = _rctd_temp_h5ad,
+        reference_h5ad = os.path.join(RCTD_TEMP_DIR, "reference_counts.h5ad"),
         validator = os.path.join(spatialsnake_path, "workflow", "scripts", "RCTD_validate_input.py")
     shell:
         """
@@ -112,7 +114,9 @@ rule RCTD_prepare_spatial:
             --output_dir={output.converted_dir:q}
         python {params.validator:q} \
             --spatial_zarr {input.spatial_zarr:q} \
-            --converted_h5ad {params.converted_h5ad:q}
+            --converted_h5ad {params.converted_h5ad:q} \
+            --reference_input {input.single_cell:q} \
+            --reference_output {params.reference_h5ad:q}
         """
 
 
@@ -126,6 +130,7 @@ rule RCTD_run:
     threads: workflow_threads
     params:
         spatial_h5ad = _rctd_temp_h5ad,
+        reference = lambda wildcards: os.path.join(results_folder, wildcards.sample, "RCTD", ".rctd_h5ad", "reference_counts.h5ad") if _rctd_single_cell_reference(wildcards).lower().endswith(".h5ad") else _rctd_single_cell_reference(wildcards),
         output_dir = lambda wildcards: os.path.join(results_folder, wildcards.sample, "RCTD"),
         sample_id = "{sample}",
         mode = RCTD_MODE,
@@ -136,7 +141,7 @@ rule RCTD_run:
         """
         Rscript {spatialsnake_path}workflow/scripts/RCTD.R \
             --spatial_input {params.spatial_h5ad:q} \
-            --sc_input {input.single_cell:q} \
+            --sc_input {params.reference:q} \
             --output_dir {params.output_dir:q} \
             --sample_id {params.sample_id:q} \
             --mode {params.mode:q} \

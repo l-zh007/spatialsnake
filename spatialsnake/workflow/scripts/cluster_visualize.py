@@ -11,7 +11,7 @@ import warnings
 warnings.filterwarnings("ignore")
 from spatialdata.models import PointsModel
 from spatialdata.transformations import get_transformation
-from spatialsnake.workflow.function.plot import cluster_proportion
+from spatialsnake.workflow.function.plot import cluster_proportion, plot_spatial_clusters
 from spatialsnake.workflow.function.export_cluster_csv import export_cluster_csv
 from spatialsnake.workflow.function.stereoseq_selection import (
     extract_table_spatial_metadata,
@@ -105,135 +105,15 @@ logger.info(f"Loaded {adata.n_obs} observations for marker and spatial visualiza
 table_meta = extract_table_spatial_metadata(adata)
 region_name = table_meta["region_name"]
 instance_key = table_meta["instance_key"]
-if region_name in concatenated_sdata.shapes and instance_key in adata.obs:
-    adata.obs[instance_key] = adata.obs[instance_key].astype(str)
-    shapes_df = concatenated_sdata.shapes[region_name]
-    shapes_df.index = shapes_df.index.astype(str)
-    common_index = shapes_df.index.intersection(adata.obs[instance_key])
-    if len(common_index) > 0:
-        if len(common_index) != len(shapes_df):
-            shapes_df = shapes_df.loc[common_index]
-        if len(common_index) != adata.n_obs:
-            adata = adata[adata.obs[instance_key].isin(common_index)].copy()
-        concatenated_sdata.shapes[region_name] = shapes_df
 adata = sanitize_obs_index_name(adata, instance_key)
 concatenated_sdata[table] = adata
-sample_cnt=adata.obs["sample"].astype(str).nunique() if "sample" in adata.obs else 1
-image_elements = list(concatenated_sdata.images.keys())
-shape_elements = list(concatenated_sdata.shapes.keys())
-point_elements = list(concatenated_sdata.points.keys())
-valid_coord_systems = sorted(concatenated_sdata.coordinate_systems)
-image_counts=len(image_elements)//sample_cnt
-shape_count=len(shape_elements)//sample_cnt
-shapes=[]
-images=[]
-systems=[]
-print(args.image_type)
-images = select_elements(image_elements, args.image_type)
-systems = select_elements(valid_coord_systems, args.image_type)
+log_step(logger, 2, 5, "rendering spatial cluster plots")
+plot_spatial_clusters(
+    concatenated_sdata, table, "clusters", dir_path, args.sample_id,
+    image_type=args.image_type, vis_mode=args.vis_mode, point_size=args.point_size,
+    coord=args.coord if str(args.image_slice).lower() == "true" else None,
+)
 
-logger.info(f"Found {len(images)} image(s), {len(shape_elements)} shape element(s), and {len(systems)} coordinate system(s)")
-if shape_count>1 and type!="visium" and type != "xenium":
-    shapes = select_elements(shape_elements, args.shape_type)
-else:
-    shapes=shape_elements
-
-print(concatenated_sdata)
-print(systems,images,shapes)
-
-if isinstance(region_name, (list, tuple)):
-  region_name = region_name[0] if region_name else None
-active_vis_mode, visual_region_name = resolve_visual_target(concatenated_sdata, region_name, args.vis_mode)
-point_visual_elements = []
-if active_vis_mode == "shape":
-  visual_elements = [visual_region_name] if visual_region_name in shape_elements else []
-else:
-  point_visual_elements = select_elements(point_elements, region_name)
-  if not point_visual_elements:
-    point_visual_elements = [visual_region_name] if visual_region_name in getattr(concatenated_sdata, "points", {}) else point_elements
-  visual_elements = list(point_visual_elements)
-  for current_visual_region in point_visual_elements:
-    source_points = concatenated_sdata.points[current_visual_region]
-    points_df = source_points.compute() if hasattr(source_points, "compute") else source_points.copy()
-    points_df = points_df.copy()
-    region_key = adata.uns["spatialdata_attrs"].get("region_key")
-    local_obs = adata.obs.loc[adata.obs[region_key].astype(str).eq(current_visual_region)] if region_key in adata.obs else adata.obs
-    point_ids = points_df[instance_key].astype(str) if instance_key in points_df.columns else pd.Series(points_df.index.astype(str), index=points_df.index)
-    labels = pd.Series(local_obs["clusters"].astype(str).to_numpy(), index=local_obs[instance_key].astype(str))
-    points_df["clusters"] = point_ids.map(labels).fillna("unassigned").astype("category")
-    points_df = points_df.dropna(subset=["x", "y"])
-    concatenated_sdata.points[current_visual_region] = PointsModel.parse(
-      points_df.sort_index(),
-      coordinates={"x": "x", "y": "y"},
-      transformations=get_transformation(source_points, get_all=True),
-    )
-total = min(len(visual_elements)*sample_cnt, len(images), max(1, len(systems)))
-log_step(logger, 2, 5, f"rendering spatial cluster plots for {sample_cnt} sample(s)")
-if not images:
-  sys = systems[0] if systems else "global"
-  current_visual_region = visual_region_name
-  if active_vis_mode == "point" and point_visual_elements:
-    current_visual_region = point_visual_elements[0]
-  fig, ax = plt.subplots(figsize=(10, 10))
-  if active_vis_mode == "shape":
-    concatenated_sdata.pl.render_shapes(
-      visual_region_name, color="clusters", table_name=table,
-      outline_alpha=0, fill_alpha=1,
-    ).pl.show(ax=ax, coordinate_systems=sys, title=str(args.sample_id))
-  else:
-    concatenated_sdata.pl.render_points(
-      current_visual_region, color="clusters", size=args.point_size, alpha=0.8,
-    ).pl.show(ax=ax, coordinate_systems=sys, title=str(args.sample_id))
-  plt.savefig(os.path.join(dir_path, f"{args.sample_id}_Clusters.png"), dpi=300, bbox_inches='tight')
-  plt.close()
-else:
-  for i in range(sample_cnt):
-    sys = systems[0] if sample_cnt < 2 else systems[i]
-    title = images[i].replace("_hires_image", "")
-    current_visual_region = visual_region_name
-    if active_vis_mode == "point" and len(point_visual_elements) > 0:
-      current_visual_region = point_visual_elements[0] if len(point_visual_elements) < 2 else point_visual_elements[min(i, len(point_visual_elements) - 1)]
-    current_sdata = concatenated_sdata
-    if str(args.image_slice).lower() == "true" and args.coord is not None:
-      current_sdata = crop0(current_sdata, sys, args.coord[0], args.coord[1], args.coord[2], args.coord[3])
-    fig, axes = plt.subplots(2, 1, figsize=(20, 13))
-    axes = np.ravel(axes)
-    current_sdata.pl.render_images(images[i]).pl.show(
-      ax=axes[0],
-      title="image",
-      coordinate_systems=sys,
-    )
-    if active_vis_mode == "shape":
-      current_sdata.pl.render_shapes(
-        shapes[i],
-        color="clusters",
-        table_name=table,
-        outline_alpha=0,
-        fill_alpha=1,
-      ).pl.show(
-        ax=axes[1],
-        coordinate_systems=sys,
-        title=title,
-      )
-    else:
-      current_sdata.pl.render_images(images[i]).pl.render_points(
-        current_visual_region,
-        color="clusters",
-        size=args.point_size,
-        alpha=0.8,
-      ).pl.show(
-        ax=axes[1],
-        coordinate_systems=sys,
-        title=title,
-      )
-    plt.savefig(
-      os.path.join(dir_path, f"{images[i]}_Clusters.png"),
-      dpi=300,
-      bbox_inches='tight')
-    plt.close()
-    
-    
-    
 log_step(logger, 3, 5, "saving cluster proportion plot")
 
 cluster_proportion(adata, sample_col='region', 
@@ -261,7 +141,7 @@ sc.pl.rank_genes_groups_dotplot(
     n_genes=5,
     use_raw=False,
     show=False)
-plt.savefig(os.path.join(dir_path, f"{args.sample_id}rank_genes_groups_dotplot.png"),dpi=300,bbox_inches='tight')
+plt.savefig(os.path.join(dir_path, f"{args.sample_id}_marker_dotplot.png"),dpi=300,bbox_inches='tight')
 plt.close()
 
 

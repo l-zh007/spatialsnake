@@ -216,7 +216,8 @@ def align_column(source, target, column, default=np.nan):
 
 
 def rank_interactions(means, significance, scores, pair, significant_rows, degs_analysis):
-    ranked = means.loc[significant_rows.to_numpy()].copy()
+    selected_ids = significance.loc[significant_rows, "id_cp_interaction"]
+    ranked = means.loc[means["id_cp_interaction"].isin(selected_ids)].copy()
     if ranked.empty:
         return ranked
     ranked["_mean"] = align_column(means, ranked, pair)

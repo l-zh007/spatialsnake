@@ -9,7 +9,7 @@ rule convert_to_loom:
     input:
         inputs = input_pysenic
     output:
-        loom = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.loom")
+        loom = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.loom")
     threads: workflow_threads
     params:
         sample_id = cpdb_sample_id,
@@ -25,10 +25,10 @@ rule convert_to_loom:
 
 rule pyscenic_grn:
     input:
-        loom = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.loom"),
+        loom = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.loom"),
         tfs = config.get("tfs_input","")
     output:
-        grn = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.grn.tsv")
+        grn = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.grn.tsv")
     threads: workflow_threads
     params:
         gene_attr = config.get("gene_attr", "var_names"),
@@ -49,12 +49,12 @@ rule pyscenic_grn:
 
 rule pyscenic_ctx:
     input:
-        grn = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.grn.tsv"),
+        grn = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.grn.tsv"),
         rankings = split_pyscenic_rankings(),
         motifs = config.get("motifs_input",""),
-        loom = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.loom")
+        loom = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.loom")
     output:
-        regulons = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.regulons.csv")
+        regulons = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.regulons.csv")
     threads: workflow_threads
     params:
         gene_attr = config.get("gene_attr", "var_names"),
@@ -73,9 +73,9 @@ rule pyscenic_ctx:
 #            --mode "{params.mode}" \
 rule pyscenic_aucell:
     input:
-        regulons = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.regulons.csv")
+        regulons = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.regulons.csv")
     output:
-        aucell = os.path.join(results_folder,"pysenic_results",f"{cpdb_sample_id}.aucell.loom")
+        aucell = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.aucell.loom")
     threads: workflow_threads
     params:
         inputs = cellPhoneDB_input if cellPhoneDB_input else config.get("senic_input", ""),

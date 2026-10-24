@@ -22,9 +22,9 @@ import scvi
 from scipy import sparse as sp
 from spatialdata.models import PointsModel
 from spatialdata.transformations import get_transformation
-from spatialsnake.workflow.function.plot import cluster_proportion
+from spatialsnake.workflow.function.plot import cluster_proportion, plot_spatial_clusters
 from spatialsnake.workflow.function.export_cluster_csv import export_cluster_csv
-from spatialsnake.workflow.function.stereoseq_selection import resolve_visual_target
+from spatialsnake.workflow.function.stereoseq_selection import resolve_visual_target, spatial_region_panels
 from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
 from spatialsnake.workflow.function.device_utils import lightning_accelerator, resolve_torch_device
 import argparse
@@ -107,15 +107,15 @@ def _matrix_is_nonnegative_integer(x, atol=1e-6, chunk_size=1_000_000):
   if x is None:
     return False
   values = x.data if sp.issparse(x) else np.asarray(x).reshape(-1)
-  if values.size == 0:
-    return True
+  has_counts = False
   for start in range(0, values.size, chunk_size):
     chunk = np.asarray(values[start:start + chunk_size])
     if not np.isfinite(chunk).all():
       return False
     if np.any(chunk < 0) or np.any(np.abs(chunk - np.rint(chunk)) > atol):
       return False
-  return True
+    has_counts = has_counts or bool(np.any(chunk > 0))
+  return has_counts
 
 
 def _copy_matrix(x):
@@ -124,29 +124,33 @@ def _copy_matrix(x):
 
 def _select_counts(adata):
   """Select validated raw counts without accepting log-normalized matrices."""
-  if "counts" in adata.layers:
-    if _matrix_is_nonnegative_integer(adata.layers["counts"]):
-      return _copy_matrix(adata.layers["counts"]), 'layers["counts"]'
-    logger.warning('Ignoring layers["counts"] because it is not a non-negative integer matrix')
+  if not adata.var_names.is_unique:
+    raise ValueError("CellCharter requires unique gene names to align raw counts")
+  for layer in ("counts", "raw_counts"):
+    if layer in adata.layers:
+      if _matrix_is_nonnegative_integer(adata.layers[layer]):
+        return _copy_matrix(adata.layers[layer]), f'layers["{layer}"]'
+      logger.warning(f'Ignoring layers["{layer}"] because it lacks valid non-negative integer counts')
 
   if adata.raw is not None:
     raw_var_names = pd.Index(adata.raw.var_names.astype(str))
     var_names = pd.Index(adata.var_names.astype(str))
-    if var_names.isin(raw_var_names).all():
+    if raw_var_names.is_unique and var_names.isin(raw_var_names).all():
       raw_x = adata.raw.X if raw_var_names.equals(var_names) else adata.raw[:, var_names].X
       if _matrix_is_nonnegative_integer(raw_x):
         return _copy_matrix(raw_x), "raw.X (aligned to adata.var_names)"
       logger.warning("Ignoring raw.X because it is not a non-negative integer matrix")
     else:
       missing = var_names[~var_names.isin(raw_var_names)]
-      logger.warning(f"Ignoring raw.X because {len(missing)} adata genes are absent from raw.var_names")
+      logger.warning(f"Ignoring raw.X: gene names must be unique and aligned ({len(missing)} genes absent)")
 
   if _matrix_is_nonnegative_integer(adata.X):
     return _copy_matrix(adata.X), "X"
 
   raise ValueError(
     'No valid raw counts were found. Expected non-negative, approximately integer values in '
-    'layers["counts"], an aligned raw.X, or X; log-normalized values cannot be used as scVI counts.'
+    'layers["counts"], layers["raw_counts"], an aligned raw.X, or X, with positive counts present. '
+    'Save barcode/gene-aligned original counts in layers["counts"]; normalized values cannot replace scVI counts.'
   )
 
 
@@ -288,55 +292,22 @@ original_obs_names = pd.Index(original_table.obs_names.astype(str))
 original_uns = deepcopy(original_table.uns)
 original_spatial = original_table.obsm["spatial"].copy() if "spatial" in original_table.obsm else None
 spatialdata_attrs, annotated_regions = _validate_spatial_annotations(concatenated_sdata, original_table)
-image_elements = list(concatenated_sdata.images.keys())
-shape_elements = list(concatenated_sdata.shapes.keys())
-valid_coord_systems = sorted(concatenated_sdata.coordinate_systems)
-if len(valid_coord_systems) == 0:
-  raise ValueError("SpatialData input has no coordinate system for spatial neighbor construction")
-if len(valid_coord_systems) > 1:
-  systems = [s for s in valid_coord_systems if args.image_type in s]
-  if len(systems) == 0:
-    systems = valid_coord_systems
-else:
-  systems = valid_coord_systems
-if len(image_elements) > 1:
-  images = [i for i in image_elements if args.image_type in i]
-  if len(images) == 0:
-    images = image_elements
-else:
-  images = image_elements
-if len(shape_elements) > 1 and type != "visium":
-  shapes = [s for s in shape_elements if args.shape_type in s]
-  if len(shapes) == 0:
-    shapes = shape_elements
-else:
-  shapes = shape_elements
-
-if channel == "compare_analysis" and len(systems) > 1:
-  adata_list = []
-  for s1 in systems:
-    data = to_legacy_anndata(
-      concatenated_sdata,
-      include_images=False,
-      coordinate_system=s1,
-      table_name=table_key,
-    )
-    if args.sample_col and args.sample_col not in data.obs.columns:
-      data.obs[args.sample_col] = s1
-    data.obsm['spatial'][:, 1] = np.max(data.obsm['spatial'][:, 1]) - data.obsm['spatial'][:, 1]
-    adata_list.append(data)
-  adata = ad.concat(adata_list, axis=0, merge='same', pairwise=True, index_unique=None)
-  # The concatenated object owns the data needed below; release per-sample copies.
-  del adata_list, data
-else:
-  coord_system = systems[0] if len(systems) > 0 else None
-  point_annotated = any(region in concatenated_sdata.points for region in annotated_regions)
-  adata = to_legacy_anndata(
+panels = spatial_region_panels(concatenated_sdata, original_table, args.image_type)
+adata_list = []
+for region, mode, element, coord_system, image in panels:
+  data = to_legacy_anndata(
     concatenated_sdata,
-    include_images=not point_annotated,
+    include_images=len(panels) == 1 and mode != "point",
     coordinate_system=coord_system,
     table_name=table_key,
+    region_name=region,
+    image_name=image,
   )
+  if channel == "compare_analysis" and len(panels) > 1:
+    data.obsm['spatial'][:, 1] = np.max(data.obsm['spatial'][:, 1]) - data.obsm['spatial'][:, 1]
+  adata_list.append(data)
+adata = adata_list[0] if len(adata_list) == 1 else ad.concat(adata_list, axis=0, merge='same', pairwise=True, index_unique=None)
+del adata_list, data
 adata = _restore_table_identity(adata, original_obs_names, original_uns)
 del original_table, original_uns
 gc.collect()
@@ -354,7 +325,13 @@ logger.info(
   f"X normalization applied={x_contains_counts}"
 )
 
-if channel == "compare_analysis":
+multi_sample = "sample" in adata.obs and adata.obs["sample"].nunique() > 1
+use_sample_groups = channel == "compare_analysis" or multi_sample
+if multi_sample and (args.sample_col not in adata.obs or
+    adata.obs.groupby(args.sample_col, observed=True)["sample"].nunique().max() > 1):
+  logger.warning("Using obs['sample'] to keep independent tissues separate")
+  args.sample_col = "sample"
+if use_sample_groups:
   if not args.sample_col:
     raise ValueError("--sample_col is required for compare_analysis")
   if args.sample_col not in adata.obs.columns and "library_id" in adata.obs.columns:
@@ -368,7 +345,7 @@ if channel == "compare_analysis":
   adata.obs[args.sample_col] = pd.Categorical(adata.obs[args.sample_col])
   adata.uns["spatial"] = {str(s): {} for s in adata.obs[args.sample_col].cat.categories}
 
-if channel == "compare_analysis":
+if use_sample_groups:
   scvi.model.SCVI.setup_anndata(adata, layer="counts", batch_key=args.sample_col)
 else:
   scvi.model.SCVI.setup_anndata(adata, layer="counts")
@@ -387,7 +364,7 @@ adata.obsm['X_scVI'] = model.get_latent_representation(adata).astype(np.float32)
 del model
 gc.collect()
 
-if channel == "compare_analysis":
+if use_sample_groups:
   log_step(logger, 4, 7, "building spatial neighbors for compare analysis")
   sq.gr.spatial_neighbors(adata, library_key=args.sample_col, coord_type='generic', delaunay=True, spatial_key='spatial', percentile=99)
   spatial_graph = adata.obsp["spatial_connectivities"].tocoo()
@@ -419,7 +396,7 @@ log_step(logger, 5, 7, "running CellCharter spatial clustering")
 autok.fit(adata, use_rep='X_cellcharter')
 cc.pl.autok_stability(autok)
 plt.savefig(
-  os.path.join(dir_path, f"{sample_id}_celchar.png"),
+  os.path.join(dir_path, f"{sample_id}_cellcharter_stability.png"),
   dpi=300,
   bbox_inches='tight')
 plt.close()
@@ -432,14 +409,14 @@ analysis_parameters = {
   "best_k": best_k,
   "random_seed": RANDOM_SEED,
   "counts_source": counts_source_name,
-  "scvi_batch_key": args.sample_col if channel == "compare_analysis" else "",
+  "scvi_batch_key": args.sample_col if use_sample_groups else "",
   "spatial_coord_type": "generic",
   "spatial_delaunay": True,
   "spatial_percentile": 99,
-  "spatial_library_key": args.sample_col if channel == "compare_analysis" else "",
+  "spatial_library_key": args.sample_col if use_sample_groups else "",
   "aggregate_n_layers": 3,
   "aggregate_use_rep": "X_scVI",
-  "aggregate_sample_key": args.sample_col if channel == "compare_analysis" else "",
+  "aggregate_sample_key": args.sample_col if use_sample_groups else "",
   "autok_min_cluster": 2,
   "autok_max_cluster": args.max_cluster,
   "autok_max_runs": 10,
@@ -587,109 +564,11 @@ def select_elements(items, keyword):
         return list(items)
     selected = [item for item in items if keyword in item]
     return selected if selected else list(items)
-sample_cnt=adata.obs["sample"].astype(str).nunique() if "sample" in adata.obs else 1
 adata = _sanitize_obs_index_name(adata)
 concatenated_sdata[table_key] = adata
 log_step(logger, 6, 7, "rendering CellCharter spatial plots")
-active_vis_mode = "shape" if len(getattr(concatenated_sdata, "shapes", {})) > 0 else "point"
-image_elements = list(concatenated_sdata.images.keys())
-shape_elements = list(concatenated_sdata.shapes.keys())
-point_elements = list(concatenated_sdata.points.keys())
-valid_coord_systems = sorted(concatenated_sdata.coordinate_systems)
-image_counts=len(image_elements)//sample_cnt
-shape_count=len(shape_elements)//sample_cnt
-shapes=shape_elements
-images=[]
-systems=[]
-images = select_elements(image_elements, "hires")
-systems = select_elements(valid_coord_systems, "hires")
-region_name = adata.uns.get("spatialdata_attrs", {}).get("region")
-if isinstance(region_name, (list, tuple)):
-  region_name = region_name[0] if region_name else None
-active_vis_mode, visual_region_name = resolve_visual_target(concatenated_sdata, region_name, "auto")
-point_visual_elements = []
-if active_vis_mode == "point":
-    point_visual_elements = select_elements(point_elements, region_name)
-    if not point_visual_elements:
-        point_visual_elements = [visual_region_name] if visual_region_name in getattr(concatenated_sdata, "points", {}) else point_elements
-    for current_visual_region in point_visual_elements:
-      source_points = concatenated_sdata.points[current_visual_region]
-      points_df = source_points.compute() if hasattr(source_points, "compute") else source_points.copy()
-      points_df = points_df.copy()
-      region_key = spatialdata_attrs.get("region_key")
-      local_obs = adata.obs.loc[adata.obs[region_key].astype(str).eq(current_visual_region)] if region_key in adata.obs else adata.obs
-      instance_key = spatialdata_attrs["instance_key"]
-      point_ids = points_df[instance_key].astype(str) if instance_key in points_df.columns else pd.Series(points_df.index.astype(str), index=points_df.index)
-      labels = pd.Series(local_obs[args.cellcharter_col].astype(str).to_numpy(), index=local_obs[instance_key].astype(str))
-      points_df[args.cellcharter_col] = point_ids.map(labels).fillna("unassigned").astype("category")
-      points_df = points_df.dropna(subset=["x", "y"])
-      concatenated_sdata.points[current_visual_region] = PointsModel.parse(
-        points_df.sort_index(),
-        coordinates={"x": "x", "y": "y"},
-        transformations=get_transformation(source_points, get_all=True),
-      )
-
-if not images:
-  sys = systems[0] if systems else "global"
-  current_visual_region = visual_region_name
-  if active_vis_mode == "point" and point_visual_elements:
-    current_visual_region = point_visual_elements[0]
-  fig, ax = plt.subplots(figsize=(10, 10))
-  if active_vis_mode == "shape":
-    concatenated_sdata.pl.render_shapes(
-      visual_region_name, color=args.cellcharter_col, table_name=table_key,
-      outline_alpha=0, fill_alpha=1,
-    ).pl.show(ax=ax, coordinate_systems=sys, title=str(sample_id))
-  else:
-    concatenated_sdata.pl.render_points(
-      current_visual_region, color=args.cellcharter_col, size=2.5, alpha=0.8,
-    ).pl.show(ax=ax, coordinate_systems=sys, title=str(sample_id))
-  plt.savefig(os.path.join(dir_path, f"{sample_id}_spatial_Clusters.png"), dpi=300, bbox_inches='tight')
-  plt.close()
-else:
-  for i in range(sample_cnt):
-      sys = systems[0] if len(systems) < 2 else systems[i]
-      title = images[i].replace("_hires_image", "")
-      current_visual_region = visual_region_name
-      if active_vis_mode == "point" and len(point_visual_elements) > 0:
-        current_visual_region = point_visual_elements[0] if len(point_visual_elements) < 2 else point_visual_elements[min(i, len(point_visual_elements) - 1)]
-      fig, axes = plt.subplots(2, 1, figsize=(20, 13))
-      axes = np.ravel(axes)
-      concatenated_sdata.pl.render_images(images[i]).pl.show(
-        ax=axes[0],
-        title="image",
-        coordinate_systems=sys,
-      )
-      if active_vis_mode == "shape":
-        concatenated_sdata.pl.render_images(images[i]).pl.render_shapes(
-          shapes[i],
-          color=args.cellcharter_col,
-          table_name=table_key,
-          outline_alpha=0,
-          fill_alpha=1,
-        ).pl.show(
-          ax=axes[1],
-          coordinate_systems=sys,
-          title=title,
-        )
-      else:
-        concatenated_sdata.pl.render_images(images[i]).pl.render_points(
-          current_visual_region,
-          color=args.cellcharter_col,
-          size=2.5,
-          alpha=0.8,
-        ).pl.show(
-          ax=axes[1],
-          coordinate_systems=sys,
-          title=title,
-        )
-      plt.savefig(
-        os.path.join(dir_path, f"{sample_id}_{images[i]}_Clusters.png"),
-        dpi=300,
-        bbox_inches='tight')
-      plt.close()
-
-
+plot_spatial_clusters(concatenated_sdata, table_key, args.cellcharter_col,
+                      dir_path, sample_id, image_type=args.image_type, overlay=True)
 
 export_cluster_csv(
   concatenated_sdata if concatenated_sdata is not None else adata,

@@ -18,8 +18,8 @@ rule reannotation_rule:
     csv=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "celltype_annotations.csv"),
     proportion_png=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "celltype_proportion.png"),
     proportion_tsv=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "celltype_proportion.composition.tsv"),
-    umap_png=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "umap_recluster.png"),
-    spatial_png=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "spatial_clusters.png")
+    umap_png=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "umap_annotations.png"),
+    spatial_png=os.path.join(results_folder, "{sample}", "reannotation", "{subset}", "spatial_annotations.png")
   threads: workflow_threads
   params:
     sample_id=lambda wildcards: wildcards.subset,

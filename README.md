@@ -73,7 +73,7 @@
 
 ## Basic Installation
 
-The commands below describe version 0.0.5. Until 0.0.5 reaches PyPI and Bioconda, use the source option. All routes require Linux and a fresh Conda environment.
+The commands below describe version 0.0.6. PyPI installation requires that release to be published; the Bioconda option requires its corresponding channel update. Until then, use the available PyPI release or the source option. All routes require Linux and a fresh Conda environment.
 
 ### Option 1. PyPI (recommended)
 
@@ -83,15 +83,14 @@ conda create -n spatialsnake_env --override-channels -c conda-forge -c bioconda 
 conda activate spatialsnake_env
 
 conda install --override-channels -c conda-forge -c bioconda \
-  r-optparse r-tidyverse r-future r-jsonlite r-rcolorbrewer r-patchwork \
-  r-cowplot r-pheatmap r-seurat r-remotes r-biocmanager r-presto r-nmf \
-  r-circlize r-ggpubr -y
-conda install --override-channels -c conda-forge -c bioconda \
+  python=3.12.11 snakemake-minimal=9.8.1 r-base=4.4.0 \
+  r-optparse r-dplyr r-ggplot2 r-readr r-ragg \
+  r-seurat r-remotes r-biocmanager r-presto r-nmf r-ggpubr \
   bioconductor-annotationdbi bioconductor-complexheatmap \
   bioconductor-clusterprofiler bioconductor-edger \
   bioconductor-org.hs.eg.db bioconductor-org.mm.eg.db \
   bioconductor-rhdf5 bioconductor-biocneighbors -y
-python -m pip install spatialsnake
+python -m pip install spatialsnake==0.0.6
 spatialsnake --version
 ```
 
@@ -100,7 +99,7 @@ spatialsnake --version
 python -m pip install --index-url https://download.pytorch.org/whl/cu128 "torch==2.8.0"  # NVIDIA GPU
 # python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch==2.8.0"  # CPU-only
 
-python -m pip install "spatialsnake[extended]"
+python -m pip install "spatialsnake[extended]==0.0.6"
 spatialsnake install-packages
 python -m pip check
 ```
@@ -109,7 +108,7 @@ python -m pip check
 
 ```bash
 conda create -n spatialsnake_env --override-channels -c conda-forge -c bioconda \
-  spatialsnake=0.0.5 python=3.12.11 r-base=4.4.3 snakemake-minimal=9.8.1 -y
+  spatialsnake=0.0.6 python=3.12.11 r-base=4.4.3 snakemake-minimal=9.8.1 -y
 conda activate spatialsnake_env
 spatialsnake install-packages
 ```
@@ -127,15 +126,15 @@ spatialsnake install-packages --extended --torch-backend=auto
 
 See package details and release files on [Bioconda](https://anaconda.org/bioconda/spatialsnake).
 
-### Option 3. Source (before the 0.0.5 release)
+### Option 3. Source
 
 ```bash
 conda create -n spatialsnake_env --override-channels -c conda-forge -c bioconda \
-  python=3.12.11 r-base=4.4.3 snakemake-minimal=9.8.1 -y
+  python=3.12.11 r-base=4.4.0 snakemake-minimal=9.8.1 -y
 conda activate spatialsnake_env
 ```
 
-Install both Conda/R dependency commands from Option 1 in this environment, then continue:
+Install the Conda/R dependencies from Option 1 in this environment before using pip, then continue:
 
 ```bash
 git clone https://github.com/l-zh007/spatialsnake.git

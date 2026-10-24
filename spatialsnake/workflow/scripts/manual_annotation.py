@@ -10,7 +10,7 @@ import spatialdata as spd
 from spatialdata.models import PointsModel, TableModel
 from spatialdata.transformations import get_transformation
 import spatialdata_plot
-from spatialsnake.workflow.function.plot import cluster_proportion
+from spatialsnake.workflow.function.plot import cluster_proportion, plot_spatial_clusters
 from spatialsnake.workflow.function.stereoseq_selection import (
   extract_table_spatial_metadata,
   resolve_stereoseq_table_key,
@@ -146,109 +146,12 @@ adata.obs_names = adata.obs_names.astype(str)
 adata = sanitize_obs_index_name(adata, instance_key)
 concatenated_sdata[table] = adata
 #adata.obs[instance_key] = adata.obs_names
-sample_cnt=adata.obs["sample"].astype(str).nunique() if "sample" in adata.obs else 1
-image_elements = list(getattr(concatenated_sdata, "images", {}).keys())
-shape_elements = list(getattr(concatenated_sdata, "shapes", {}).keys())
-point_elements = list(getattr(concatenated_sdata, "points", {}).keys())
-valid_coord_systems = sorted(getattr(concatenated_sdata, "coordinate_systems", []))
-active_vis_mode, visual_region_name = resolve_visual_target(concatenated_sdata, region_name, args.vis_mode)
-point_visual_elements = []
-if active_vis_mode == "shape":
-  visual_elements = [visual_region_name] if visual_region_name in shape_elements else []
-else:
-  point_visual_elements = select_elements(point_elements, region_name)
-  if not point_visual_elements:
-    point_visual_elements = [visual_region_name] if visual_region_name in point_elements else point_elements
-  visual_elements = list(point_visual_elements)
-  for current_visual_region in point_visual_elements:
-    source_points = concatenated_sdata.points[current_visual_region]
-    points_df = source_points.compute() if hasattr(source_points, "compute") else source_points.copy()
-    points_df = points_df.copy()
-    region_key = adata.uns["spatialdata_attrs"].get("region_key")
-    local_obs = adata.obs.loc[adata.obs[region_key].astype(str).eq(current_visual_region)] if region_key in adata.obs else adata.obs
-    point_ids = points_df[instance_key].astype(str) if instance_key in points_df.columns else pd.Series(points_df.index.astype(str), index=points_df.index)
-    labels = pd.Series(local_obs["celltype"].astype(str).to_numpy(), index=local_obs[instance_key].astype(str))
-    points_df["celltype"] = point_ids.map(labels).fillna("unassigned").astype("category")
-    points_df = points_df.dropna(subset=["x", "y"])
-    concatenated_sdata.points[current_visual_region] = PointsModel.parse(
-      points_df.sort_index(),
-      coordinates={"x": "x", "y": "y"},
-      transformations=get_transformation(source_points, get_all=True),
-    )
-valid_coord_systems = sorted(concatenated_sdata.coordinate_systems)
-image_counts=len(image_elements)//sample_cnt
-shape_count=len(shape_elements)//sample_cnt
-shapes=[]
-images=[]
-systems=[]
-images = select_elements(image_elements, "hires")
-systems = select_elements(valid_coord_systems, "hires")
-logger.info(f"Found {len(images)} image(s), {len(shape_elements)} shape element(s), and {len(systems)} coordinate system(s)")
-shapes=shape_elements
-total = min(len(visual_elements)*sample_cnt, len(images), max(1, len(systems)))
-log_step(logger, 2, 5, f"rendering cell type spatial plots for {sample_cnt} sample(s)")
-if not images:
-  sys = systems[0] if systems else "global"
-  current_visual_region = visual_region_name
-  if active_vis_mode == "point" and point_visual_elements:
-    current_visual_region = point_visual_elements[0]
-  fig, ax = plt.subplots(figsize=(10, 10))
-  if active_vis_mode == "shape":
-    concatenated_sdata.pl.render_shapes(
-      visual_region_name, color="celltype", table_name=table,
-      outline_alpha=0, fill_alpha=1,
-    ).pl.show(ax=ax, coordinate_systems=sys, title=str(args.sample_id))
-  else:
-    concatenated_sdata.pl.render_points(
-      current_visual_region, color="celltype", size=args.point_size, alpha=0.8,
-    ).pl.show(ax=ax, coordinate_systems=sys, title=str(args.sample_id))
-  plt.savefig(os.path.join(dir_path, f"{args.sample_id}_Clusters.png"), dpi=300, bbox_inches='tight')
-  plt.close()
-else:
-  for i in range(sample_cnt):
-    sys = systems[0] if len(systems) < 2 else systems[i]
-    title = images[i].replace("_hires_image", "")
-    current_visual_region = visual_region_name
-    if active_vis_mode == "point" and len(point_visual_elements) > 0:
-      current_visual_region = point_visual_elements[0] if len(point_visual_elements) < 2 else point_visual_elements[min(i, len(point_visual_elements) - 1)]
-    current_sdata = concatenated_sdata
-    if args.image_slice and args.coord is not None:
-      current_sdata = crop0(current_sdata, sys, args.coord[0], args.coord[1], args.coord[2], args.coord[3])
-    fig, axes = plt.subplots(2, 1, figsize=(20, 13))
-    axes = np.ravel(axes)
-    current_sdata.pl.render_images(images[i]).pl.show(
-      ax=axes[0],
-      title="image",
-      coordinate_systems=sys,
-    )
-    if active_vis_mode == "shape":
-      current_sdata.pl.render_shapes(
-        shapes[i],
-        color="celltype",
-        table_name=table,
-        outline_alpha=0,
-        fill_alpha=1,
-      ).pl.show(
-        ax=axes[1],
-        coordinate_systems=sys,
-        title=title,
-      )
-    else:
-      current_sdata.pl.render_images(images[i]).pl.render_points(
-        current_visual_region,
-        color="celltype",
-        size=args.point_size,
-        alpha=0.8,
-      ).pl.show(
-        ax=axes[1],
-        coordinate_systems=sys,
-        title=title,
-      )
-    plt.savefig(
-      os.path.join(dir_path, f"{images[i]}_Clusters.png"),
-      dpi=300,
-      bbox_inches='tight')
-    plt.close()
+log_step(logger, 2, 5, "rendering cell type spatial plots")
+plot_spatial_clusters(
+  concatenated_sdata, table, "celltype", dir_path, args.sample_id,
+  vis_mode=args.vis_mode, point_size=args.point_size,
+  coord=args.coord if args.image_slice else None,
+)
 
 log_step(logger, 3, 5, "saving cell type proportion plot")
 cluster_proportion(
@@ -276,8 +179,10 @@ if "X_umap" in adata.obsm:
 
 if "n_genes_by_counts" in adata.obs.columns:
   sc.pl.violin(adata, ["n_genes_by_counts"], groupby="celltype", rotation=90, show=False)
+  plt.ylabel("Detected genes")
+  plt.title("Detected genes by annotation")
   plt.savefig(
-    os.path.join(dir_path, f"{args.sample_id}_gene_enrich.png"),
+    os.path.join(dir_path, f"{args.sample_id}_annotation_summary.png"),
     dpi=300,
     bbox_inches='tight'
   )
@@ -286,10 +191,11 @@ else:
   counts = adata.obs["celltype"].astype(str).value_counts().sort_values()
   plt.figure(figsize=(10, max(6, len(counts) * 0.3)))
   counts.plot(kind="barh")
-  plt.title("celltype overview")
+  plt.title("Observation counts by annotation")
+  plt.xlabel("Observation count")
   plt.tight_layout()
   plt.savefig(
-    os.path.join(dir_path, f"{args.sample_id}_gene_enrich.png"),
+    os.path.join(dir_path, f"{args.sample_id}_annotation_summary.png"),
     dpi=300,
     bbox_inches='tight'
   )
@@ -299,6 +205,7 @@ save_cell_cluster_csv(adata, os.path.join(dir_path, f"{args.sample_id}_cell_clus
 
 log_step(logger, 5, 5, f"saving annotated data to {args.output_zarr_path}")
 adata.obs['cell_id'] = adata.obs['cell_id'].astype(str)
+adata.obs[instance_key] = adata.obs[instance_key].astype(str)
 adata.obs['region'] = adata.obs['region'].astype('category')
 concatenated_sdata[table] = adata
 concatenated_sdata.write(os.path.join(args.output_zarr_path), overwrite=True)

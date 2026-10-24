@@ -5,6 +5,7 @@ import warnings
 import json
 import re
 import hashlib
+from spatialsnake.workflow.function.config_validator import OPTION_ALIASES, RUNPIPE_ALIASES
 warnings.filterwarnings("ignore")
 import logging
 from spatialsnake.workflow.function.get_sample import (
@@ -71,7 +72,8 @@ cellchat_compare_gene_plot_type = config.get("cellchat_compare_gene_plot_type", 
 cellchat_compare_pair_lr_use = config.get("cellchat_compare_pair_lr_use", "")
 cellchat_compare_save_merged = config.get("cellchat_compare_save_merged", True)
 
-option = config.get("option","integrate")
+option = OPTION_ALIASES.get(config.get("option", "integrate"), config.get("option", "integrate"))
+config["option"] = option
 
 channel = config.get("channel", "single_analysis")
 
@@ -109,7 +111,7 @@ n_top_genes = config.get("n_top_genes", 1000)
 batch_method = config.get("batch_method", None)
 n_comps = config.get("n_comps", 50)
 recluster_resolution = config.get("recluster_resolution", 0.8)
-recluster_n_top_genes = config.get("recluster_n_top_genes", 2000)
+recluster_n_top_genes = config.get("recluster_n_top_genes", 0)
 recluster_neighbors = config.get("recluster_neighbors", 15)
 recluster_n_pcs = config.get("recluster_n_pcs", 30)
 recluster_marker_method = config.get("recluster_marker_method", "wilcoxon")
@@ -145,7 +147,8 @@ else:
     raise ValueError("compare_algorithm must be DESeq2 or edgeR")
 cell_focus = config.get("cell_focus", "all")
 device = config.get("device", "auto")
-runpipe = config.get("runpipe", "pysenic")
+runpipe = RUNPIPE_ALIASES.get(config.get("runpipe", "pyscenic"), config.get("runpipe", "pyscenic"))
+config["runpipe"] = runpipe
 counts_data = config.get("counts_data", "hgnc_symbol")
 iterations = config.get("iterations", 1000)
 threshold = config.get("threshold", 0.1)
@@ -363,7 +366,7 @@ def load_sample_input_dir_map(sample_list_file):
 sample_input_dir_map = load_sample_input_dir_map(sample_list)
 sample_stereoseq_input_spec_map = (
     get_stereoseq_input_spec_map(sample_list, channel)
-    if run_type == "stereoseq" and option != "compare_stage"
+    if run_type == "stereoseq" and option in consistent_option and anno_algorithm == "manual"
     else {}
 )
 
@@ -472,7 +475,7 @@ else:
         elif channel == "compare_analysis":
             derived_name = os.path.splitext(os.path.basename(downstream_file[0]))[0]
             banksy_sample_id = derived_name if derived_name else "concatenated_sdata"
-    if option == "advance_analysis" and (runpipe == "cellPhoneDB" or runpipe == "pysenic" or runpipe == "liana"):
+    if option == "advance_analysis" and (runpipe == "cellPhoneDB" or runpipe == "pyscenic" or runpipe == "liana"):
         if not cellPhoneDB_input:
             if len(downstream_file) == 0:
                 sys.exit("\nadvance_analysis: 未提供 CellPhoneDB 输入数据路径")
@@ -794,8 +797,8 @@ def parameter_output(samples, option):
                 outs += expand(os.path.join(results_folder, f"{cpdb_sample_id}", "cellPhoneDB_results", f"{cpdb_sample_id}_heatmap.png"))
             if channel == "compare_analysis":
                 outs.append(os.path.join(results_folder, "merge_data", "cellPhoneDB_results", "concentrate_heatmap.png"))
-        elif runpipe == "pysenic":
-            outs.append(os.path.join(results_folder, "pysenic_results", f"{cpdb_sample_id}.aucell.loom"))
+        elif runpipe == "pyscenic":
+            outs.append(os.path.join(results_folder, "pyscenic_results", f"{cpdb_sample_id}.aucell.loom"))
         elif runpipe == "liana":
             liana_output_dir = os.path.join(results_folder, f"{cpdb_sample_id}", "liana_output")
             outs += [os.path.join(liana_output_dir, name) for name in (
@@ -938,7 +941,7 @@ elif option == "compare_stage":
 elif option == "advance_analysis":
     if runpipe == "cellPhoneDB":
         include: "rules/cellPhoneDB.smk"
-    elif runpipe == "pysenic":
+    elif runpipe == "pyscenic":
         input_pysenic = downstream_file[0]
         print(input_pysenic)
         include: "rules/py_senic.smk"

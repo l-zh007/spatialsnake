@@ -94,12 +94,15 @@ def parse_optional_float(value):
     return float(text)
 
 
-def ensure_spatial_coords(adata):
+def ensure_spatial_coords(adata, sdata=None):
     if "spatial" not in adata.obsm:
         if "array_row" in adata.obs.columns and "array_col" in adata.obs.columns:
             adata.obsm["spatial"] = np.vstack(
                 (adata.obs["array_row"].to_numpy(), adata.obs["array_col"].to_numpy())
             ).T
+        elif sdata is not None:
+            from spatialsnake.workflow.function.splitting import _linked_coordinates
+            adata.obsm["spatial"] = _linked_coordinates(sdata, adata, np.arange(adata.n_obs))
         else:
             raise ValueError("Missing spatial coordinates in adata.obsm['spatial'] or obs array_row/array_col")
     if "array_row" not in adata.obs.columns:
@@ -405,8 +408,8 @@ def plot_spatial_clusters(adata, cluster_col, path, max_points):
     ax.set_aspect("equal", adjustable="box")
     ax.invert_yaxis()
     ax.set_title(f"BANKSY spatial clusters{title_suffix}")
-    ax.set_xlabel("array_row")
-    ax.set_ylabel("array_col")
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
     if len(categories) <= 30:
         ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), markerscale=4, frameon=False, fontsize=7)
     fig.savefig(path, dpi=300, bbox_inches="tight", facecolor="white")
@@ -463,7 +466,7 @@ np.random.seed(banksy_seed)
 
 log_step(logger, 1, 5, "loading spatial input")
 adata, sdata, table_key = load_spatial_input(args.input_dir)
-coord_keys = ensure_spatial_coords(adata)
+coord_keys = ensure_spatial_coords(adata, sdata)
 output_dir = os.path.dirname(args.output_zarr_path) or "."
 results_dir = os.path.join(output_dir, "banksy_results")
 os.makedirs(results_dir, exist_ok=True)

@@ -340,12 +340,12 @@ else:
   figure_width = max(5, 0.35 * distribution.shape[1] + 2)
   fig, ax = plt.subplots(figsize=(figure_width, figure_height))
   image = ax.imshow(distribution.to_numpy(), cmap="hot", interpolation="nearest", aspect="auto")
-  ax.set_title("Cell Distribution Across Clusters")
+  ax.set_title("Observation counts by cluster")
   ax.set_xlabel("Cluster")
   ax.set_ylabel(distribution_key)
   ax.set_xticks(range(distribution.shape[1]), distribution.columns.astype(str), rotation=90)
   ax.set_yticks(range(distribution.shape[0]), distribution.index.astype(str))
-  fig.colorbar(image, ax=ax, fraction=0.03, pad=0.02)
+  fig.colorbar(image, ax=ax, fraction=0.03, pad=0.02, label="Observation count")
   fig.tight_layout()
   fig.savefig(
     os.path.join(dir_path, f"{args.sample_id}Cell_Distribution_Across_Clusters.png"),

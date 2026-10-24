@@ -318,7 +318,8 @@ plot_volcano <- function(results, path) {
       colour = NULL
     ) +
     theme_publication() +
-    theme(legend.position = "top")
+    theme(legend.position = "top") +
+    guides(colour = guide_legend(nrow = 2, byrow = TRUE))
   if (nrow(label_data) > 0L) {
     p <- p + ggrepel::geom_text_repel(
       data = label_data,

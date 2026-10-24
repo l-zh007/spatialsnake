@@ -13,6 +13,7 @@ if script_dir in sys.path:
     sys.path.remove(script_dir)
 import liana as li
 from matplotlib import pyplot as plt
+from plotnine import labs, theme, element_text
 from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
 
 plt.rcParams["figure.dpi"] = 50
@@ -225,12 +226,15 @@ def filter_liana_results(res_df):
     target_values = split_values(args.target_celltypes)
     pair_values = parse_pairs(args.pairs)
     if not cell_pair_values and not source_values and not target_values and not pair_values:
+        if any(str(value or "").strip() for value in (
+            args.cell_pairs, args.source_celltypes, args.target_celltypes, args.pairs
+        )):
+            raise ValueError("No valid LIANA filters were parsed; use source|target and ligand|receptor pairs")
         return res_df.copy(), False
 
     filtered = res_df.copy()
     requested_filters = []
     cell_pair_filter_applied = False
-    used_fallback = False
 
     if cell_pair_values:
         requested_filters.append("directed cell pair")
@@ -247,11 +251,10 @@ def filter_liana_results(res_df):
                 cell_pair_filter_applied = True
                 logger.info(f"Using {filtered.shape[0]} LIANA rows after directed cell-pair filtering.")
             else:
-                logger.warning("None of the requested liana_cell_pairs were found; trying source/target filters or automatic selection.")
-                used_fallback = True
+                return candidate, False
         else:
             logger.warning("User requested liana_cell_pairs, but LIANA results have no source/target columns.")
-            used_fallback = True
+            return filtered.iloc[:0].copy(), False
 
     if not cell_pair_filter_applied and source_values:
         requested_filters.append("source")
@@ -260,6 +263,7 @@ def filter_liana_results(res_df):
             filtered = filtered[filtered["source"].isin(source_values)]
         else:
             logger.warning("User requested liana_source_celltypes, but LIANA results have no 'source' column.")
+            return filtered.iloc[:0].copy(), False
     if not cell_pair_filter_applied and target_values:
         requested_filters.append("target")
         if "target" in filtered.columns:
@@ -267,9 +271,9 @@ def filter_liana_results(res_df):
             filtered = filtered[filtered["target"].isin(target_values)]
         else:
             logger.warning("User requested liana_target_celltypes, but LIANA results have no 'target' column.")
+            return filtered.iloc[:0].copy(), False
     if pair_values:
         requested_filters.append("ligand-receptor pair")
-        before_pair_filter = filtered.copy()
         ligand_col = first_existing_column(filtered, ["ligand", "ligand_complex", "source_genesymbol", "ligand_symbol"])
         receptor_col = first_existing_column(filtered, ["receptor", "receptor_complex", "target_genesymbol", "receptor_symbol"])
         if ligand_col and receptor_col:
@@ -279,20 +283,18 @@ def filter_liana_results(res_df):
             filtered = filtered[
                 filtered.apply(lambda row: (row[ligand_col], row[receptor_col]) in pair_set, axis=1)
             ]
-            if filtered.shape[0] == 0 and before_pair_filter.shape[0] > 0:
-                logger.warning("None of the requested liana_pairs were found; using automatic ligand-receptor ranking within the selected cell scope.")
-                filtered = before_pair_filter
         else:
             logger.warning("User requested liana_pairs, but ligand/receptor columns were not found in LIANA results.")
+            return filtered.iloc[:0].copy(), False
     if filtered.shape[0] == 0:
         logger.warning(
             "No LIANA results matched user-defined "
             + ", ".join(requested_filters)
-            + "; falling back to automatically selected top interactions."
+            + "; no interactions will be substituted."
         )
-        return res_df.copy(), True
+        return filtered, False
     logger.info(f"Using {filtered.shape[0]} LIANA rows after user-defined filtering.")
-    return filtered, used_fallback
+    return filtered, False
 
 def summarize_cell_pairs(res_df, magnitude, specificity):
     columns = [
@@ -522,37 +524,37 @@ def plot_results(adata, method_name, uns_key, output_dir):
     sorted_df = sort_liana_results(res_df, magnitude, specificity)
     top_n = max(1, int(args.top_n))
     top_limit = min(max(top_n * max(1, len(celltypes)), top_n), len(sorted_df))
-    top_df = sorted_df.head(top_limit).copy()
-    top_df.to_csv(top_csv, index=False)
 
-    filtered_df, used_fallback = filter_liana_results(sorted_df)
+    filtered_df, _ = filter_liana_results(sorted_df)
     filtered_df = sort_liana_results(filtered_df, magnitude, specificity)
     pair_summary = summarize_cell_pairs(filtered_df, magnitude, specificity)
     pair_summary.to_csv(pair_summary_csv, index=False)
     plot_pair_heatmap(pair_summary, heatmap_path)
     pvalue_filter_applied = False
-    if specificity and specificity in filtered_df.columns and is_pvalue_column(specificity):
+    empty_message = "No LIANA interactions matched the selected filters"
+    if not filtered_df.empty and specificity and specificity in filtered_df.columns and is_pvalue_column(specificity):
         sig_df = filtered_df[pd.to_numeric(filtered_df[specificity], errors="coerce") <= float(args.pvalue)].copy()
-        if sig_df.shape[0] > 0:
-            filtered_df = sig_df
-            pvalue_filter_applied = True
-        else:
+        filtered_df = sig_df
+        pvalue_filter_applied = True
+        if sig_df.shape[0] == 0:
+            empty_message = f"No LIANA interactions passed p <= {args.pvalue}"
             logger.warning(
                 f"No LIANA interactions passed liana_pvalue <= {args.pvalue}; "
-                "plots will show the best available non-significant interactions."
+                "no significant interactions will be plotted."
             )
     plot_limit = min(max(top_n * max(1, len(celltypes)), top_n), len(filtered_df))
     res_df = filtered_df.head(plot_limit).copy()
+    filtered_df.head(top_limit).to_csv(top_csv, index=False)
     res_df.to_csv(plot_data_csv, index=False)
 
     if res_df.shape[0] == 0:
         logger.warning("Skip LIANA plotting: no interactions available after filtering.")
-        save_placeholder_plot(dotplot_path, "No LIANA interactions available after filtering")
-        save_placeholder_plot(tileplot_path, "No LIANA interactions available after filtering")
-        save_placeholder_plot(gene_expression_path, "No LIANA interactions available after filtering")
+        for path in (dotplot_path, tileplot_path, gene_expression_path, heatmap_path):
+            save_placeholder_plot(path, empty_message)
+        circle_path = os.path.join(output_dir, "circle.png")
+        if os.path.exists(circle_path):
+            os.remove(circle_path)
         return
-    if used_fallback:
-        logger.warning("LIANA plots use automatic top interactions because custom filters produced no matches.")
 
     plot_uns_key = f"{uns_key}__plot"
     adata.uns[plot_uns_key] = res_df
@@ -573,16 +575,15 @@ def plot_results(adata, method_name, uns_key, output_dir):
     filter_fun = None
     inverse_size = False
     orderby_ascending = False
-    inverse_score = False
+    inverse_score = bool(magnitude and is_rank_column(magnitude))
     if specificity and specificity in res_df.columns and is_pvalue_column(specificity) and pvalue_filter_applied:
         def filter_fun(x):
             return x[specificity] <= float(args.pvalue)
         inverse_size = True
         orderby_ascending = True
-        if method_name == "cellphonedb":
-            inverse_score = True
     elif specificity and specificity in res_df.columns and is_rank_column(specificity):
         orderby_ascending = True
+        inverse_size = True
     size_key = specificity if specificity else magnitude
     plot_celltypes = [cell_type for cell_type in celltypes if cell_type in set(source_labels + target_labels)]
     dotplot_fig = li.pl.dotplot(
@@ -592,10 +593,14 @@ def plot_results(adata, method_name, uns_key, output_dir):
         inverse_size=inverse_size,
         source_labels=source_labels,
         target_labels=target_labels,
-        figure_size=(max(12, len(target_labels) * 1.2), max(8, len(source_labels) * 0.8)),
+        figure_size=(max(12, len(source_labels) * 2.5), max(8, len(target_labels) * 0.8)),
         filter_fun=filter_fun,
         uns_key=plot_uns_key
     )
+    dotplot_fig = dotplot_fig + theme(strip_text_x=element_text(size=10), plot_margin=0.03)
+    if inverse_size:
+        score_label = "P" if is_pvalue_column(size_key) else "rank"
+        dotplot_fig = dotplot_fig + labs(size=f"−log10({score_label} + ε)")
     dotplot_fig.save(dotplot_path, dpi=300)
     if {"ligand_means", "receptor_means", "ligand_props", "receptor_props"}.issubset(res_df.columns):
         tile_fill = "means"

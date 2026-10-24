@@ -58,7 +58,7 @@ def QC_plot(type,sdata,zarr_name):
   sc.pp.calculate_qc_metrics(
       adata, 
       qc_vars=["mt", "ribo", "hb"], 
-      percent_top=(10, 20, 50, 150),
+      percent_top=[n for n in (10, 20, 50, 150) if n <= adata.n_vars],
       inplace=True, 
       log1p=True)
   
@@ -385,48 +385,33 @@ elif type in ["Merfish", "merscope", "MERFISH"]:
       table.obs.index.name = None
     sdatas.append(sdata)
 elif type in ["stereoseq", "StereoSeq", "Stereo-seq"]:
+  specs = normalize_input_spec_list(input_specs, len(sample))
+  if len(set(specs)) > 1:
+    raise ValueError("Stereo-seq samples must use the same bin size or cellbin mode for integration")
   for i in range(len(sample)):
     sdata = spd.read_zarr(args.input_path[i])
-    logger.info(f"Loaded Stereo-seq sample {sample[i]} with {len(sdata.tables)} table(s)")
-    new_images = {}
-    for img_name in sdata.images.keys():
-        new_name = f"{sample[i]}_{img_name}"
-        new_images[new_name] = sdata.images[img_name]
-    sdata.images = new_images
-
-    new_images = {}
-    for points_name in sdata.points.keys():
-        new_name = f"{sample[i]}_{points_name}"
-        new_images[new_name] = sdata.points[points_name]
-    sdata.points = new_images
-    SHAPES_KEY = f"{sample[i]}_{points_name}"
-    new_images = {}
-    if sdata.shapes.keys():
-      for shapes_name in sdata.shapes.keys():
-          new_name = f"{sample[i]}_{shapes_name}"
-          new_images[new_name] = sdata.shapes[shapes_name]
-      sdata.shapes = new_images
-      SHAPES_KEY = f"{sample[i]}_{shapes_name}"
-    TABLE_KEY = 'segmentation_counts'
-    for table in sdata.tables.values():
-        instance_key = table.uns['spatialdata_attrs'].get("instance_key")
-        table.var_names_make_unique()
-        table.obs["sample"] = sample[i]
-        table.obs["group"]=group[i]
-        table.obs['region'] = SHAPES_KEY
-        table.obs['region'] = table.obs['region'].astype('category')
-    del table.uns['spatialdata_attrs']
-    sdata.tables={
-            TABLE_KEY: TableModel.parse(
-                table,
-                region=SHAPES_KEY,
-                region_key='region',
-                instance_key=instance_key
-            )
-        }
+    table_key = resolve_stereoseq_table_key(specs[i], sdata.tables)
+    attrs = sdata.tables[table_key].uns["spatialdata_attrs"]
+    region = attrs["region"]
+    if not isinstance(region, str):
+      region = list(region)[0]
+    sdata.images, _ = rename_elements(sdata.images, sample[i])
+    sdata.points, point_mapping = rename_elements(sdata.points, sample[i])
+    sdata.shapes, shape_mapping = rename_elements(sdata.shapes, sample[i])
+    region = shape_mapping.get(region, point_mapping.get(region, region))
+    table = sdata.tables[table_key].copy()
+    table.var_names_make_unique()
+    table.obs["sample"] = sample[i]
+    table.obs["group"] = group[i]
+    table.obs["region"] = pd.Categorical([region] * table.n_obs)
+    table.uns.pop("spatialdata_attrs", None)
+    sdata.tables = {"segmentation_counts": TableModel.parse(
+      table, region=region, region_key="region", instance_key=attrs["instance_key"])}
     sdatas.append(sdata)
 log_step(logger, 2, 4, "concatenating SpatialData objects")
 concatenated_sdata = spd.concatenate(sdatas, concatenate_tables=True)
+if any(table.n_vars == 0 for table in concatenated_sdata.tables.values()):
+  raise ValueError("Samples have no shared gene identifiers. Check gene naming and species before integration.")
 logger.info(f"Merged object contains {len(concatenated_sdata.tables)} table(s)")
 log_step(logger, 3, 4, "calculating merged quality-control plots")
 concatenated_sdata=QC_plot(type,concatenated_sdata,args.output_zarr_path)

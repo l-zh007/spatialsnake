@@ -43,6 +43,14 @@ def apply_pkg_resources_compat():
     sys.modules["pkg_resources"] = compat_module
 
 
+def apply_scipy_compat():
+    from scipy.sparse import spmatrix
+
+    # Arboreto still uses the sparse .A alias removed in SciPy 1.14.
+    if not hasattr(spmatrix, "A"):
+        spmatrix.A = property(lambda matrix: matrix.toarray())
+
+
 def main():
     if len(sys.argv) < 2:
         raise SystemExit("Usage: pyscenic_numpy_compat.py [arboreto|pyscenic] ...")
@@ -50,14 +58,17 @@ def main():
     command = sys.argv[1]
     argv = sys.argv[2:]
 
-    apply_numpy_compat()
-    apply_pkg_resources_compat()
-
     if command == "arboreto":
         from pyscenic.cli.arboreto_with_multiprocessing import main as arboreto_main
 
         sys.argv = [sys.argv[0]] + argv
         arboreto_main()
+        if "--output" in argv:
+            output = argv[argv.index("--output") + 1]
+            with open(output) as handle:
+                next(handle, None)
+                if not any(line.strip() for line in handle):
+                    raise ValueError("GRN inference produced no regulatory links; check the inference warnings above.")
         return
 
     if command == "pyscenic":
@@ -67,6 +78,12 @@ def main():
         return
 
     raise SystemExit(f"Unsupported command: {command}")
+
+
+# Also initialize compatibility when multiprocessing uses spawn.
+apply_numpy_compat()
+apply_pkg_resources_compat()
+apply_scipy_compat()
 
 
 if __name__ == "__main__":

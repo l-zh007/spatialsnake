@@ -30,7 +30,7 @@ rule annotation_manual:
     proportion_png=annotation_output(run_type, "celltype_proportion.png"),
     proportion_tsv=annotation_output(run_type, "celltype_proportion.composition.tsv"),
     umap_png=annotation_output(run_type, "{sample}_UMAP.png", "concatenated_sdata_UMAP.png"),
-    gene_enrich_png=annotation_output(run_type, "{sample}_gene_enrich.png", "concatenated_sdata_gene_enrich.png")
+    gene_enrich_png=annotation_output(run_type, "{sample}_annotation_summary.png", "concatenated_sdata_annotation_summary.png")
   threads: workflow_threads
   params:
     sample_id = lambda wildcards: "concatenated_sdata" if channel=="compare_analysis" else wildcards.sample,

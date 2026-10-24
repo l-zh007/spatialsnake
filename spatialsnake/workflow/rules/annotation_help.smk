@@ -40,7 +40,7 @@ rule annotation_help:
     # os.path.join(results_folder,"{sample}",'clustering','marker_genes_pval.csv') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'clustering','marker_genes_pval.csv') 
   threads: workflow_threads
   params:
-    sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" else wildcards.sample,
+    sample_id = lambda wildcards: "concatenated_sdata" if channel=="compare_analysis" else wildcards.sample,
     run_type = run_type,
     image_type = image_type,
     image_slice = image_slice,
@@ -84,7 +84,7 @@ rule enrich_rule:
   params:
     species = species,
     run_type = run_type,
-    sample_id = lambda wildcards: "concentrate" if channel=="compare_analysis" else wildcards.sample,
+    sample_id = lambda wildcards: "concatenated_sdata" if channel=="compare_analysis" else wildcards.sample,
     input_spec=get_stereoseq_input_spec_param
   shell:
       """

@@ -1,5 +1,6 @@
 import argparse
 import os
+import shutil
 
 import anndata as ad
 import numpy as np
@@ -246,6 +247,28 @@ def validate_rctd_input(spatial_zarr, converted_h5ad):
     )
 
 
+def prepare_reference(reference_input, reference_output):
+    if not reference_input.lower().endswith(".h5ad"):
+        return
+    reference = ad.read_h5ad(reference_input)
+    _, var_names = _validate_adata_axes(reference, "RCTD reference")
+    # Retain the existing full raw reference whenever it contains valid counts.
+    if reference.raw is not None and reference.raw.var_names.is_unique:
+        error = _count_matrix_error(reference.raw.X, reference.raw.shape)
+        if error is None:
+            shutil.copyfile(reference_input, reference_output)
+            logger.info("Using validated reference raw.X counts")
+            return
+    source, matrix, var = _validate_count_source(reference, var_names)
+    if matrix is None:
+        matrix, var = reference.raw.X, reference.raw.var.copy()
+    reference.raw = ad.AnnData(
+        X=matrix.copy(), obs=pd.DataFrame(index=reference.obs_names.copy()), var=var
+    )
+    reference.write_h5ad(reference_output)
+    logger.info("Prepared temporary RCTD reference counts from %s", source)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Validate the temporary H5AD generated for an RCTD run."
@@ -260,9 +283,16 @@ def parse_args():
         required=True,
         help="Temporary H5AD generated from the SpatialData Zarr.",
     )
-    return parser.parse_args()
+    parser.add_argument("--reference_input")
+    parser.add_argument("--reference_output")
+    args = parser.parse_args()
+    if args.reference_input and not args.reference_output:
+        parser.error("--reference_output is required with --reference_input")
+    return args
 
 
 if __name__ == "__main__":
     args = parse_args()
     validate_rctd_input(args.spatial_zarr, args.converted_h5ad)
+    if args.reference_input:
+        prepare_reference(args.reference_input, args.reference_output)

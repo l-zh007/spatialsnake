@@ -99,7 +99,7 @@ adata.var["mt"] = adata.var_names.str.startswith(("MT-", "mt-"))
 sc.pp.calculate_qc_metrics(
     adata,
     qc_vars=["mt"], 
-    percent_top=(10, 20, 50),
+    percent_top=[n for n in (10, 20, 50) if n <= adata.n_vars],
     inplace=True, 
     log1p=True
 )
@@ -210,7 +210,7 @@ logger.info(f"After filtering: {adata.n_obs} observations and {adata.n_vars} gen
 
 log_step(logger, 4, 7, "saving quality-control plots")
 sc.pl.violin(adata=adata, keys=["log1p_total_counts"], stripplot=False, inner="box",show=False, groupby="region",)
-plt.title("Total UMI by Sample")
+plt.title("Total counts by region (log1p)")
 if args.filter_dict is None and args.min_counts is not None:
   plt.axhline(
     y=np.log1p(args.min_counts),
@@ -227,7 +227,7 @@ plt.savefig(
 plt.close()
 
 sc.pl.violin(adata=adata, keys=["log1p_n_genes_by_counts"], groupby="region", stripplot=False, inner="box",show=False)
-plt.title("Total Genes by Sample")
+plt.title("Detected genes by region (log1p)")
 plt.savefig(
     os.path.join(dir_path, f"{args.sample_id}filtered_Total_Genes.png"),
     dpi=300,
@@ -235,7 +235,7 @@ plt.savefig(
 plt.close()
 
 sc.pl.violin(adata=adata, keys=["log1p_total_counts_mt"], groupby="region", stripplot=False, inner="box",show=False)
-plt.title("Mitochondrial Genes by Sample")
+plt.title("Mitochondrial counts by region (log1p)")
 plt.savefig(
   os.path.join(dir_path, f"{args.sample_id}_Mitochondrial_Genes.png"),
   dpi=300,
@@ -392,7 +392,7 @@ if run_sketch:
   adata.write(os.path.join(dir_path, "sketch.h5ad"))
   logger.info("Saved the full preprocessed query to sketch.h5ad")
 sc.pl.pca_variance_ratio(sdata, log=True, n_pcs=min(20, effective_n_comps), show=False)
-plt.title("pca_variance_ratio")
+plt.title("PCA explained variance ratio")
 plt.savefig(
     os.path.join(dir_path, f"{args.sample_id}pca_variance_ratio.png"),
     dpi=300,

@@ -7,6 +7,7 @@ import re
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pandas as pd
 from spatialdata import (
     SpatialData,
     get_centroids,
@@ -15,8 +16,8 @@ from spatialdata import (
     to_circles,
 )
 from spatialdata._core.operations._utils import transform_to_data_extent
-from spatialdata.models import Image2DModel, ShapesModel, TableModel, get_table_keys
-from spatialdata.transformations import Identity, Scale
+from spatialdata.models import Image2DModel, ShapesModel, PointsModel, TableModel, get_table_keys
+from spatialdata.transformations import Identity, Scale, get_transformation
 
 from anndata import AnnData
 from spatialsnake.workflow.function.logging_utils import setup_logger
@@ -146,21 +147,29 @@ def _legacy_points_table_to_anndata(
     include_images: bool,
     downscaled_hires_length: int,
     downscaled_lowres_length: int,
+    spot_diameter: float | None = None,
 ) -> AnnData:
     logger.info("Using points fallback for legacy AnnData conversion")
     table = sdata[table_name]
     points_element = sdata[region_name]
     adata = table.copy()
     coords = _align_points_to_table(table, points_element, instance_key)
-    spot_diameter_fullres = _infer_spot_diameter(adata, coords)
-
-    adata.obsm["spatial"] = coords
+    spot_diameter_fullres = spot_diameter if spot_diameter is not None else _infer_spot_diameter(adata, coords)
+    point_transform = get_transformation(points_element, to_coordinate_system=coordinate_system).to_affine_matrix(
+        input_axes=("x", "y"), output_axes=("x", "y"))
+    homogeneous = np.column_stack([coords, np.ones(len(coords))])
+    system_coords = (homogeneous @ point_transform.T)[:, :2]
+    adata.obsm["spatial"] = system_coords
 
     if include_images and len(sdata.images) > 0:
         adata.uns.setdefault("spatial", {})
-        hires_scale_for_coords = None
+        image_coords = None
         for image_name, image in sdata.images.items():
             try:
+                image_transform = get_transformation(image, to_coordinate_system=coordinate_system).to_affine_matrix(
+                    input_axes=("x", "y"), output_axes=("x", "y"))
+                point_to_image = np.linalg.inv(image_transform) @ point_transform
+                pixel_coords = (homogeneous @ point_to_image.T)[:, :2]
                 arr = _image_to_hwc(image)
                 hires_img, hires_scale = _downscale_image(arr, downscaled_hires_length)
                 lowres_img, lowres_scale = _downscale_image(arr, downscaled_lowres_length)
@@ -170,22 +179,22 @@ def _legacy_points_table_to_anndata(
                         "lowres": lowres_img,
                     },
                     "scalefactors": {
-                        "tissue_hires_scalef": hires_scale,
-                        "tissue_lowres_scalef": lowres_scale,
-                        "spot_diameter_fullres": spot_diameter_fullres,
+                        "tissue_hires_scalef": 1.0,
+                        "tissue_lowres_scalef": lowres_scale / hires_scale,
+                        "spot_diameter_fullres": spot_diameter_fullres * hires_scale * np.sqrt(abs(np.linalg.det(point_to_image[:2, :2]))),
                     },
                     "metadata": {
                         "source_coordinate_system": coordinate_system,
                         "fallback_from_points": True,
                     },
                 }
-                if hires_scale_for_coords is None:
-                    hires_scale_for_coords = hires_scale
+                if image_coords is None:
+                    image_coords = pixel_coords * hires_scale
             except Exception as e:
                 logger.warning(f"Failed to export image {image_name}: {e}")
 
-        if hires_scale_for_coords is not None:
-            adata.obsm["spatial"] = (coords * hires_scale_for_coords).astype(np.float32)
+        if image_coords is not None:
+            adata.obsm["spatial"] = image_coords.astype(np.float32)
 
     logger.info(f"Fallback spatial coordinates shape: {adata.obsm['spatial'].shape}")
     logger.info(f"Fallback spatial image keys: {list(adata.uns.get('spatial', {}).keys())}")
@@ -323,6 +332,8 @@ def to_legacy_anndata(
     coordinate_system: str | None = None,
     table_name: str | None = None,
     include_images: bool = False,
+    region_name: str | None = None,
+    image_name: str | None = None,
 ) -> AnnData:
     logger.info(f"Converting SpatialData to legacy AnnData; include_images={include_images}")
     """Convert a SpatialData object to a (legacy) spatial AnnData object.
@@ -407,6 +418,21 @@ def to_legacy_anndata(
         - Due to the legacy nature of the AnnData object generated, this function may not handle all the edge cases,
           please report any issue you may find.
     """
+    if region_name is not None:
+        table_name = table_name or next(iter(sdata.tables))
+        table = sdata.tables[table_name]
+        attrs = table.uns["spatialdata_attrs"]
+        table = table[table.obs[attrs["region_key"]].astype(str).eq(region_name)].copy()
+        table.uns["spatialdata_attrs"]["region"] = [region_name]
+        table.obs[attrs["region_key"]] = table.obs[attrs["region_key"]].astype("category").cat.remove_unused_categories()
+        sdata = SpatialData(
+            tables={table_name: table},
+            shapes={region_name: sdata.shapes[region_name]} if region_name in sdata.shapes else {},
+            points={region_name: sdata.points[region_name]} if region_name in sdata.points else {},
+            labels={region_name: sdata.labels[region_name]} if region_name in sdata.labels else {},
+            images=({image_name: sdata.images[image_name]} if image_name else dict(sdata.images))
+                   if include_images else {},
+        )
     DOWNSCALED_HIRES_LENGTH = 2000
     DOWNSCALED_LOWRES_LENGTH = 600
     # check that coordinate system is valid
@@ -437,6 +463,10 @@ def to_legacy_anndata(
     logger.info(f"Using table: {table_name}")
 
     table = sdata[table_name]
+    if table.obs.index.name in table.obs.columns:
+        table = table.copy()
+        table.obs.index.name = None
+        sdata.tables[table_name] = table
     (
         region,
         _,
@@ -468,6 +498,18 @@ def to_legacy_anndata(
 
     # convert polygons, multipolygons and labels to circles
     shapes = to_circles(element)
+    missing = ~table.obs[instance_key].astype(str).isin(shapes.index.astype(str))
+    if missing.any():
+        from spatialsnake.workflow.function.splitting import _linked_coordinates
+        coords = _linked_coordinates(sdata, table, np.arange(table.n_obs))
+        centers = pd.DataFrame(coords, index=table.obs[instance_key].astype(str), columns=["x", "y"])
+        points = PointsModel.parse(centers, coordinates={"x": "x", "y": "y"},
+                                   transformations=get_transformation(element, get_all=True))
+        logger.warning("Retaining %d observations without boundaries using their native centers", int(missing.sum()))
+        local = SpatialData(tables={table_name: table}, points={region_name: points}, images=dict(sdata.images))
+        return _legacy_points_table_to_anndata(local, table_name, region_name, instance_key,
+            coordinate_system, include_images, DOWNSCALED_HIRES_LENGTH, DOWNSCALED_LOWRES_LENGTH,
+            spot_diameter=float(shapes["radius"].median()) * 2)
     circles_sdata = SpatialData(tables={table_name: table}, shapes={region_name: shapes})
 
     joined_elements, new_table = join_spatialelement_table(
@@ -480,6 +522,8 @@ def to_legacy_anndata(
         "between the type of the indices of the geometries and the type of the INSTANCE_KEY column of the table."
     )
     logger.info(f"Joined table rows: {len(new_table)}")
+    if new_table.n_obs != table.n_obs:
+        raise ValueError("Spatial conversion did not preserve all table observations")
 
     sdata_pre_rasterize = SpatialData(
         tables={table_name: new_table}, shapes={region_name: joined_elements[region_name]}

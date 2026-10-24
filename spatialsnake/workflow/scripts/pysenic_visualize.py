@@ -49,6 +49,16 @@ auc_checkpoint = Path(output_dir) / f"{args.sample_id}_aucell.h5ad"
 cache_manifest = Path(output_dir) / f".{args.sample_id}.aucell_cache.json"
 
 
+def figure_pages(filename, labels, per_page):
+    path = Path(output_dir) / filename
+    for old_page in path.parent.glob(f"{path.stem}_page[0-9]*{path.suffix}"):
+        old_page.unlink()
+    for start in range(0, len(labels), per_page):
+        page = start // per_page + 1
+        target = path if page == 1 else path.with_name(f"{path.stem}_page{page:02d}{path.suffix}")
+        yield target, list(labels[start:start + per_page])
+
+
 def file_digest(path):
     digest = hashlib.sha256()
     with open(path, "rb") as stream:
@@ -315,15 +325,29 @@ if celltype_col is None:
 
 if len(regulon_cols) > 0:
   log_step(logger, 3, 5, "saving regulon activity plots")
-  sc.pl.dotplot(adata, plot_regulon_cols, groupby=celltype_col, standard_scale='var', dot_min=0.02, show=False)
-  plt.savefig(os.path.join(output_dir,f"{args.sample_id}_dotplot_regulons.png"), dpi=300, bbox_inches='tight', facecolor='white')
-  plt.close()
+  for path, targets in figure_pages(f"{args.sample_id}_dotplot_regulons.png", plot_regulon_cols, 20):
+    sc.pl.dotplot(adata, targets, groupby=celltype_col, standard_scale='var', dot_min=0.02,
+                  figsize=(14, max(4, min(16, adata.obs[celltype_col].nunique() * 0.4 + 2))), show=False)
+    plt.savefig(path, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.close()
 
 if len(regulon_cols) > 0:
   violin_targets = plot_regulon_cols if top_regulons > 0 else regulon_cols
-  sc.pl.violin(adata, keys=violin_targets, groupby=celltype_col, multi_panel=True, show=False)
-  plt.savefig(os.path.join(output_dir,f"{args.sample_id}_violin_regulons.png"), dpi=300, bbox_inches='tight', facecolor='white')
-  plt.close()
+  for path, targets in figure_pages(f"{args.sample_id}_violin_regulons.png", violin_targets, 20):
+    ncols = min(4, len(targets))
+    nrows = (len(targets) + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.2 * ncols, 3.4 * nrows), squeeze=False)
+    for ax, key in zip(axes.flat, targets):
+      sc.pl.violin(adata, keys=key, groupby=celltype_col, rotation=90, ax=ax, show=False)
+      ax.set_title(key, fontsize=9)
+      ax.set_ylabel('AUCell')
+      ax.set_xlabel('')
+      ax.tick_params(axis='x', labelsize=7)
+    for ax in list(axes.flat)[len(targets):]:
+      ax.set_visible(False)
+    fig.tight_layout()
+    fig.savefig(path, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
 
 plot_auc_heatmap_scanpy(auc_mtx, adata, groupby=celltype_col, top_genes=30, outputs=os.path.join(output_dir, f"{args.sample_id}_auc_heatmap.png"))
 
@@ -404,19 +428,15 @@ if len(regulon_cols) > 0:
     top_regs = df_z.abs().mean().sort_values(ascending=False).index
     df_heatmap = df_z[top_regs]
 
-    # Adjust figure size based on number of regulons
-    n_cols = df_heatmap.shape[1]
-    n_rows = df_heatmap.shape[0]
-    fig_width = max(12, n_cols * 0.25)
-    fig_height = max(8, n_rows * 0.5)
-
-    fig, ax1 = plt.subplots(1, 1, figsize=(fig_width, fig_height))
-    # Use linewidths=0 for cleaner look with many columns
-    sns.heatmap(df_heatmap, ax=ax1, cmap="vlag", center=0, linewidths=0, cbar_kws={'label': 'Z-score'})
-    ax1.set_ylabel('')
-    ax1.set_xlabel('')
-    fig.savefig(os.path.join(output_dir,f"{args.sample_id}_zscore_heatmap.png"), dpi=300, bbox_inches='tight')
-    plt.close()
+    vmax = max(float(np.nanmax(np.abs(df_heatmap.to_numpy()))), 1e-6)
+    for path, targets in figure_pages(f"{args.sample_id}_zscore_heatmap.png", list(top_regs), 40):
+      fig, ax1 = plt.subplots(figsize=(max(10, len(targets) * 0.35), max(4, min(16, len(df_heatmap) * 0.5))))
+      sns.heatmap(df_heatmap[targets], ax=ax1, cmap="vlag", center=0, vmin=-vmax, vmax=vmax,
+                  linewidths=0, cbar_kws={'label': 'Z-score'})
+      ax1.set_ylabel('')
+      ax1.set_xlabel('')
+      fig.savefig(path, dpi=300, bbox_inches='tight')
+      plt.close(fig)
   violin_targets = []
   if "df_z" in locals():
     if top_regulons > 0:
@@ -426,8 +446,12 @@ if len(regulon_cols) > 0:
   else:
     violin_targets = plot_regulon_cols if top_regulons > 0 else regulon_cols
   if len(violin_targets) > 0:
-    fig = sc.pl.stacked_violin(adata, violin_targets, groupby=celltype_col, return_fig=True, show=False)
-    fig.savefig(os.path.join(output_dir, f"{args.sample_id}_stacked_violin.png"), dpi=300, bbox_inches='tight', facecolor='white')
-    plt.close()
+    medians = adata.obs.groupby(celltype_col, observed=True)[violin_targets].median().to_numpy()
+    for path, targets in figure_pages(f"{args.sample_id}_stacked_violin.png", violin_targets, 20):
+      fig = sc.pl.stacked_violin(adata, targets, groupby=celltype_col, return_fig=True, show=False,
+                                 figsize=(max(8, len(targets) * 0.5 + 3), max(4, min(16, adata.obs[celltype_col].nunique() * 0.4 + 2))),
+                                 vmin=float(np.nanmin(medians)), vmax=float(np.nanmax(medians)))
+      fig.savefig(path, dpi=300, bbox_inches='tight', facecolor='white')
+      plt.close('all')
 
 logger.info("pySCENIC plotting completed using saved AUCell scores")

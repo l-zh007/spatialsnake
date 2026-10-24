@@ -42,6 +42,10 @@ def cluster_proportion(adata, sample_col='region',
     dpi: int - 图片分辨率
     """
     
+    # Vendor region labels may be reused across independent MERFISH samples.
+    if sample_col == "region" and {"sample", "region"}.issubset(adata.obs.columns):
+        if adata.obs.groupby("region", observed=True)["sample"].nunique().max() > 1:
+            sample_col = "sample"
     # 数据验证
     if sample_col not in adata.obs.columns:
         raise ValueError(f"在obs中没有找到'{sample_col}'列")
@@ -71,8 +75,10 @@ def cluster_proportion(adata, sample_col='region',
     ax.set_xlabel('Sample', fontsize=12, fontweight='bold')
     ax.set_ylabel('Proportion (%)', fontsize=12, fontweight='bold')
     
-    if title is None:
-        title = f'Cluster Proportion Distribution by Sample'
+    legend_title = {"clusters": "Cluster", "celltype": "Annotation", "spatial_cluster": "Spatial domain"}.get(
+        cluster_col, cluster_col.replace("_", " ").capitalize())
+    if title is None or title in {"Clusters_proportion", "celltype_proportion", "cellcharter_celltype_proportion"}:
+        title = f"{legend_title} composition by sample"
     ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
     
     # 设置y轴范围
@@ -84,7 +90,7 @@ def cluster_proportion(adata, sample_col='region',
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=10)
     
     # 美化图例
-    ax.legend(title='Clusters', bbox_to_anchor=(1.05, 1), loc='upper left', 
+    ax.legend(title=legend_title, bbox_to_anchor=(1.05, 1), loc='upper left', 
              fontsize=9, title_fontsize=10)
     
     # 添加网格
@@ -576,3 +582,73 @@ def plot_cell2location_dotplot(
   
   
   
+
+
+def plot_spatial_clusters(sdata, table_key, color, output_dir, sample_id,
+                          image_type="hires", vis_mode="auto", point_size=2.5,
+                          coord=None, overlay=False):
+    """Plot each annotated region with its own image and coordinate system."""
+    from spatialsnake.workflow.function.stereoseq_selection import spatial_region_panels
+    import spatialdata_plot
+
+    table = sdata.tables[table_key]
+    if table.obs.index.name in table.obs.columns:
+        table.obs.index = table.obs.index.rename(None)
+    attrs = table.uns["spatialdata_attrs"]
+    categories = pd.Categorical(table.obs[color]).categories
+    colors = table.uns.get(f"{color}_colors")
+    if colors is None or len(colors) != len(categories):
+        cmap = plt.get_cmap("tab20", max(1, len(categories)))
+        colors = [cmap(i) for i in range(len(categories))]
+    palette = dict(zip(categories, colors))
+    panels = spatial_region_panels(sdata, table, image_type, vis_mode)
+    for region, mode, element, system, image in panels:
+        current = sdata
+        if coord is not None:
+            current = spd.bounding_box_query(sdata, axes=("x", "y"),
+                min_coordinate=[coord[0], coord[2]], max_coordinate=[coord[1], coord[3]],
+                target_coordinate_system=system)
+        if image:
+            fig, axes = plt.subplots(2, 1, figsize=(20, 13))
+            current.pl.render_images(image).pl.show(ax=axes[0], title="image", coordinate_systems=system)
+            ax = axes[1]
+            title = image.replace("_hires_image", "")
+        else:
+            fig, ax = plt.subplots(figsize=(10, 10))
+            title = str(sample_id) if len(panels) == 1 else region
+        if mode == "shape":
+            render = current.pl.render_images(image) if image and overlay else current
+            render.pl.render_shapes(element, color=color, table_name=table_key,
+                outline_alpha=0, fill_alpha=1).pl.show(ax=ax, coordinate_systems=system, title=title)
+        else:
+            if image:
+                current.pl.render_images(image).pl.show(ax=ax, coordinate_systems=system)
+            local = table.obs.loc[table.obs[attrs["region_key"]].astype(str).eq(region)]
+            labels = pd.Series(local[color].to_numpy(), index=local[attrs["instance_key"]].astype(str))
+            points = spd.transform(current.points[element], to_coordinate_system=system).compute()
+            ids = points[attrs["instance_key"]].astype(str) if attrs["instance_key"] in points else points.index.astype(str)
+            groups = pd.Categorical(labels.reindex(ids), categories=categories)
+            unassigned = groups.codes < 0
+            if unassigned.any():
+                ax.scatter(points.loc[unassigned, "x"], points.loc[unassigned, "y"],
+                           s=point_size, color="#9E9E9E", alpha=0.8)
+            for label in groups.categories:
+                selected = groups == label
+                if not selected.any():
+                    continue
+                ax.scatter(points.loc[selected, "x"], points.loc[selected, "y"],
+                           s=point_size, color=palette[label], label=label, alpha=0.8)
+            if len(groups.categories):
+                ax.legend(loc="center left", bbox_to_anchor=(1, 0.5), frameon=False)
+            if not image and not ax.yaxis_inverted():
+                ax.invert_yaxis()
+            ax.set_aspect("equal")
+            ax.set_title(title)
+        if image:
+            name = f"{sample_id}_{image}_Clusters.png" if overlay else f"{image}_Clusters.png"
+        elif len(panels) == 1:
+            name = f"{sample_id}_spatial_Clusters.png" if overlay else f"{sample_id}_Clusters.png"
+        else:
+            name = f"{sample_id}_{region}_Clusters.png" if overlay else f"{region}_Clusters.png"
+        plt.savefig(os.path.join(output_dir, name), dpi=300, bbox_inches="tight")
+        plt.close(fig)

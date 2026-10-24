@@ -107,6 +107,7 @@ validate_cellchat <- function(x, label) {
   if (!methods::is(x, "CellChat")) {
     stop(label, " is not a CellChat object")
   }
+  x <- CellChat::updateCellChat(x)
   if (!all(c("prob", "pval", "count", "weight") %in% names(x@net))) {
     stop(label, " does not contain a completed CellChat net slot")
   }
@@ -232,9 +233,9 @@ cache_list <- file.path(opt$output_dir, "cellchat_object.list.rds")
 cache_merged <- file.path(opt$output_dir, "cellchat_merged.rds")
 if (opt$stage == "plot" && opt$save_merged && file.exists(cache_list) && file.exists(cache_merged)) {
   cached <- readRDS(cache_list)
-  cellchat1 <- cached[[name1]]
-  cellchat2 <- cached[[name2]]
-  cellchat_merged <- readRDS(cache_merged)
+  cellchat1 <- validate_cellchat(cached[[name1]], name1)
+  cellchat2 <- validate_cellchat(cached[[name2]], name2)
+  cellchat_merged <- CellChat::updateCellChat(readRDS(cache_merged))
 } else {
 cellchat1 <- validate_cellchat(readRDS(opt$input_rds1), name1)
 cellchat2 <- validate_cellchat(readRDS(opt$input_rds2), name2)

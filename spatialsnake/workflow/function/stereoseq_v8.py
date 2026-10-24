@@ -159,7 +159,7 @@ def _read_images(
         return {}
     parse_kwargs = dict(image_models_kwargs)
     parse_kwargs.setdefault("transformations", _default_transformations())
-    patterns = [re.compile(r".*_HE_regist\.tif$"), re.compile(r".*_HE_tissue_cut\.tif$")]
+    patterns = [re.compile(r".*_HE_regist\.tif$"), re.compile(r".*_HE_tissue_cut\.tif$"), re.compile(r".*_ssDNA_regist\.tif$")]
     images = {}
     for image_file in os.listdir(image_dir):
         if not any(pattern.match(image_file) for pattern in patterns):
@@ -168,6 +168,8 @@ def _read_images(
         img_data = imread(image_dir / image_file, **imread_kwargs)
         if img_data.ndim == 4 and img_data.shape[0] == 1:
             img_data = img_data[0]
+        if img_data.ndim == 2:
+            img_data = img_data[np.newaxis, :, :]
         if img_data.ndim == 3 and img_data.shape[-1] in [1, 3, 4]:
             img_data = np.moveaxis(img_data, -1, 0)
         images[image_name] = Image2DModel.parse(img_data, dims=("c", "y", "x"), **parse_kwargs)

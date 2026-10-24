@@ -881,6 +881,12 @@ def _linked_coordinates(sdata, adata, positions):
             raise ValueError(f"linked Shapes/Points element {region!r} is missing")
         aligned = lookup.reindex(instances.to_numpy())
         coordinates[local] = aligned[["x", "y"]].to_numpy(dtype=float)
+    missing = ~np.isfinite(coordinates).all(axis=1)
+    # Some native MERFISH cells have a center but no valid boundary polygon.
+    for columns in (("center_x", "center_y"), ("x", "y")):
+        if missing.any() and set(columns).issubset(selected.columns):
+            coordinates[missing] = selected.loc[missing, list(columns)].to_numpy(dtype=float)
+            missing = ~np.isfinite(coordinates).all(axis=1)
     if not np.isfinite(coordinates).all():
         raise ValueError("some table observations do not match their linked Shapes/Points instances")
     return coordinates

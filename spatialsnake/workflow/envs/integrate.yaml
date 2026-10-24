@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 # Common workflow settings
 # -----------------------------------------------------------------------------
-option: "integrate"  # Workflow step selected by this template. Recommended: integrate.
+option: "ingestion"  # Workflow step selected by this template. Recommended: ingestion.
 results_folder: "results"  # Root directory for all workflow outputs. Recommended: results.
 data_fold: "data"  # Raw-data root. Visium Segment is read from {data_fold}/{sample_id}/segmented_outputs.
 sample_list: "sample.txt"  # Sample table path with sample IDs and input paths. Recommended: sample.txt or an explicit sample table.

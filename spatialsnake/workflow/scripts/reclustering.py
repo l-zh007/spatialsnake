@@ -48,6 +48,7 @@ import spatialdata as spd
 import spatialdata_plot
 from spatialdata.transformations import get_transformation
 from spatialsnake.workflow.function.export_cluster_csv import export_cluster_csv
+from spatialsnake.workflow.function.stereoseq_selection import resolve_region_image
 from spatialsnake.workflow.function.logging_utils import setup_logger, log_step
 
 warnings.filterwarnings("ignore")
@@ -67,12 +68,21 @@ def load_spatialdata(input_path):
 
 
 def run_reclustering(adata, resolution, n_top_genes, neighbors, n_pcs, cluster_key):
-    #sc.pp.normalize_total(adata, target_sum=1e4)
-    #sc.pp.log1p(adata)
-    #sc.pp.highly_variable_genes(adata, n_top_genes=n_top_genes, flavor="seurat")
-    #if "highly_variable" in adata.var.columns and adata.var["highly_variable"].sum() > 0:
-        #adata = adata[:, adata.var["highly_variable"]].copy()
-    sc.tl.pca(adata, svd_solver="arpack")
+    if int(n_top_genes) < 0 or int(n_top_genes) == 1 or min(adata.shape) < 3:
+        raise ValueError("Reclustering requires at least 3 observations/genes; n_top_genes must be 0 (all genes) or >= 2")
+    use_hvg = int(n_top_genes) > 0
+    if use_hvg:
+        effective_top = min(int(n_top_genes), adata.n_vars)
+        if effective_top == adata.n_vars:
+            adata.var['highly_variable'] = True
+        else:
+            sc.pp.highly_variable_genes(adata, n_top_genes=effective_top, flavor="seurat")
+        if int(adata.var['highly_variable'].sum()) < 2:
+            raise ValueError("Fewer than two subset highly variable genes remain; increase n_top_genes")
+        logger.info(f"Reclustering uses {int(adata.var['highly_variable'].sum())} subset highly variable genes")
+    else:
+        logger.info(f"HVG selection disabled; reclustering PCA uses all {adata.n_vars} genes")
+    sc.tl.pca(adata, svd_solver="arpack", use_highly_variable=use_hvg)
     n_pcs_use = min(int(n_pcs), int(adata.obsm["X_pca"].shape[1]))
     sc.pp.neighbors(adata, n_neighbors=int(neighbors), n_pcs=n_pcs_use)
     sc.tl.umap(adata)
@@ -132,10 +142,7 @@ def save_spatial_plot(sdata, table_key, adata, cluster_key, output_png):
             if not candidates:
                 continue
             system = next((system for system in candidates if "hires" in system.lower()), candidates[0])
-            image = next(
-                (name for name in images if system in get_transformation(sdata.images[name], get_all=True)),
-                None,
-            )
+            image = resolve_region_image(sdata, adata, region, system)
             panels.append((region, system, image))
 
         if panels:
@@ -199,7 +206,7 @@ def main():
     parser.add_argument("--output_dir", type=str, required=True)
     parser.add_argument("--sample_id", type=str, required=True)
     parser.add_argument("--resolution", type=float, default=0.8)
-    parser.add_argument("--n_top_genes", type=int, default=2000)
+    parser.add_argument("--n_top_genes", type=int, default=0)
     parser.add_argument("--neighbors", type=int, default=15)
     parser.add_argument("--n_pcs", type=int, default=30)
     parser.add_argument("--marker_method", type=str, default="wilcoxon")

@@ -175,6 +175,37 @@ safe_label <- function(x) {
   gsub("^_+|_+$", "", label)
 }
 
+save_bubble_pages <- function(plot, filename) {
+  data <- plot$data
+  xs <- if (is.factor(data$source.target)) levels(droplevels(data$source.target)) else unique(data$source.target)
+  ys <- if (is.factor(data$interaction_name_2)) levels(droplevels(data$interaction_name_2)) else unique(data$interaction_name_2)
+  old_pages <- Sys.glob(sub("\\.png$", "_page[0-9]*.png", filename))
+  if (length(old_pages)) unlink(old_pages)
+  colour_scale <- plot$scales$get_scales("colour")
+  colour_scale$limits <- range(data$prob, finite = TRUE)
+  size_scale <- plot$scales$get_scales("size")
+  size_scale$limits <- range(data$pval, finite = TRUE)
+  files <- character(nrow(data))
+  page <- 0L
+  for (x in split(xs, ceiling(seq_along(xs) / 12))) {
+    for (y in split(ys, ceiling(seq_along(ys) / 30))) {
+      keep <- as.character(data$source.target) %in% x & as.character(data$interaction_name_2) %in% y
+      if (!any(keep)) next
+      page <- page + 1L
+      target <- if (page == 1L) filename else sub("\\.png$", sprintf("_page%02d.png", page), filename)
+      p <- plot
+      p$data <- droplevels(data[keep, , drop = FALSE])
+      p$layers <- Filter(function(layer) !inherits(layer$geom, "GeomVline") && !inherits(layer$geom, "GeomHline"), p$layers)
+      p <- p + ggplot2::scale_x_discrete(limits = x) + ggplot2::scale_y_discrete(limits = y) +
+        ggplot2::theme(legend.position = "right", plot.margin = ggplot2::margin(8, 12, 8, 8))
+      ggplot2::ggsave(target, p, width = max(4.6, 2.8 + length(x) * 0.5 + min(2, max(nchar(y)) * 0.04)),
+                      height = max(3, 1.8 + length(y) * 0.28 + min(2.5, max(nchar(x)) * 0.035)), dpi = 300, bg = "white")
+      files[keep] <- basename(target)
+    }
+  }
+  stats::setNames(files, paste(data$source, data$target, data$interaction_name, sep = "\r"))
+}
+
 make_pair_lr_use <- function(df) {
   if (is.null(df) || nrow(df) == 0 || !("interaction_name" %in% names(df))) {
     return(NULL)
@@ -573,13 +604,36 @@ offset_coordinates_by_library <- function(spatial.df, interaction_length = 250) 
 }
 
 h5ad_spatial_loading <- function(input_h5ad) {
-  obj <- tryCatch({
-    obj <- schard::h5ad2seurat_spatial(input_h5ad, use.raw = TRUE)
-    obj <- NormalizeData(obj)
+  use.raw <- TRUE
+  data <- tryCatch({
+    schard::h5ad2list(input_h5ad, use.raw = TRUE, load.obsm = TRUE, load.X = FALSE, forSeurat = TRUE)
   }, error = function(e) {
-    message(paste("Error normalizing spatial data:", e$message))
-    obj <- schard::h5ad2seurat_spatial(input_h5ad, use.raw = FALSE)
+    use.raw <<- FALSE
+    schard::h5ad2list(input_h5ad, use.raw = FALSE, load.obsm = TRUE, load.X = FALSE, forSeurat = TRUE)
   })
+  obj <- tryCatch({
+    schard::h5ad2seurat_spatial(input_h5ad, use.raw = use.raw)
+  }, error = function(e) {
+    message(paste("Loading expression and native coordinates without tissue images:", e$message))
+    data$X <- schard::h5ad2list(input_h5ad, use.raw = use.raw, forSeurat = TRUE)$X
+    for (key in colnames(data$obs)) {
+      if (is.raw(data$obs[[key]])) data$obs[[key]] <- as.integer(data$obs[[key]])
+    }
+    CreateSeuratObject(counts = data$X, assay = "Spatial", meta.data = data$obs)
+  })
+  # schard drops reductions when merging spatial libraries; restore native XY by barcode.
+  xy <- if (!is.null(data$obsm$spatial_native)) data$obsm$spatial_native else data$obsm$spatial
+  if (!is.null(xy)) {
+    xy <- xy[, 1:2, drop = FALSE]
+    rownames(xy) <- rownames(data$obs)
+    xy <- xy[colnames(obj), , drop = FALSE]
+    colnames(xy) <- c("spatialnative_1", "spatialnative_2")
+    obj[["spatialnative"]] <- CreateDimReducObject(embeddings = xy, key = "spatialnative_", assay = "Spatial")
+    if (!("spatial" %in% Reductions(obj))) {
+      obj[["spatial"]] <- CreateDimReducObject(embeddings = xy, key = "spatial_", assay = "Spatial")
+    }
+  }
+  if (use.raw) obj <- NormalizeData(obj)
   return(obj)
 }
 load_seurat <- function(file_path, is_single_cell = opt$is_single_cell) {
@@ -831,23 +885,36 @@ network_height <- plot_dim(length(cell_group_sizes), base = 6.5, per = 0.18, min
 network_width <- network_height * 2
 png(file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_network.png")), width = network_width, height = network_height, units = "in", res = 300, bg = "white")
 par(mfrow = c(1, 2), xpd = TRUE)
-netVisual_circle(cellchat@net$count, vertex.weight = cell_group_sizes, weight.scale = TRUE, label.edge = FALSE, title.name = "Number of interactions")
-netVisual_circle(cellchat@net$weight, vertex.weight = cell_group_sizes, weight.scale = TRUE, label.edge = FALSE, title.name = "Interaction strength")
+invisible(netVisual_circle(cellchat@net$count, vertex.weight = cell_group_sizes, weight.scale = TRUE, label.edge = FALSE, title.name = "Number of interactions"))
+invisible(netVisual_circle(cellchat@net$weight, vertex.weight = cell_group_sizes, weight.scale = TRUE, label.edge = FALSE, title.name = "Interaction strength"))
 dev.off()
 pdf(file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_network.pdf")), width = network_width, height = network_height)
 par(mfrow = c(1, 2), xpd = TRUE)
-netVisual_circle(cellchat@net$count, vertex.weight = cell_group_sizes, weight.scale = TRUE, label.edge = FALSE, title.name = "Number of interactions")
-netVisual_circle(cellchat@net$weight, vertex.weight = cell_group_sizes, weight.scale = TRUE, label.edge = FALSE, title.name = "Interaction strength")
+invisible(netVisual_circle(cellchat@net$count, vertex.weight = cell_group_sizes, weight.scale = TRUE, label.edge = FALSE, title.name = "Number of interactions"))
+invisible(netVisual_circle(cellchat@net$weight, vertex.weight = cell_group_sizes, weight.scale = TRUE, label.edge = FALSE, title.name = "Interaction strength"))
 dev.off()
 
 png(file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_infoflow_bar.png")), width = 8.5, height = 6.5, units = "in", res = 300, bg = "white")
-rankNet(cellchat, mode = "single", stacked = TRUE, do.stat = FALSE)
+if (length(cellchat@netP$pathways) > 0) {
+  if (length(cellchat@netP$pathways) == 1 && is.matrix(cellchat@netP$prob)) {
+    cellchat@netP$prob <- array(cellchat@netP$prob,
+      dim = c(dim(cellchat@netP$prob), 1L),
+      dimnames = c(dimnames(cellchat@netP$prob), list(cellchat@netP$pathways)))
+  }
+  print(rankNet(cellchat, mode = "single", stacked = TRUE, do.stat = FALSE))
+} else {
+  plot.new()
+  text(0.5, 0.5, "No significant signaling pathways")
+}
 dev.off()
 
 heatmap_size <- plot_dim(length(cell_group_sizes), base = 5.8, per = 0.28, min_size = 6, max_size = 12)
 png(file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_heatmap.png")), width = heatmap_size * 2, height = heatmap_size, units = "in", res = 300, bg = "white")
-h_count <- netVisual_heatmap(cellchat, measure = "count", title.name = "Number of interactions", font.size = 8, font.size.title = 10)
-h_weight <- netVisual_heatmap(cellchat, measure = "weight", title.name = "Interaction strength", font.size = 8, font.size.title = 10)
+# An automatic color scale is undefined after zeros are masked if all positive values are equal.
+count_colors <- if (any(cellchat@net$count == 0) && length(unique(cellchat@net$count[cellchat@net$count > 0])) == 1) c("#FFF5F0", "#67000D") else NULL
+weight_colors <- if (any(cellchat@net$weight == 0) && length(unique(cellchat@net$weight[cellchat@net$weight > 0])) == 1) c("#FFF5F0", "#67000D") else NULL
+h_count <- netVisual_heatmap(cellchat, measure = "count", title.name = "Number of interactions", font.size = 8, font.size.title = 10, color.heatmap = count_colors)
+h_weight <- netVisual_heatmap(cellchat, measure = "weight", title.name = "Interaction strength", font.size = 8, font.size.title = 10, color.heatmap = weight_colors)
 print(h_count + h_weight)
 dev.off()
 
@@ -1066,8 +1133,6 @@ if (nrow(selected_lr) > 0 && !is.null(selected_pair_keys)) {
     }
     bubble_file <- file.path(opt$output_dir, bubble_basename)
     pair_lr_use <- make_pair_lr_use(pair_lr)
-    bubble_height <- plot_dim(nrow(pair_lr_use), base = 3.5, per = 0.28, min_size = 4.5, max_size = 14)
-    png(bubble_file, width = 8, height = bubble_height, units = "in", res = 300, bg = "white")
     p_bubble <- netVisual_bubble(
       cellchat,
       sources.use = pair_parts[1],
@@ -1080,17 +1145,14 @@ if (nrow(selected_lr) > 0 && !is.null(selected_pair_keys)) {
       font.size = 8,
       font.size.title = 10
     )
-    print(p_bubble)
-    dev.off()
-    selected_lr$plot_file[selected_lr$cell_pair == pair_key] <- bubble_basename
+    plot_files <- save_bubble_pages(p_bubble, bubble_file)
+    keys <- paste(pair_lr$source, pair_lr$target, pair_lr$interaction_name, sep = "\r")
+    selected_lr$plot_file[selected_lr$cell_pair == pair_key] <- unname(plot_files[keys])
   }
 } else if (nrow(selected_lr) > 0) {
   bubble_basename <- paste0(opt$sample_id, "_cellchat_bubble.png")
   bubble_file <- file.path(opt$output_dir, bubble_basename)
   pair_lr_use <- make_pair_lr_use(selected_lr)
-  bubble_width <- plot_dim(length(unique(c(selected_lr$source, selected_lr$target))), base = 6.5, per = 0.35, min_size = 7, max_size = 16)
-  bubble_height <- plot_dim(nrow(pair_lr_use), base = 3.5, per = 0.28, min_size = 4.5, max_size = 14)
-  png(bubble_file, width = bubble_width, height = bubble_height, units = "in", res = 300, bg = "white")
   p_bubble <- netVisual_bubble(
     cellchat,
     sources.use = selected_sources,
@@ -1103,9 +1165,8 @@ if (nrow(selected_lr) > 0 && !is.null(selected_pair_keys)) {
     font.size = 8,
     font.size.title = 10
   )
-  print(p_bubble)
-  dev.off()
-  selected_lr$plot_file <- bubble_basename
+  plot_files <- save_bubble_pages(p_bubble, bubble_file)
+  selected_lr$plot_file <- unname(plot_files[paste(selected_lr$source, selected_lr$target, selected_lr$interaction_name, sep = "\r")])
 }
 
 selected_pair_plot <- NULL
@@ -1135,16 +1196,43 @@ if (!is.null(net_lr) && nrow(net_lr) > 0) {
 }
 
 if (!isTRUE(opt$is_single_cell) && !is.null(selected_pair_plot) && nzchar(selected_pair_plot)) {
+  spatial_lr <- cellchat@LR$LRsig[selected_pair_plot, c("ligand", "receptor"), drop = FALSE]
+  homophilic <- as.character(spatial_lr$ligand) == as.character(spatial_lr$receptor)
+  spatial_object <- cellchat
+  if (homophilic) {
+    spatial_object@meta$spatialsnake_lr_expression <- as.numeric(computeExpr_LR(
+      as.character(spatial_lr$ligand), cellchat@data, cellchat@DB$complex))
+  }
   spatial_samples <- unique(as.character(cellchat@meta$samples))
-  png(file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_spatial_lr.png")), width = if (length(spatial_samples) > 1) 16 else 8, height = 6.5 * ceiling(length(spatial_samples) / 2), units = "in", res = 300, bg = "white")
-  spatial_plots <- lapply(spatial_samples, function(sample) {
-    plot <- spatialFeaturePlot(cellchat, pairLR.use = selected_pair_plot, sample.use = sample, point.size = 0.8, do.binary = TRUE, cutoff = 0.05, enriched.only = FALSE, direction = 1, legend.size = 3, legend.text.size = 8)
-    if (length(spatial_samples) > 1) plot <- plot + ggplot2::ggtitle(paste(sample, selected_pair_plot, sep = " | "))
-    plot
-  })
-  p_spatial <- if (length(spatial_samples) > 1) patchwork::wrap_plots(spatial_plots, ncol = 2) else spatial_plots[[1]]
-  print(p_spatial)
-  dev.off()
+  spatial_file <- file.path(opt$output_dir, paste0(opt$sample_id, "_cellchat_spatial_lr.png"))
+  old_pages <- Sys.glob(sub("\\.png$", "_page[0-9]*.png", spatial_file))
+  if (length(old_pages)) unlink(old_pages)
+  for (start in seq(1, length(spatial_samples), by = 4)) {
+    page_samples <- spatial_samples[start:min(start + 3, length(spatial_samples))]
+    page <- (start - 1) %/% 4 + 1
+    target <- if (page == 1) spatial_file else sub("\\.png$", sprintf("_page%02d.png", page), spatial_file)
+    png(target, width = if (length(page_samples) > 1) 14 else 7,
+        height = 5.5 * ceiling(length(page_samples) / 2), units = "in", res = 300, bg = "white")
+    spatial_plots <- lapply(page_samples, function(sample) {
+      if (homophilic) {
+        # Identical ligand/receptor names give duplicate factor levels in CellChat.
+        plot <- spatialFeaturePlot(spatial_object, features = "spatialsnake_lr_expression",
+          sample.use = sample, point.size = 0.8, do.binary = FALSE, direction = 1,
+          legend.size = 3, legend.text.size = 8)
+        plot$data$feature.data <- factor(ifelse(plot$data$feature.data > 0.05, "Both", "None"),
+          levels = c("Both", "None"))
+        plot <- plot + scale_colour_manual(values = c(Both = ggPalette(4)[3], None = "grey90")) +
+          guides(colour = guide_legend(override.aes = list(size = 3))) + ggtitle(selected_pair_plot)
+      } else {
+        plot <- spatialFeaturePlot(cellchat, pairLR.use = selected_pair_plot, sample.use = sample, point.size = 0.8, do.binary = TRUE, cutoff = 0.05, enriched.only = FALSE, direction = 1, legend.size = 3, legend.text.size = 8)
+      }
+      if (length(spatial_samples) > 1) plot <- plot + ggplot2::ggtitle(paste(sample, selected_pair_plot, sep = " | "))
+      plot + ggplot2::coord_fixed()
+    })
+    p_spatial <- if (length(page_samples) > 1) patchwork::wrap_plots(spatial_plots, ncol = 2) else spatial_plots[[1]]
+    print(p_spatial)
+    dev.off()
+  }
   message(paste("Spatial LR plot generated for:", selected_pair_plot))
 }
 

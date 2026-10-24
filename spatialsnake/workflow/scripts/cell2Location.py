@@ -54,8 +54,57 @@ def ensure_var_index(adata, candidates):
     return None
 
 def ensure_symbol_column(adata):
-    if "SYMBOL" not in adata.var.columns:
-        adata.var["SYMBOL"] = adata.var_names
+    if "SYMBOL" in adata.var.columns:
+        symbols = adata.var["SYMBOL"].astype("string")
+        missing = symbols.isna() | symbols.str.strip().eq("")
+        adata.var["SYMBOL"] = symbols.mask(
+            missing, pd.Series(adata.var_names, index=adata.var_names)
+        ).astype(str)
+        return
+    for key in ("gene_symbols", "gene_symbol", "gene_name", "symbol"):
+        if key in adata.var:
+            symbols = adata.var[key]
+            if symbols.notna().all() and not symbols.astype(str).str.strip().eq("").any():
+                adata.var["SYMBOL"] = symbols.astype(str)
+                return
+    adata.var["SYMBOL"] = adata.var_names
+
+
+def align_gene_identifiers(adata_vis, adata_ref, spatial_var, reference_var):
+    # Preserve the existing identifier choice whenever it already matches.
+    if adata_vis.var_names.isin(adata_ref.var_names).any():
+        return
+    candidates = []
+    for adata, var in ((adata_vis, spatial_var), (adata_ref, reference_var)):
+        fields = {"var_names": adata.var_names, "original_var_names": var.index}
+        for key in ("gene_ids", "gene_id", "ensembl", "GeneID-2",
+                    "SYMBOL", "gene_symbols", "gene_symbol", "gene_name", "symbol"):
+            if key in var:
+                fields[key] = var[key]
+        valid = {}
+        for key, values in fields.items():
+            if pd.isna(values).any():
+                continue
+            names = pd.Index(values).astype(str)
+            if names.is_unique and not (names.str.strip() == "").any():
+                valid[key] = names
+        candidates.append(valid)
+    best = None
+    for spatial_key, spatial_names in candidates[0].items():
+        for reference_key, reference_names in candidates[1].items():
+            shared = int(spatial_names.isin(reference_names).sum())
+            if shared and (best is None or shared > best[0]):
+                best = (shared, spatial_key, reference_key, spatial_names, reference_names)
+    if best is None:
+        raise ValueError(
+            "Spatial and reference inputs have no shared gene identifiers. "
+            "Provide matching unique gene_ids or gene symbols in var; "
+            "automatic database conversion is not performed."
+        )
+    shared, spatial_key, reference_key, spatial_names, reference_names = best
+    adata_vis.var_names = spatial_names
+    adata_ref.var_names = reference_names
+    logger.info(f"Gene matching: spatial={spatial_key}, reference={reference_key}, shared={shared}")
 
 
 def load_spatial_input(path):
@@ -292,7 +341,8 @@ def validate_obs_category(adata, key, name):
     adata.obs[key] = pd.Categorical(string_values)
 
 ensure_counts(adata_vis, "adata_vis")
-adata_vis.var['SYMBOL'] = adata_vis.var_names.astype(str)
+spatial_var = adata_vis.var.copy()
+ensure_symbol_column(adata_vis)
 ensure_var_index(adata_vis, ["gene_ids", "gene_id", "ensembl"])
 validate_unique_axes(adata_vis, "adata_vis")
 
@@ -308,10 +358,12 @@ if args.batch_key_st == "sample" and "sample" not in adata_vis.obs:
 log_step(logger, 2, 8, "loading single-cell reference")
 adata_ref = sc.read_h5ad(args.input_singlecell)
 ensure_counts(adata_ref, "adata_ref")
+reference_var = adata_ref.var.copy()
 ensure_symbol_column(adata_ref)
 ensure_var_index(adata_ref, ["GeneID-2", "gene_ids", "gene_id", "ensembl"])
-adata_ref.var['SYMBOL'] = adata_ref.var.index
 validate_unique_axes(adata_ref, "adata_ref")
+align_gene_identifiers(adata_vis, adata_ref, spatial_var, reference_var)
+del spatial_var, reference_var
 logger.info(f"Reference data: {adata_ref.n_obs} cells and {adata_ref.n_vars} genes")
 from cell2location.utils.filtering import filter_genes
 

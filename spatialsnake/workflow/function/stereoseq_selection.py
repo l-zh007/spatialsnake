@@ -1,12 +1,72 @@
 from __future__ import annotations
 
 import pandas as pd
+from spatialdata.transformations import get_transformation
 
 from spatialsnake.workflow.function.stereoseq_spec import parse_stereoseq_input_spec
 
 EMPTY_INPUT_SPECS = {None, "", False, "None", "False", "false", "NULL", "null"}
 DEFAULT_REGION_KEY = "region"
 DEFAULT_INSTANCE_KEY = "instance_id"
+
+
+def resolve_region_image(sdata, table, region, system, image_type="hires"):
+    """Match images to one annotated region, including shared coordinate systems."""
+    images = [name for name in sdata.images
+              if system in get_transformation(sdata.images[name], get_all=True)]
+    if not images:
+        return None
+    attrs = table.uns.get("spatialdata_attrs", {})
+    region_key = attrs.get("region_key")
+    obs = table.obs
+    if region_key in obs:
+        obs = obs.loc[obs[region_key].astype(str).eq(str(region))]
+    prefixes = [str(region)]
+    for column in ("sample", "dataset_id"):
+        if column in obs:
+            prefixes.extend(obs[column].dropna().astype(str).unique())
+    # Reader element names use these suffixes independently of sample IDs.
+    for suffix in ("_polygons", "_cell_boundaries", "_cell_circles", "_cellbin_shapes"):
+        if str(region).endswith(suffix):
+            prefixes.append(str(region)[:-len(suffix)])
+    matched = [name for name in images
+               if any(name == prefix or name.startswith(prefix + "_") for prefix in prefixes)]
+    if matched:
+        images = matched
+    elif "sample" in table.obs and table.obs["sample"].nunique() > 1:
+        other_prefixes = set()
+        for column in ("sample", "dataset_id"):
+            if column in table.obs:
+                other_prefixes.update(set(table.obs[column].dropna().astype(str)) - set(prefixes))
+        if all(any(name == prefix or name.startswith(prefix + "_") for prefix in other_prefixes) for name in images):
+            return None
+        raise ValueError(f"Cannot match images to spatial region {region!r}")
+    for keyword in (image_type, "hires", "morphology_focus", "morphology_mip", "HE_regist", "_z3"):
+        preferred = [name for name in images if keyword and str(keyword) in name]
+        if preferred:
+            images = preferred
+            break
+    if len(images) != 1:
+        raise ValueError(f"Multiple images match spatial region {region!r}: {images}; set image_type")
+    return images[0]
+
+
+def spatial_region_panels(sdata, table, image_type="hires", vis_mode="auto"):
+    attrs = table.uns.get("spatialdata_attrs", {})
+    region_key = attrs.get("region_key")
+    regions = (pd.unique(table.obs[region_key].astype(str)).tolist()
+               if region_key in table.obs else attrs.get("region", []))
+    regions = [regions] if isinstance(regions, str) else list(regions)
+    panels = []
+    for region in regions:
+        mode, element_name = resolve_visual_target(sdata, region, vis_mode)
+        systems = sorted(get_transformation(sdata[element_name], get_all=True))
+        if not systems:
+            raise ValueError(f"Spatial region {region!r} has no coordinate system")
+        system = next((name for name in systems if image_type and image_type in name), systems[0])
+        image = resolve_region_image(sdata, table, region, system, image_type)
+        panels.append((region, mode, element_name, system, image))
+    return panels
 
 
 def resolve_stereoseq_table_key(_input_spec, table_keys):
@@ -19,10 +79,7 @@ def resolve_stereoseq_table_key(_input_spec, table_keys):
     requested_tables = []
 
     if _input_spec not in EMPTY_INPUT_SPECS:
-        try:
-            parsed_specs = parse_stereoseq_input_spec(_input_spec)
-        except ValueError:
-            parsed_specs = None
+        parsed_specs = parse_stereoseq_input_spec(_input_spec)
         if parsed_specs:
             for item in parsed_specs:
                 if item == "cellbin":
@@ -35,14 +92,9 @@ def resolve_stereoseq_table_key(_input_spec, table_keys):
     for requested in requested_tables:
         if requested in fallback_tables:
             return requested
-    for requested in requested_tables:
-        requested_prefix = requested.replace("_table", "")
-        for table_key in fallback_tables:
-            if requested_prefix in str(table_key):
-                return table_key
-    if "table" in fallback_tables:
-        return "table"
-    return fallback_tables[0]
+    if len(fallback_tables) == 1:
+        return fallback_tables[0]
+    raise ValueError(f"Select one Stereo-seq analysis table; requested {_input_spec!r}, available {fallback_tables}")
 
 
 def extract_table_spatial_metadata(adata):

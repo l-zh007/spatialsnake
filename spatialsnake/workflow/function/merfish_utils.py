@@ -153,21 +153,15 @@ def align_merfish_image_to_shape_space(
     um_to_px = load_transform_matrix(transform_csv)
     px_to_um = np.linalg.inv(um_to_px)
 
-    image_px_bounds = np.array(get_scale0_coords(sdata.images[image_key]), dtype=float)
-    image_um_bounds = transform_bounds(px_to_um, image_px_bounds)
-    local_shape_bounds = shape_bounds(sdata, shape_key)
-
-    um_to_local = box_to_box_affine(image_um_bounds, local_shape_bounds)
-    px_to_local = um_to_local @ px_to_um
-
-    image_transform = Affine(px_to_local, input_axes=("x", "y"), output_axes=("x", "y"))
-    points_transform = Affine(um_to_local, input_axes=("x", "y"), output_axes=("x", "y"))
+    # Cell boundaries and transcripts are already in the native micron space.
+    # Image margins do not need to coincide with the cell boundary extents.
+    image_transform = Affine(px_to_um, input_axes=("x", "y"), output_axes=("x", "y"))
 
     set_transformation(sdata.images[image_key], image_transform, to_coordinate_system=coordinate_system)
     set_transformation(sdata.shapes[shape_key], Identity(), to_coordinate_system=coordinate_system)
 
     for point_key in point_keys:
         if point_key in getattr(sdata, "points", {}):
-            set_transformation(sdata.points[point_key], points_transform, to_coordinate_system=coordinate_system)
+            set_transformation(sdata.points[point_key], Identity(), to_coordinate_system=coordinate_system)
 
     return sdata

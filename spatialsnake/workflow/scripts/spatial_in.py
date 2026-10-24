@@ -84,7 +84,7 @@ if type == "visium_HD":
   parts = _input_norm.split(os.path.sep)
   if "binned_outputs" in parts:
     idx = parts.index("binned_outputs")
-    real_dir = os.path.join(*parts[:idx]) if idx > 0 else os.path.dirname(_input_norm)
+    real_dir = os.path.sep.join(parts[:idx]) if idx > 0 else os.path.dirname(_input_norm)
   else:
     real_dir = os.path.dirname(_input_norm)
 else:
@@ -99,7 +99,7 @@ def QC_plot(type,sdata,zarr_name):
   sc.pp.calculate_qc_metrics(
     adata, 
     qc_vars="mt",
-    percent_top=(10, 20, 50),
+    percent_top=[n for n in (10, 20, 50) if n <= adata.n_vars],
     inplace=True, 
     log1p=True)
   
@@ -115,25 +115,25 @@ def QC_plot(type,sdata,zarr_name):
   else:
     image_num=2
   _, axs = plt.subplots(1, image_num, figsize=(15, 4))
-  axs[0].set_title("Total transcripts per cell")
+  axs[0].set_title("Total counts per observation")
   sns.histplot(
     adata.obs["total_counts"],
     kde=False,
     ax=axs[0])
-  axs[1].set_title("Unique transcripts per cell")
+  axs[1].set_title("Detected genes per observation")
   sns.histplot(
     adata.obs["n_genes_by_counts"],
     kde=False,
     ax=axs[1])
 
   if type=='xenium':
-    axs[2].set_title("Area of segmented cells")
+    axs[2].set_title("Segmented cell area")
     sns.histplot(
       adata.obs["cell_area"],
       kde=False,
       ax=axs[2])
 
-    axs[3].set_title("Nucleus ratio")
+    axs[3].set_title("Nucleus-to-cell area ratio")
     sns.histplot(
       adata.obs["nucleus_area"] / adata.obs["cell_area"],
       kde=False,
@@ -259,14 +259,16 @@ def create_zarr_bin(path_to_inputs,sample_id,zarr_name,filtered_counts_file,bin_
         sample_id=sample_id,
         table_key="table",
     )
-    sdata=QC_plot(type,sdata,zarr_name)
+    if args.channel == "single_analysis":
+      sdata=QC_plot(type,sdata,zarr_name)
     logger.info(f"Writing Visium HD SpatialData to {zarr_name}")
     sdata.write(zarr_name, overwrite=True)
 
 def creat_zarr_visium(path_to_inputs,sample_id,zarr_name,h5_name):
     logger.info(f"Reading Visium data from {path_to_inputs}")
     sdata=spatialdata_io.visium(path_to_inputs,dataset_id=sample_id,counts_file=h5_name)
-    sdata=QC_plot(type,sdata,zarr_name)
+    if args.channel == "single_analysis":
+      sdata=QC_plot(type,sdata,zarr_name)
     SHAPES_KEY = sample_id
     TABLE_KEY = 'table'
     for table in sdata.tables.values():
@@ -442,7 +444,8 @@ def create_zarr_xenium(path_to_inputs,zarr_name,cells_boundaries,nucleus_boundar
                 instance_key='cell_id'
             )
         }
-    sdata=QC_plot(type,sdata,zarr_name)
+    if args.channel == "single_analysis":
+      sdata=QC_plot(type,sdata,zarr_name)
     sdata.write(zarr_name,overwrite=True)
     
 def _create_mock_spatialdata(sample_id: str, platform: str):
@@ -517,7 +520,9 @@ def create_zarr_merscope(path_to_inputs, zarr_name):
             table.obs['sample'] = table.obs['sample'].astype(str)
     logger.info(f"Loaded MERSCOPE/MERFISH object with {len(sdata.tables)} table(s)")
     transform_csv = find_merfish_transform_csv(path_to_inputs)
-    if transform_csv and os.path.isfile(transform_csv):
+    if not sdata.images:
+        logger.info("No mosaic image loaded; retaining native spatial coordinates")
+    elif transform_csv and os.path.isfile(transform_csv) and sdata.shapes:
         sdata = align_merfish_image_to_shape_space(
             sdata,
             transform_csv=transform_csv,
@@ -525,7 +530,7 @@ def create_zarr_merscope(path_to_inputs, zarr_name):
             register_points=True,
         )
     else:
-        logger.warning(f"MERFISH transform csv not found, skip alignment: {transform_csv}")
+        logger.warning(f"MERFISH alignment skipped: transform CSV or cell boundaries missing ({transform_csv})")
 
     if args.channel == "single_analysis":
         sdata = QC_plot(type, sdata, zarr_name)
@@ -534,6 +539,8 @@ def create_zarr_merscope(path_to_inputs, zarr_name):
 def create_zarr_stereoseq(path_to_inputs, zarr_name, bin_size=None):
   logger.info(f"Reading Stereo-seq data from {path_to_inputs}")
   input_specs = parse_stereoseq_input_spec(args.input_spec if args.input_spec not in [None, ""] else bin_size)
+  if input_specs is None:
+    raise ValueError("Stereo-seq integrate requires one bin size, cellbin, or adjusted_cellbin in sample.txt")
   sdata = stereoseq_v8(
       path_to_inputs,
       bin_sizes=input_specs,

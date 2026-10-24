@@ -58,8 +58,8 @@ def ensure_cell_id_column(adata):
         adata.obs["cell_id"] = adata.obs_names.astype(str)
     else:
         adata.obs["cell_id"] = adata.obs["cell_id"].astype(str)
-    if adata.obs["cell_id"].str.strip().eq("").any() or adata.obs["cell_id"].duplicated().any():
-        raise ValueError("cell_id must contain unique, non-empty values")
+    if (adata.obs_names.astype(str).str.strip() == "").any() or not adata.obs_names.is_unique:
+        raise ValueError("Observation names must contain unique, non-empty values")
     return adata
 
 
@@ -212,8 +212,10 @@ adata.uns["cellphonedb"] = {
 
 log_step(logger, 3, 5, "writing CellPhoneDB input files")
 adata.write(args.output_zarr_path)
-metadata = adata.obs[["cell_id", args.celltype_col]].copy()
-metadata.columns = ["cell_id", "cell_type"]
+metadata = pd.DataFrame({
+    "cell_id": adata.obs_names.astype(str).to_numpy(),
+    "cell_type": adata.obs[args.celltype_col].to_numpy(),
+})
 metadata_path = os.path.join(output_dir, f"{args.sample_id}_cellid_cell_type.txt")
 metadata.to_csv(metadata_path, sep="\t", index=False)
 

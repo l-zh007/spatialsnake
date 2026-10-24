@@ -15,7 +15,7 @@ threads: 8  # Threads allocated to reclustering. Override with --threads when ne
 # Reclustering parameters
 # -----------------------------------------------------------------------------
 recluster_resolution: 0.8  # Leiden resolution for the selected subset. Recommended: 0.8 to refine heterogeneous clusters.
-recluster_n_top_genes: 2000  # Number of highly variable genes used during reclustering. Recommended: 2000 for focused subsets.
+recluster_n_top_genes: 0  # 0 disables HVG selection and uses all genes for PCA; set >=2 to select subset HVGs.
 recluster_neighbors: 15  # Number of neighbors used for subset graph construction. Recommended: 15 for stable local structure.
 recluster_n_pcs: 30  # Number of PCA components used during reclustering. Recommended: 30 for medium-sized subsets.
 
