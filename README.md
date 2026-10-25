@@ -2,7 +2,13 @@
   <img src="https://raw.githubusercontent.com/l-zh007/spatialsnake/main/spatialsnake-logo.png" alt="Spatialsnake logo" width="700">
 </p>
 
-<p align="center"><strong>Reusable spatial transcriptomics workflows for single- and multi-sample analysis</strong></p>
+<p align="center">
+  <img
+    width="820"
+    src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=500&size=16&duration=3200&pause=1100&color=4C78A8&center=true&vCenter=true&width=820&lines=Unified+SpatialData-based+workflows+across+spatial+platforms;Decision-guided+modules+from+data+ingestion+to+annotation;Reproducible+single-sample+and+multi-sample+analysis;Modular+tools+for+integration%2C+transformation%2C+and+comparison"
+    alt="Spatialsnake workflow features"
+  />
+</p>
 
 <p align="center">
   <a href="https://spatialsnake-tutorial.readthedocs.io/en/latest/">
@@ -41,42 +47,19 @@ The `TYPE` values below are case-sensitive documented spellings. Platform-specif
 | Xenium | `xenium` | Processed expression/transcript data and available images or cell geometries |
 | MERFISH / MERSCOPE | `Merfish` | Supported Vizgen expression, transcript, boundary and image outputs |
 
-Availability of images, transcripts and geometries depends on the platform files and loading settings. Multi-sample analysis is not spatial registration or three-dimensional reconstruction of tissue sections.
+Availability of images, transcripts and geometries depends on the platform files and loading settings. See the input documentation below for file requirements and resolution selection.
 
 ## Installation
 
-The [installation guide](docs/installation.md) provides Conda/R dependency commands, followed by the PyPI installation, alternative Bioconda instructions and source installation. **Create and activate that base environment before running:**
+For a basic installation on Linux with Conda:
 
 ```bash
-python -m pip install spatialsnake==0.0.6
-spatialsnake --version
-python -m pip check
+conda create -n spatialsnake_env --override-channels -c conda-forge -c bioconda spatialsnake -y
+conda activate spatialsnake_env
+spatialsnake install-packages
 ```
 
-Core analysis does not require a GPU. Optional modules have additional Python/R dependencies. The [optional installation instructions](docs/installation.md#optional-analyses-pypi-installations) separate CPU and NVIDIA GPU builds and explain the different PyPI and Bioconda installer routes. Installation-time `--torch-backend` and analysis-time `--device` have different purposes.
-
-<details>
-<summary>Developers and reproducible source checkouts</summary>
-
-Follow the [source installation instructions](docs/installation.md#3-source-installation-development-or-a-specified-revision). Use the release tag or commit associated with your analysis; the default branch can contain changes absent from a published package. Record local modifications as well as the package version.
-
-</details>
-
-## Multi-sample analysis
-
-`single_analysis` runs the single-sample route; `compare_analysis` provides the multi-sample route and selected group-comparison workflows. For a multi-sample **Visium core analysis**, use one row per sample:
-
-```text
-sample_id    input_path            group
-Sample_A     data/Sample_A         Control
-Sample_B     data/Sample_B         Control
-Sample_C     data/Sample_C         Treated
-Sample_D     data/Sample_D         Treated
-```
-
-Replace the illustrative names and paths with real inputs. Core Visium HD tables additionally require `bin_size`; Stereo-seq tables require `input_spec`, after `group` for the multi-sample route. See the documentation for supported selectors and optional per-sample QC columns. Reference annotation and downstream modules use their own sample-table schemas, so the core table should not be reused without checking the relevant tutorial.
-
-Use `compare_analysis` with the chosen stage, for example `--option=ingestion`. Here, `ingestion` means **data ingestion and preparation of the combined object**, not batch correction. Batch-correction settings are configured separately during preprocessing. Saved combined objects retain sample/group identities; sample-level statistical comparisons require appropriate biological replication.
+See the [installation guide](https://spatialsnake-tutorial.readthedocs.io/en/latest/environment_setup.html) for PyPI and source installation, environment requirements, and optional analysis dependencies, including CPU/GPU choices.
 
 ## Command reference
 
@@ -87,23 +70,15 @@ Use `compare_analysis` with the chosen stage, for example `--option=ingestion`. 
 | `produce-file` | Generate a YAML template for a selected stage |
 | `install-packages` | Complete dependencies for the selected installation route |
 
-```text
-spatialsnake <command> <INPUT_FILE> <TYPE> [--option=<analysis_option>] [options]
-spatialsnake useful_tool [--option=<operation>] <INPUT>... [options]
-spatialsnake produce-file --option=<analysis_option>
-spatialsnake install-packages [--extended] [--torch-backend=<auto|cpu|cu128>] [--dry-run]
-spatialsnake --help
-spatialsnake --version
-```
-
-Analysis options include `ingestion`, `preprocess`, `clustering`, `annotation_help`, `annotation`, `reclustering`, `advanced_analysis` and `compare_stage`. Reannotation uses `--option=annotation --anno_algorithm=reannotation`; it is not a separate top-level `--option`. Utility operations are `splitting`, `merge` and `transform`.
-
-The current CLI recommends `ingestion` and `advanced_analysis`; the legacy spellings `integrate` and `advance_analysis` remain supported. For pySCENIC, use `--runpipe=pyscenic`; `pysenic` remains a compatibility alias. Stage names are normalized internally: `produce-file --option=ingestion` creates **`integrate.yaml`**, and `produce-file --option=advanced_analysis` creates **`advance_analysis.yaml`**. Use `spatialsnake --help` to check the options supported by your installed release.
+Use `spatialsnake --help` for available commands and parameters. Important parameters can be set directly on the command line; `--configfile` supplies additional YAML settings, with explicitly provided CLI values taking precedence. See the [command-line guide](https://spatialsnake-tutorial.readthedocs.io/en/latest/usage.html) and [configuration reference](https://spatialsnake-tutorial.readthedocs.io/en/latest/config_reference/index.html) for details.
 
 ## Documentation and support
 
-- **Core analysis:** [worked single- and multi-sample tutorial](https://spatialsnake-tutorial.readthedocs.io/en/latest/core_analysis/index.html).
-- **Focused analysis, utility operations and further analyses:** [full documentation](https://spatialsnake-tutorial.readthedocs.io/en/latest/), with module-specific sample tables and parameters.
+- [Input preparation and supported representations](https://spatialsnake-tutorial.readthedocs.io/en/latest/data_input/index.html).
+- [Core analysis](https://spatialsnake-tutorial.readthedocs.io/en/latest/core_analysis/index.html) and [multi-sample integration](https://spatialsnake-tutorial.readthedocs.io/en/latest/integration_analysis/multi_sample_integration.html).
+- [Subclustering and annotation refinement](https://spatialsnake-tutorial.readthedocs.io/en/latest/subcluster_annotation/index.html).
+- [Splitting, merging and data conversion](https://spatialsnake-tutorial.readthedocs.io/en/latest/useful_tool/index.html).
+- [Downstream analysis and group comparisons](https://spatialsnake-tutorial.readthedocs.io/en/latest/downstream_analysis/index.html).
 - **Problems or feature requests:** [GitHub issues](https://github.com/l-zh007/spatialsnake/issues). Include the software version, installation route, exact command, relevant YAML/sample table and error log. Omit credentials and private data.
 
 ## Citation
