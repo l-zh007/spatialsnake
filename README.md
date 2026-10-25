@@ -1,223 +1,120 @@
-<p align="center"> 
-  <img src="https://raw.githubusercontent.com/l-zh007/spatialsnake/main/spatialsnake-logo.png" alt="spatialsnake logo" width="760">
+<p align="center">
+  <img src="https://raw.githubusercontent.com/l-zh007/spatialsnake/main/spatialsnake-logo.png" alt="Spatialsnake logo" width="700">
 </p>
 
-<p align="center">
-  <img
-    width="820"
-    src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=500&size=16&duration=3200&pause=1100&color=4C78A8&center=true&vCenter=true&width=820&lines=Unified+SpatialData-based+workflows+across+spatial+platforms;Decision-guided+modules+from+data+ingestion+to+annotation;Reproducible+single-sample+and+cross-sample+analysis;Modular+tools+for+integration%2C+transformation%2C+and+comparison"
-    alt="Spatialsnake workflow features"
-  />
-</p>
+<p align="center"><strong>Reusable spatial transcriptomics workflows for single- and multi-sample analysis</strong></p>
 
 <p align="center">
   <a href="https://spatialsnake-tutorial.readthedocs.io/en/latest/">
     <img src="https://img.shields.io/badge/docs-Read%20the%20Documentation-blue" alt="Documentation">
   </a>
   <a href="https://pypi.org/project/spatialsnake/">
-    <img src="https://img.shields.io/pypi/v/spatialsnake" alt="PyPI">
+    <img src="https://img.shields.io/pypi/v/spatialsnake" alt="PyPI version">
   </a>
   <a href="https://anaconda.org/bioconda/spatialsnake">
     <img src="https://anaconda.org/bioconda/spatialsnake/badges/version.svg" alt="Bioconda version">
   </a>
-  <a href="https://anaconda.org/bioconda/spatialsnake">
-    <img src="https://anaconda.org/bioconda/spatialsnake/badges/platforms.svg" alt="Supported platforms">
-  </a>
-  <a href="https://anaconda.org/bioconda/spatialsnake">
-    <img src="https://anaconda.org/bioconda/spatialsnake/badges/license.svg" alt="License">
-  </a>
-  <a href="https://anaconda.org/bioconda/spatialsnake">
-    <img src="https://anaconda.org/bioconda/spatialsnake/badges/downloads.svg" alt="Bioconda downloads">
-  </a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
 </p>
 
-<p align="center">
-  A user-friendly command-line application for spatial transcriptomics powered by <code>SpatialData</code> and Snakemake.
-</p>
+Spatialsnake is a command-line tool for analysing **processed spatial transcriptomics data** from sequencing- and imaging-based platforms. Built on SpatialData and Snakemake, it connects configurable core analysis, targeted reanalysis and downstream methods through reusable SpatialData objects stored in Zarr.
 
-`spatialsnake` is a command-line application for automated `spatial transcriptomics` analysis. Implemented in `Python` on top of the `scverse` ecosystem, it uses SpatialData to convert datasets from multiple spatial transcriptomics platforms into a unified `zarr`-based object format. This design supports a consistent workflow spanning data ingestion, preprocessing, clustering, annotation, and downstream analysis through a command-line interface with workflow-based parameter control.
+SpatialData provides the Python data model linking expression tables to spatial elements and coordinate systems; Zarr is the on-disk storage format. Spatialsnake coordinates readers, analysis stages and method-specific inputs around these objects. Its ingestion step starts from platform software outputs, such as Space Ranger or SAW results, rather than FASTQ read alignment.
 
-## Project at a Glance
+## Key features
 
-| Item | Summary |
-| --- | --- |
-| Official Documentation | [spatialsnake Documentation](https://spatialsnake-tutorial.readthedocs.io/en/latest/) |
-| Tutorial Article | [Core Analysis Tutorial](https://spatialsnake-tutorial.readthedocs.io/en/latest/core_analysis/index.html) |
-| Workflow Modes | `single_analysis`, `compare_analysis` |
-| Utility Entry Points | `useful_tool`, `produce-file`, `install-packages` |
-| Main Analysis Options | `integrate`, `preprocess`, `clustering`, `reclustering`, `annotation_help`, `annotation`, `advance_analysis`, `compare_stage` |
-| Supported Input Types | `visium`, `visium_segment`, `visium_HD`, `xenium`, `Merfish`, `stereoseq` |
+- **Core analysis:** ingest supported platform outputs, review QC and dimensionality diagnostics, cluster observations, inspect markers or reference-based estimates, and store reviewed annotations. Compatible samples can share the core workflow while retaining sample and group identities.
+- **Focused analysis:** select populations, ROIs or physical-distance neighborhoods; recluster selected observations and return refined labels to the parent object. Prepared subsets can proceed to downstream analyses.
+- **Further analyses:** use BANKSY or CellCharter for spatial domains, CellPhoneDB/LIANA/CellChat for communication, and pySCENIC for regulatory programs. Sample-aware comparisons support pseudobulk gene analysis and CellChat comparisons. Supported communication plots can be regenerated from saved inference results.
+- **Optional data operations:** split or merge compatible objects, import AnnData, and export AnnData or Seurat objects through the CLI. Saved stage inputs allow selected analyses to be revised without repeating unrelated preparation.
 
-## Core Functions
+## Supported platforms
 
-- Standardize raw spatial transcriptomics data into a unified object during `Ingesting`.
-- Run `preprocess` for quality control, filtering, normalization, and dimensionality reduction preparation.
-- Perform `clustering` and visualization, followed by `annotation_help` and `annotation`.
-- Carry out `reclustering` and `reannotation` for clusters of interest.
-- Execute `advance_analysis` for downstream analyses and `compare_stage` for cross-sample comparison.
-- Use auxiliary utilities for `splitting`, `merge`, and `transform`.
+The `TYPE` values below are case-sensitive documented spellings. Platform-specific selectors determine the representation loaded for analysis.
 
-## Available Platforms
+| Platform / representation | CLI `TYPE` | Input |
+| --- | --- | --- |
+| Visium | `visium` | Processed expression matrix and spatial files |
+| Visium HD | `visium_HD` | Space Ranger binned outputs; choose `bin_size` in the core sample table |
+| Segmented Visium | `visium_segment` | Supported Space Ranger segmentation outputs |
+| Stereo-seq | `stereoseq` | Supported SAW outputs; choose bin, cellbin or adjusted cellbin with `input_spec` |
+| Xenium | `xenium` | Processed expression/transcript data and available images or cell geometries |
+| MERFISH / MERSCOPE | `Merfish` | Supported Vizgen expression, transcript, boundary and image outputs |
 
-### Sequencing-based
+Availability of images, transcripts and geometries depends on the platform files and loading settings. Multi-sample analysis is not spatial registration or three-dimensional reconstruction of tissue sections.
 
-- `visium`: 10x Genomics spatial transcriptomics data
-- `visium_HD`: high-resolution 10x Genomics spatial transcriptomics data
-- `visium_segment`: cell segmentation outputs from 10x Genomics Space Ranger
-- `stereoseq`: BGI Stereo-seq spatial transcriptomics data, including different bin sizes, `cellbin`, and adjusted `cellbin` data types
+## Installation
 
-### Imaging-based
-
-- `xenium`: image-based 10x Genomics Xenium spatial transcriptomics data
-- `Merfish`: Vizgen MERFISH spatial transcriptomics data
-
-## Basic Installation
-
-The commands below describe version 0.0.6. PyPI installation requires that release to be published; the Bioconda option requires its corresponding channel update. Until then, use the available PyPI release or the source option. All routes require Linux and a fresh Conda environment.
-
-### Option 1. PyPI (recommended)
+The [installation guide](docs/installation.md) provides Conda/R dependency commands, followed by the PyPI installation, alternative Bioconda instructions and source installation. **Create and activate that base environment before running:**
 
 ```bash
-conda create -n spatialsnake_env --override-channels -c conda-forge -c bioconda \
-  python=3.12.11 snakemake-minimal=9.8.1 r-base=4.4.0 -y
-conda activate spatialsnake_env
-
-conda install --override-channels -c conda-forge -c bioconda \
-  python=3.12.11 snakemake-minimal=9.8.1 r-base=4.4.0 \
-  r-optparse r-dplyr r-ggplot2 r-readr r-ragg \
-  r-seurat r-remotes r-biocmanager r-presto r-nmf r-ggpubr \
-  bioconductor-annotationdbi bioconductor-complexheatmap \
-  bioconductor-clusterprofiler bioconductor-edger \
-  bioconductor-org.hs.eg.db bioconductor-org.mm.eg.db \
-  bioconductor-rhdf5 bioconductor-biocneighbors -y
 python -m pip install spatialsnake==0.0.6
 spatialsnake --version
-```
-
-```bash
-# Choose one PyTorch build (do not run both commands)
-python -m pip install --index-url https://download.pytorch.org/whl/cu128 "torch==2.8.0"  # NVIDIA GPU
-# python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch==2.8.0"  # CPU-only
-
-python -m pip install "spatialsnake[extended]==0.0.6"
-spatialsnake install-packages
 python -m pip check
 ```
 
-### Option 2. Bioconda
+Core analysis does not require a GPU. Optional modules have additional Python/R dependencies. The [optional installation instructions](docs/installation.md#optional-analyses-pypi-installations) separate CPU and NVIDIA GPU builds and explain the different PyPI and Bioconda installer routes. Installation-time `--torch-backend` and analysis-time `--device` have different purposes.
 
-```bash
-conda create -n spatialsnake_env --override-channels -c conda-forge -c bioconda \
-  spatialsnake=0.0.6 python=3.12.11 r-base=4.4.3 snakemake-minimal=9.8.1 -y
-conda activate spatialsnake_env
-spatialsnake install-packages
-```
+<details>
+<summary>Developers and reproducible source checkouts</summary>
 
-Optional advanced analyses:
+Follow the [source installation instructions](docs/installation.md#3-source-installation-development-or-a-specified-revision). Use the release tag or commit associated with your analysis; the default branch can contain changes absent from a published package. Record local modifications as well as the package version.
 
-```bash
-# Automatically choose cu128 when an NVIDIA GPU is available, otherwise CPU
-spatialsnake install-packages --extended --torch-backend=auto
+</details>
 
-# Or force one build instead:
-# spatialsnake install-packages --extended --torch-backend=cpu
-# spatialsnake install-packages --extended --torch-backend=cu128
-```
+## Multi-sample analysis
 
-See package details and release files on [Bioconda](https://anaconda.org/bioconda/spatialsnake).
-
-### Option 3. Source
-
-```bash
-conda create -n spatialsnake_env --override-channels -c conda-forge -c bioconda \
-  python=3.12.11 r-base=4.4.0 snakemake-minimal=9.8.1 -y
-conda activate spatialsnake_env
-```
-
-Install the Conda/R dependencies from Option 1 in this environment before using pip, then continue:
-
-```bash
-git clone https://github.com/l-zh007/spatialsnake.git
-cd spatialsnake
-python -m pip install .
-spatialsnake --version
-```
-
-Optional advanced analyses:
-
-```bash
-python -m pip install --index-url https://download.pytorch.org/whl/cu128 "torch==2.8.0"
-python -m pip install ".[extended]"
-spatialsnake install-packages
-```
-
-For PyPI, the Conda/R layer plus `pip install spatialsnake` covers integration,
-preprocessing, clustering/reclustering, annotation help,
-manual annotation, enrichment and common utilities. The optional extras add
-the selected CPU or cu128 PyTorch build, cell2location, scvi-tools, CellCharter, Squidpy,
-CellPhoneDB, LIANA, pySCENIC and napari-spatialdata; `install-packages` then
-adds BANKSY, RCTD and CellChat support.
-
-For Bioconda, `install-packages` provides the same base functional scope.
-`install-packages --extended` includes that complete base stage and adds the
-advanced Python/R modules listed above. `--torch-backend=auto` chooses the
-smaller CPU build when no accessible NVIDIA GPU is detected. Runtime
-`device=auto` selects CUDA when available or CPU otherwise. GitHub-hosted R
-packages require an active network connection; rerun
-the same installer command after an interrupted download.
-
-## Working Directory
-
-Prepare the working directory before running the main workflow:
+`single_analysis` runs the single-sample route; `compare_analysis` provides the multi-sample route and selected group-comparison workflows. For a multi-sample **Visium core analysis**, use one row per sample:
 
 ```text
-project_root/
-├── data/
-├── sample.txt
-├── results/
-└── <analysis_option>.yaml
+sample_id    input_path            group
+Sample_A     data/Sample_A         Control
+Sample_B     data/Sample_B         Control
+Sample_C     data/Sample_C         Treated
+Sample_D     data/Sample_D         Treated
 ```
 
-```bash
-mkdir -p project_root/data project_root/results
-touch project_root/sample.txt
-```
+Replace the illustrative names and paths with real inputs. Core Visium HD tables additionally require `bin_size`; Stereo-seq tables require `input_spec`, after `group` for the multi-sample route. See the documentation for supported selectors and optional per-sample QC columns. Reference annotation and downstream modules use their own sample-table schemas, so the core table should not be reused without checking the relevant tutorial.
 
-`sample.txt` is the required sample information table for every module in the main workflow. In the working directory, `data/` stores raw input data, `results/` stores analysis outputs generated by the workflow, and `<analysis_option>.yaml` is an optional configuration file.
+Use `compare_analysis` with the chosen stage, for example `--option=ingestion`. Here, `ingestion` means **data ingestion and preparation of the combined object**, not batch correction. Batch-correction settings are configured separately during preprocessing. Saved combined objects retain sample/group identities; sample-level statistical comparisons require appropriate biological replication.
 
-## Minimal Usage
+## Command reference
 
-The command-line interface provides the following documented entry points:
+| Entry point | Purpose |
+| --- | --- |
+| `single_analysis` / `compare_analysis` | Single-sample / multi-sample workflows |
+| `useful_tool` | Splitting, merging and supported data conversion |
+| `produce-file` | Generate a YAML template for a selected stage |
+| `install-packages` | Complete dependencies for the selected installation route |
 
-```bash
-spatialsnake <command> <INPUT> <TYPE> [--option=<analysis_option>] [options]
-spatialsnake useful_tool [--option=<ways>] <INPUT> [options]
-spatialsnake produce-file [--option=<analysis_option>]
+```text
+spatialsnake <command> <INPUT_FILE> <TYPE> [--option=<analysis_option>] [options]
+spatialsnake useful_tool [--option=<operation>] <INPUT>... [options]
+spatialsnake produce-file --option=<analysis_option>
 spatialsnake install-packages [--extended] [--torch-backend=<auto|cpu|cu128>] [--dry-run]
-spatialsnake (-h | --help)
+spatialsnake --help
 spatialsnake --version
 ```
 
-Main workflow selection:
+Analysis options include `ingestion`, `preprocess`, `clustering`, `annotation_help`, `annotation`, `reclustering`, `advanced_analysis` and `compare_stage`. Reannotation uses `--option=annotation --anno_algorithm=reannotation`; it is not a separate top-level `--option`. Utility operations are `splitting`, `merge` and `transform`.
 
-- `<command>`: choose `single_analysis` or `compare_analysis`
-- `<TYPE>`: choose from `visium`, `visium_segment`, `visium_HD`, `xenium`, `Merfish`, and `stereoseq`
-- `--option=<analysis_option>`: choose from `integrate`, `preprocess`, `clustering`, `reclustering`, `annotation_help`, `annotation`, `advance_analysis`, and `compare_stage`
+The current CLI recommends `ingestion` and `advanced_analysis`; the legacy spellings `integrate` and `advance_analysis` remain supported. For pySCENIC, use `--runpipe=pyscenic`; `pysenic` remains a compatibility alias. Stage names are normalized internally: `produce-file --option=ingestion` creates **`integrate.yaml`**, and `produce-file --option=advanced_analysis` creates **`advance_analysis.yaml`**. Use `spatialsnake --help` to check the options supported by your installed release.
 
-Configuration files can be generated with:
+## Documentation and support
 
-```bash
-spatialsnake produce-file --option=<analysis_option>
-```
+- **Core analysis:** [worked single- and multi-sample tutorial](https://spatialsnake-tutorial.readthedocs.io/en/latest/core_analysis/index.html).
+- **Focused analysis, utility operations and further analyses:** [full documentation](https://spatialsnake-tutorial.readthedocs.io/en/latest/), with module-specific sample tables and parameters.
+- **Problems or feature requests:** [GitHub issues](https://github.com/l-zh007/spatialsnake/issues). Include the software version, installation route, exact command, relevant YAML/sample table and error log. Omit credentials and private data.
 
-The generated YAML template can then be applied with `--configfile`. Parameters provided directly on the command line take priority over parameters defined in the YAML file.
+## Citation
 
-## Further Reading
+Report the Spatialsnake version and source revision used in your analysis. Please also cite the underlying SpatialData framework and Snakemake workflow engine:
 
-- Read the full [official documentation](https://spatialsnake-tutorial.readthedocs.io/en/latest/).
-- Start from the example-based [core analysis tutorial](https://spatialsnake-tutorial.readthedocs.io/en/latest/core_analysis/index.html).
-- If you encounter problems or would like to suggest extensions, please [open an issue on GitHub](https://github.com/l-zh007/spatialsnake/issues).
+- Marconato L, Palla G, Yamauchi KA, et al. **SpatialData: an open and universal data framework for spatial omics.** *Nature Methods*. 2025;22:58–62. [doi:10.1038/s41592-024-02212-x](https://doi.org/10.1038/s41592-024-02212-x).
+- Mölder F, Jablonski KP, Letcher B, et al. **Sustainable data analysis with Snakemake.** *F1000Research*. 2021;10:33. [doi:10.12688/f1000research.29032.2](https://doi.org/10.12688/f1000research.29032.2).
 
-## Reference
+For individual analytical methods, cite the corresponding original publications listed in the module documentation.
 
-> Köster, J., Mölder, F., Jablonski, K. P., Letcher, B., Hall, M. B., Tomkins-Tinch, C. H., Sochat, V., Forster, J., Lee, S., Twardziok, S. O., Kanitz, A., Wilm, A., Holtgrewe, M., Rahmann, S., and Nahnsen, S. *Sustainable data analysis with Snakemake*. F1000Research, 10:33, 2021. https://doi.org/10.12688/f1000research.29032.2
+## License
+
+Spatialsnake is distributed under the [MIT license](LICENSE).
