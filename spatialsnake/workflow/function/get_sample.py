@@ -295,7 +295,7 @@ def check_file_exit(type,dir_path):
       return "merscope"
     required_files = {
         'visium': [
-            'spatial/tissue_positions_list.csv',
+            ('spatial/tissue_positions_list.csv', 'spatial/tissue_positions.csv'),
             'spatial/scalefactors_json.json',
             'spatial/tissue_lowres_image.png',
             'spatial/tissue_hires_image.png'],
@@ -308,16 +308,22 @@ def check_file_exit(type,dir_path):
             "spatial/scalefactors_json.json",
             "cell_segmentations.geojson"],
         'xenium': [
+            'cell_feature_matrix.h5',
             'cells.parquet',
+            'cells.zarr.zip',
             'transcripts.parquet',
-            'morphology.ome.tif',
+            ('morphology_focus.ome.tif', 'morphology_focus/morphology_focus_0000.ome.tif'),
             'experiment.xenium']}
-    for file_pattern in required_files[type]:
-      if os.path.isfile(os.path.join(dir_path,file_pattern)):
+    # Official alternative names; the reader handles headers and image versions.
+    for file_names in required_files[type]:
+      file_names = (file_names,) if isinstance(file_names, str) else file_names
+      if any(os.path.isfile(os.path.join(dir_path, name)) for name in file_names):
         continue
       else:
-        invalid_samples.append(file_pattern)
+        logger.error(f"Missing required {type} input under {dir_path}: {' or '.join(file_names)}")
         return False
+    if type == 'xenium':
+      return 'cell_feature_matrix.h5'
     main_candidates = [
       'filtered_feature_bc_matrix.h5',
       'raw_feature_bc_matrix.h5',

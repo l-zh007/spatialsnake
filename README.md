@@ -5,7 +5,7 @@
 <p align="center">
   <img
     width="820"
-    src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=500&size=16&duration=3200&pause=1100&color=4C78A8&center=true&vCenter=true&width=820&lines=Shared+SpatialData+objects+across+platforms;Configurable+core+analysis+and+focus+analysis;Downstream+analysis+and+data+operation+tools"
+    src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=500&size=16&duration=3200&pause=1100&color=4C78A8&center=true&vCenter=true&width=820&lines=Shared+SpatialData+objects+across+platforms;Configurable+core+analysis+and+focused+analysis;Further+analyses+and+optional+data+operations"
     alt="Spatialsnake workflow features"
   />
 </p>
@@ -21,16 +21,23 @@
     <img src="https://anaconda.org/bioconda/spatialsnake/badges/version.svg" alt="Bioconda version">
   </a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
+  <a href="https://anaconda.org/bioconda/spatialsnake">
+    <img src="https://anaconda.org/bioconda/spatialsnake/badges/downloads.svg" alt="Bioconda downloads">
+  </a>
 </p>
 
-Spatialsnake is a command-line tool for analysing **processed spatial transcriptomics data** across sequencing- and imaging-based platforms. Built on SpatialData and Snakemake, it supports core analysis, focus analysis, downstream analysis and data operation tools.
+Spatialsnake is a command-line tool for analysing **processed spatial transcriptomics data** across sequencing- and imaging-based platforms. Built on SpatialData and Snakemake, it supports core analysis, focused analysis, further analyses and optional data operations.
+
+<p align="center">
+  <img src="assets/spatialsnake-workflow.svg" alt="Spatialsnake core analysis, focused analysis and further analyses" width="900">
+</p>
 
 ## Key features
 
 - **Core analysis:** ingest supported platform outputs, review QC and dimensionality diagnostics, cluster observations, inspect markers or reference-based estimates, and store reviewed annotations. Compatible samples can share the core workflow while retaining sample and group identities.
-- **Focus analysis:** select populations, ROIs or physical-distance neighborhoods; recluster selected observations and return refined labels to the parent object. Prepared subsets can proceed to downstream analyses.
-- **Downstream analysis:** use BANKSY or CellCharter for spatial domains, CellPhoneDB/LIANA/CellChat for communication, and pySCENIC for regulatory programs. Sample-aware comparisons support pseudobulk gene analysis and CellChat comparisons. Supported communication plots can be regenerated from saved inference results.
-- **Data operation tools:** split or merge compatible objects, import AnnData, and export AnnData or Seurat objects through the CLI. Saved stage inputs allow selected analyses to be revised without repeating unrelated preparation.
+- **Focused analysis:** select populations, ROIs or physical-distance neighborhoods; recluster selected observations and return refined labels to the parent object. Prepared subsets can proceed to downstream analyses.
+- **Further analyses:** use BANKSY or CellCharter for spatial domains, CellPhoneDB/LIANA/CellChat for communication, and pySCENIC for regulatory programs. Sample-aware comparisons support pseudobulk gene analysis and CellChat comparisons. Supported communication plots can be regenerated from saved inference results.
+- **Optional data operations:** split or merge compatible objects, import AnnData, and export AnnData or Seurat objects through the CLI. Saved stage inputs allow selected analyses to be revised without repeating unrelated preparation.
 
 ## Supported platforms
 
@@ -73,7 +80,7 @@ Use `spatialsnake --help` for available commands and parameters. Important param
 ## Documentation and support
 
 - [Input preparation and supported representations](https://spatialsnake-tutorial.readthedocs.io/en/latest/data_input/index.html).
-- [Core analysis](https://spatialsnake-tutorial.readthedocs.io/en/latest/core_analysis/index.html) and [multi-sample integration](https://spatialsnake-tutorial.readthedocs.io/en/latest/integration_analysis/multi_sample_integration.html).
+- [Core analysis](https://spatialsnake-tutorial.readthedocs.io/en/latest/core_analysis/index.html) and [multi-sample data assembly](https://spatialsnake-tutorial.readthedocs.io/en/latest/integration_analysis/multi_sample_integration.html).
 - [Subclustering and annotation refinement](https://spatialsnake-tutorial.readthedocs.io/en/latest/subcluster_annotation/index.html).
 - [Splitting, merging and data conversion](https://spatialsnake-tutorial.readthedocs.io/en/latest/useful_tool/index.html).
 - [Downstream analysis and group comparisons](https://spatialsnake-tutorial.readthedocs.io/en/latest/downstream_analysis/index.html).

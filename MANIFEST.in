@@ -12,5 +12,4 @@ global-exclude *.py[cod]
 prune .snakemake
 prune log
 prune logs
-prune resources/data
 global-exclude *.log
