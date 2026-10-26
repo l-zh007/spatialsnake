@@ -75,7 +75,12 @@ rule pyscenic_aucell:
     input:
         regulons = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.regulons.csv")
     output:
-        aucell = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.aucell.loom")
+        aucell = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.aucell.loom"),
+        auc_csv = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}.auc.csv"),
+        regulon_genes = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}_regulon_genes.csv"),
+        mean_auc = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}_auc_mean_by_celltype.csv"),
+        heatmap = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}_auc_heatmap.png"),
+        dotplot = os.path.join(results_folder,"pyscenic_results",f"{cpdb_sample_id}_dotplot_regulons.png")
     threads: workflow_threads
     params:
         inputs = cellPhoneDB_input if cellPhoneDB_input else config.get("senic_input", ""),

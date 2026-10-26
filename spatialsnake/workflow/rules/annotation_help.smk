@@ -36,7 +36,8 @@ rule annotation_help:
   output:
     merge=annotation_help_output(run_type,'marker_genes_pval.csv'),
     proportion_png=annotation_help_output(run_type,'Clusters_proportion.png'),
-    proportion_tsv=annotation_help_output(run_type,'Clusters_proportion.composition.tsv')
+    proportion_tsv=annotation_help_output(run_type,'Clusters_proportion.composition.tsv'),
+    marker_dotplot=annotation_help_output(run_type, 'concatenated_sdata_marker_dotplot.png' if channel == 'compare_analysis' else '{sample}_marker_dotplot.png')
     # os.path.join(results_folder,"{sample}",'clustering','marker_genes_pval.csv') if channel == 'single_analysis' else os.path.join(results_folder,"merge_data",'clustering','marker_genes_pval.csv') 
   threads: workflow_threads
   params:

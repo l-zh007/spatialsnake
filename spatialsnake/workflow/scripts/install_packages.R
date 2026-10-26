@@ -52,9 +52,11 @@ if (!is_installed("schard") || packageVersion("schard") != required_schard) {
 if (packageVersion("schard") != required_schard) {
   stop("schard ", required_schard, " is required after installation.")
 }
-if (!is_installed("spacexr")) {
-  message("Installing spacexr from GitHub")
-  remotes::install_github("dmcable/spacexr", upgrade = "never", dependencies = r_dependencies, build_vignettes = FALSE)
+spacexr_ref <- "9f5dc33c8060f946c6072a138b70e189636e1435"
+if (!is_installed("spacexr") || packageVersion("spacexr") != "2.2.1" ||
+    !identical(packageDescription("spacexr")$RemoteSha, spacexr_ref)) {
+  message("Installing tested spacexr 2.2.1 from GitHub")
+  remotes::install_github(paste0("dmcable/spacexr@", spacexr_ref), upgrade = "never", dependencies = r_dependencies, build_vignettes = FALSE, force = TRUE)
 }
 
 required_nmf <- "0.26"
@@ -86,12 +88,14 @@ if (!is_installed("ggpubr")) {
 }
 assert_loadable("ggpubr")
 
-if (!is_installed("CellChat")) {
-  message("Installing CellChat from GitHub")
+cellchat_ref <- "75253cd0c9e68410e6e721a6d3a0419a1d7e358f"
+if (!is_installed("CellChat") || packageVersion("CellChat") != "2.2.0.9001" ||
+    !identical(packageDescription("CellChat")$RemoteSha, cellchat_ref)) {
+  message("Installing tested CellChat 2.2.0.9001 from GitHub")
   if (!is_installed("presto")) {
     remotes::install_github("immunogenomics/presto", upgrade = "never", dependencies = r_dependencies)
   }
-  remotes::install_github("jinworks/CellChat", upgrade = "never", dependencies = r_dependencies)
+  remotes::install_github(paste0("jinworks/CellChat@", cellchat_ref), upgrade = "never", dependencies = r_dependencies, force = TRUE)
 }
 
 required <- c("schard", "spacexr", "CellChat", "ggpubr", "NMF", "circlize")

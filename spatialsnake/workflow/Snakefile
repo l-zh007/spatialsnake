@@ -434,6 +434,8 @@ else:
         )
     else:
         samples,downstream_file,scale_factors_files= get_sample_paths(sample_list, run_type,channel,option,require_non_empty=False, data_fold=data_fold)
+    if option == "advance_analysis" and len({os.path.realpath(p) for p in downstream_file}) > 1:
+        sys.exit("Advanced analysis requires one integrated input object. Run independent objects separately, or provide the merged object; repeated rows referring to the same object are supported.")
     if option == "compare_stage" and runpipe == "cellchat":
         if len(downstream_file) == 0:
             sys.exit("\ncompare_stage: 未提供 CellChat 比较所需的 rds 文件路径")
@@ -702,7 +704,9 @@ def parameter_output(samples, option):
             outs.append(os.path.join(results_folder, "merge_data", 'preprocess', "filter_concatenated_sdata.zarr"))
         return outs
     if option == "annotation_help":
-        filenames = ("kegg_data.csv", "Clusters_proportion.png", "Clusters_proportion.composition.tsv")
+        filenames = ("kegg_data.csv", "GO_data.csv", "BP_GO_cluster.png", "CC_GO_cluster.png", "MF_GO_cluster.png",
+                     "Clusters_proportion.png", "Clusters_proportion.composition.tsv",
+                     ("concatenated_sdata" if channel == "compare_analysis" else "{sample}") + "_marker_dotplot.png")
         if channel == 'single_analysis':
           if run_type == "visium_HD":
             return [
@@ -798,7 +802,10 @@ def parameter_output(samples, option):
             if channel == "compare_analysis":
                 outs.append(os.path.join(results_folder, "merge_data", "cellPhoneDB_results", "concentrate_heatmap.png"))
         elif runpipe == "pyscenic":
-            outs.append(os.path.join(results_folder, "pyscenic_results", f"{cpdb_sample_id}.aucell.loom"))
+            outs += [os.path.join(results_folder, "pyscenic_results", f"{cpdb_sample_id}{suffix}") for suffix in (
+                ".aucell.loom", ".auc.csv", "_regulon_genes.csv",
+                "_auc_mean_by_celltype.csv", "_auc_heatmap.png", "_dotplot_regulons.png"
+            )]
         elif runpipe == "liana":
             liana_output_dir = os.path.join(results_folder, f"{cpdb_sample_id}", "liana_output")
             outs += [os.path.join(liana_output_dir, name) for name in (

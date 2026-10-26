@@ -104,10 +104,10 @@ VALID_OPTIONS = [
 ]
 
 __author__ = 'lzh'
-__version__ = '0.0.6'
+__version__ = '0.0.7'
 __logo__ = """
 
-  ╭─── SpatialSnake · v0.0.6 ───╮
+  ╭─── SpatialSnake · v0.0.7 ───╮
   │                             │
   │    ●───●───●───●───●───●    │
   │    │ ╲ │ ╱ │ ╲ │ ╱ │ ╲ │    │

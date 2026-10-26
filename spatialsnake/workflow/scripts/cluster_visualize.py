@@ -54,6 +54,8 @@ parser.add_argument('--input_spec', type=str, required=False,
 parser.add_argument('--threads', type=int, default=4,
                    help='Threads allocated to marker analysis and visualization')
 args = parser.parse_args()
+if args.markers_algorithm not in ("wilcoxon", "t-test", "t-test_overestim_var"):
+    parser.error("annotation_help requires wilcoxon, t-test or t-test_overestim_var; logreg does not provide fold changes and p-values required for enrichment.")
 type=args.type
 if args.threads < 1:
     parser.error("--threads must be >= 1")

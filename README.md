@@ -36,7 +36,7 @@ Spatialsnake is a command-line tool for analysing **processed spatial transcript
 
 - **Core analysis:** ingest supported platform outputs, review QC and dimensionality diagnostics, cluster observations, inspect markers or reference-based estimates, and store reviewed annotations. Compatible samples can share the core workflow while retaining sample and group identities.
 - **Focused analysis:** select populations, ROIs or physical-distance neighborhoods; recluster selected observations and return refined labels to the parent object. Prepared subsets can proceed to downstream analyses.
-- **Further analyses:** use BANKSY or CellCharter for spatial domains, CellPhoneDB/LIANA/CellChat for communication, and pySCENIC for regulatory programs. Sample-aware comparisons support pseudobulk gene analysis and CellChat comparisons. Supported communication plots can be regenerated from saved inference results.
+- **Further analyses:** use BANKSY or CellCharter for spatial domains, CellPhoneDB/LIANA/CellChat for communication, and pySCENIC for regulatory programs. Comparison modules support sample-level pseudobulk differential expression analysis and descriptive comparisons of CellChat networks. Supported communication plots can be regenerated from saved inference results.
 - **Optional data operations:** split or merge compatible objects, import AnnData, and export AnnData or Seurat objects through the CLI. Saved stage inputs allow selected analyses to be revised without repeating unrelated preparation.
 
 ## Supported platforms
@@ -64,16 +64,20 @@ conda activate spatialsnake_env
 spatialsnake install-packages
 ```
 
+The command installs the latest compatible release available on Bioconda.
+
 See the [installation guide](https://spatialsnake-tutorial.readthedocs.io/en/latest/environment_setup.html) for PyPI and source installation, environment requirements, and optional analysis dependencies, including CPU/GPU choices.
 
 ## Command reference
 
-| Entry point | Purpose |
-| --- | --- |
-| `single_analysis` / `compare_analysis` | Single-sample / multi-sample workflows |
-| `useful_tool` | Splitting, merging and supported data conversion |
-| `produce-file` | Generate a YAML template for a selected stage |
-| `install-packages` | Complete dependencies for the selected installation route |
+```text
+spatialsnake single_analysis <INPUT_FILE> <TYPE> [options]
+spatialsnake compare_analysis <INPUT_FILE> <TYPE> [options]
+spatialsnake useful_tool [--option=<operation>] <INPUT>... [options]
+spatialsnake produce-file --option=<analysis_option>
+spatialsnake install-packages
+spatialsnake --help
+```
 
 Use `spatialsnake --help` for available commands and parameters. Important parameters can be set directly on the command line; `--configfile` supplies additional YAML settings, with explicitly provided CLI values taking precedence. See the [command-line guide](https://spatialsnake-tutorial.readthedocs.io/en/latest/usage.html) and [configuration reference](https://spatialsnake-tutorial.readthedocs.io/en/latest/config_reference/index.html) for details.
 
@@ -81,9 +85,9 @@ Use `spatialsnake --help` for available commands and parameters. Important param
 
 - [Input preparation and supported representations](https://spatialsnake-tutorial.readthedocs.io/en/latest/data_input/index.html).
 - [Core analysis](https://spatialsnake-tutorial.readthedocs.io/en/latest/core_analysis/index.html) and [multi-sample data assembly](https://spatialsnake-tutorial.readthedocs.io/en/latest/integration_analysis/multi_sample_integration.html).
-- [Subclustering and annotation refinement](https://spatialsnake-tutorial.readthedocs.io/en/latest/subcluster_annotation/index.html).
-- [Splitting, merging and data conversion](https://spatialsnake-tutorial.readthedocs.io/en/latest/useful_tool/index.html).
-- [Downstream analysis and group comparisons](https://spatialsnake-tutorial.readthedocs.io/en/latest/downstream_analysis/index.html).
+- [Focused analysis](https://spatialsnake-tutorial.readthedocs.io/en/latest/subcluster_annotation/index.html).
+- [Optional data operations](https://spatialsnake-tutorial.readthedocs.io/en/latest/useful_tool/index.html).
+- [Further analyses](https://spatialsnake-tutorial.readthedocs.io/en/latest/downstream_analysis/index.html).
 - **Problems or feature requests:** [GitHub issues](https://github.com/l-zh007/spatialsnake/issues). Include the software version, installation route, exact command, relevant YAML/sample table and error log. Omit credentials and private data.
 
 ## Citation

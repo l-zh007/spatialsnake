@@ -45,6 +45,7 @@ CHOICE_RULES = {
     "batch_method": {"choices": ["harmony", "BBKNN"], "allow_none": True, "case_sensitive": False},
     "cluster_algorithm": {"choices": ["leiden", "louvain", "Kmeans", "kmeans"], "case_sensitive": False},
     "anno_algorithm": {"choices": ["manual", "reannotation", "cell2Location", "RCTD"], "case_sensitive": False},
+    "markers_algorithm": {"choices": ["wilcoxon", "t-test", "t-test_overestim_var"], "case_sensitive": True},
     "RCTD_mode": {"choices": ["full", "doublet"], "case_sensitive": False},
     "device": {"choices": ["auto", "cpu", "cuda"], "case_sensitive": False},
     "compare_algorithm": {"choices": ["DESeq2", "edgeR"], "case_sensitive": False},
